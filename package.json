@@ -1,0 +1,47 @@
+{
+  "name": "polyswap",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 8080 --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "start:api": "tsx src/backend/index.ts",
+    "start:listener": "tsx src/backend/listener.ts",
+    "saveMarkets": "tsx script/getMarkets.ts",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "db:import": "tsx script/importJsonData.ts"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.0",
+    "ethers": "^6.15.0",
+    "express": "^5.1.0",
+    "next": "15.4.4",
+    "pg": "^8.16.3",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "tslib": "^2.8.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@polymarket/clob-client": "^4.20.0",
+    "@types/express": "^5.0.3",
+    "@types/node": "^20",
+    "@types/pg": "^8.15.4",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.4.4",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.3",
+    "typescript": "^5"
+  },
+  "ts-node": {
+    "esm": true,
+    "experimentalSpecifierResolution": "node"
+  }
+}

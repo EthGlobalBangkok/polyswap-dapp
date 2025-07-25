@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: polyswap-postgres
+    environment:
+      POSTGRES_DB: polyswap
+      POSTGRES_USER: polyswap_user
+      POSTGRES_PASSWORD: polyswap_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U polyswap_user -d polyswap"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local

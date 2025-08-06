@@ -2,6 +2,7 @@ export interface DatabaseMarket {
   id: string;
   question: string;
   condition_id: string;
+  category: string;
   start_date: Date;
   end_date: Date;
   volume: number;

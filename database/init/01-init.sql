@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS markets (
     id VARCHAR(20) PRIMARY KEY,
     question TEXT NOT NULL,
     condition_id VARCHAR(66) NOT NULL UNIQUE, -- Ethereum addresses are 66 chars with 0x prefix
+    category VARCHAR(50) NOT NULL DEFAULT 'Other', -- Market category (Politics, Crypto, Sports, etc.)
     start_date TIMESTAMP WITH TIME ZONE NOT NULL,
     end_date TIMESTAMP WITH TIME ZONE NOT NULL,
     volume DECIMAL(20, 6) NOT NULL DEFAULT 0,
@@ -19,6 +20,7 @@ CREATE TABLE IF NOT EXISTS markets (
 
 -- Create indexes for frequently queried columns
 CREATE INDEX IF NOT EXISTS idx_markets_condition_id ON markets(condition_id);
+CREATE INDEX IF NOT EXISTS idx_markets_category ON markets(category);
 CREATE INDEX IF NOT EXISTS idx_markets_end_date ON markets(end_date);
 CREATE INDEX IF NOT EXISTS idx_markets_start_date ON markets(start_date);
 CREATE INDEX IF NOT EXISTS idx_markets_volume ON markets(volume);

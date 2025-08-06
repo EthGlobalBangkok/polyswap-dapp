@@ -17,6 +17,8 @@
     "db:import": "tsx script/importJsonData.ts"
   },
   "dependencies": {
+    "@types/cors": "^2.8.19",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.0",
     "ethers": "^6.15.0",
     "express": "^5.1.0",

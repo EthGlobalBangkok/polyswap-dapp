@@ -6,17 +6,43 @@ import { PolyswapOrderRecord, DatabasePolyswapOrder } from '../interfaces/Polysw
 export class DatabaseService {
   
   /**
+   * Extract category from market question
+   */
+  private static extractCategory(question: string): string {
+    const lowerQuestion = question.toLowerCase();
+    
+    if (lowerQuestion.includes('bitcoin') || lowerQuestion.includes('ethereum') || lowerQuestion.includes('crypto') || lowerQuestion.includes('eth') || lowerQuestion.includes('btc')) {
+      return 'Crypto';
+    } else if (lowerQuestion.includes('trump') || lowerQuestion.includes('biden') || lowerQuestion.includes('election') || lowerQuestion.includes('president') || lowerQuestion.includes('politics')) {
+      return 'Politics';
+    } else if (lowerQuestion.includes('fed') || lowerQuestion.includes('interest') || lowerQuestion.includes('recession') || lowerQuestion.includes('economy') || lowerQuestion.includes('inflation')) {
+      return 'Economics';
+    } else if (lowerQuestion.includes('champion') || lowerQuestion.includes('series') || lowerQuestion.includes('sport') || lowerQuestion.includes('f1') || lowerQuestion.includes('football') || lowerQuestion.includes('basketball')) {
+      return 'Sports';
+    } else if (lowerQuestion.includes('movie') || lowerQuestion.includes('film') || lowerQuestion.includes('entertainment')) {
+      return 'Entertainment';
+    } else if (lowerQuestion.includes('china') || lowerQuestion.includes('russia') || lowerQuestion.includes('ukraine') || lowerQuestion.includes('iran') || lowerQuestion.includes('war')) {
+      return 'World';
+    } else if (lowerQuestion.includes('ai') || lowerQuestion.includes('artificial intelligence') || lowerQuestion.includes('technology')) {
+      return 'Technology';
+    } else {
+      return 'Other';
+    }
+  }
+
+  /**
    * Insert a new market into the database with only essential fields
    */
   static async insertMarket(market: Market): Promise<void> {
     const sql = `
       INSERT INTO markets (
-        id, question, condition_id, start_date, end_date, volume, outcomes, outcome_prices
+        id, question, condition_id, category, start_date, end_date, volume, outcomes, outcome_prices
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8
+        $1, $2, $3, $4, $5, $6, $7, $8, $9
       )
       ON CONFLICT (condition_id) DO UPDATE SET
         question = EXCLUDED.question,
+        category = EXCLUDED.category,
         start_date = EXCLUDED.start_date,
         end_date = EXCLUDED.end_date,
         volume = EXCLUDED.volume,
@@ -33,6 +59,7 @@ export class DatabaseService {
       market.id,
       market.question,
       market.conditionId,
+      this.extractCategory(market.question),
       new Date(market.startDate),
       new Date(market.endDate),
       parseFloat(market.volume) || 0,
@@ -71,10 +98,38 @@ export class DatabaseService {
   }
 
   /**
-   * Get markets by volume threshold with pagination
+   * Get top markets by volume
    */
-  static async getMarketsByVolume(minVolume: number, limit: number = 50, offset: number = 0): Promise<DatabaseMarket[]> {
-    const sql = 'SELECT * FROM markets WHERE volume >= $1 ORDER BY volume DESC LIMIT $2 OFFSET $3';
+  static async getTopMarkets(limit: number = 50): Promise<DatabaseMarket[]> {
+    const sql = 'SELECT * FROM markets ORDER BY volume DESC LIMIT $1';
+    const result = await query(sql, [limit]);
+    return result.rows;
+  }
+
+  /**
+   * Search markets by question
+   */
+  static async searchMarkets(searchTerm: string, limit: number = 100): Promise<DatabaseMarket[]> {
+    const sql = `
+      SELECT * FROM markets 
+      WHERE question ILIKE $1 
+      ORDER BY volume DESC 
+      LIMIT $2
+    `;
+    const result = await query(sql, [`%${searchTerm}%`, limit]);
+    return result.rows;
+  }
+
+  /**
+   * Get markets by volume threshold
+   */
+  static async getMarketsByVolume(minVolume: number, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
+    const sql = `
+      SELECT * FROM markets 
+      WHERE volume >= $1 
+      ORDER BY volume DESC 
+      LIMIT $2 OFFSET $3
+    `;
     const result = await query(sql, [minVolume, limit, offset]);
     return result.rows;
   }
@@ -130,9 +185,28 @@ export class DatabaseService {
   /**
    * Get markets ending after a specific date with pagination
    */
-  static async getMarketsEndingAfter(date: Date, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const sql = 'SELECT * FROM markets WHERE end_date > $1 ORDER BY end_date ASC LIMIT $2 OFFSET $3';
-    const result = await query(sql, [date, limit, offset]);
+  static async getMarketsEndingAfter(endDate: Date, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
+    const sql = `
+      SELECT * FROM markets 
+      WHERE end_date > $1 
+      ORDER BY end_date ASC 
+      LIMIT $2 OFFSET $3
+    `;
+    const result = await query(sql, [endDate, limit, offset]);
+    return result.rows;
+  }
+
+  /**
+   * Get markets by category
+   */
+  static async getMarketsByCategory(category: string, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
+    const sql = `
+      SELECT * FROM markets 
+      WHERE category = $1 
+      ORDER BY volume DESC 
+      LIMIT $2 OFFSET $3
+    `;
+    const result = await query(sql, [category, limit, offset]);
     return result.rows;
   }
 
@@ -146,21 +220,46 @@ export class DatabaseService {
   }
 
   /**
-   * Bulk insert markets
+   * Insert multiple markets at once
    */
   static async insertMarkets(markets: Market[]): Promise<void> {
-    console.log(`Inserting ${markets.length} markets into database...`);
-    
+    if (markets.length === 0) return;
+
+    const sql = `
+      INSERT INTO markets (
+        id, question, condition_id, category, start_date, end_date, volume, outcomes, outcome_prices
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9
+      )
+      ON CONFLICT (condition_id) DO UPDATE SET
+        question = EXCLUDED.question,
+        category = EXCLUDED.category,
+        start_date = EXCLUDED.start_date,
+        end_date = EXCLUDED.end_date,
+        volume = EXCLUDED.volume,
+        outcomes = EXCLUDED.outcomes,
+        outcome_prices = EXCLUDED.outcome_prices,
+        updated_at = CURRENT_TIMESTAMP
+    `;
+
     for (const market of markets) {
-      try {
-        await this.insertMarket(market);
-      } catch (error) {
-        console.error(`Error inserting market ${market.id}:`, error);
-        // Continue with other markets
-      }
+      const outcomesData = typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes;
+      const pricesData = typeof market.outcomePrices === 'string' ? JSON.parse(market.outcomePrices) : market.outcomePrices;
+      
+      const values = [
+        market.id,
+        market.question,
+        market.conditionId,
+        this.extractCategory(market.question),
+        new Date(market.startDate),
+        new Date(market.endDate),
+        parseFloat(market.volume) || 0,
+        JSON.stringify(outcomesData),
+        JSON.stringify(pricesData)
+      ];
+
+      await query(sql, values);
     }
-    
-    console.log(`Finished inserting markets`);
   }
 
   /**

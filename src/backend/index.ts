@@ -1,11 +1,18 @@
 import express from 'express';
 import marketRoutes from './routes/market';
 import polyswap_orderRoutes from './routes/polyswapOrder';
+import cors from 'cors';
 
 const app = express();
 const port = 3000;
 
 app.use(express.json());
+
+// CORS
+app.use(cors({
+  origin: process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:8080',
+  credentials: true,
+}));
 
 // market routes
 app.use('/api/markets', marketRoutes);

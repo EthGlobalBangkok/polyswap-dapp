@@ -1,0 +1,109 @@
+.searchContainer {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto var(--spacing-xl) auto;
+}
+
+.searchInputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background-color: var(--background-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  transition: all var(--transition-normal);
+}
+
+.searchInputWrapper:focus-within {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.searchIcon {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  margin-right: var(--spacing-md);
+  flex-shrink: 0;
+}
+
+.searchInput {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 1rem;
+  outline: none;
+  min-width: 0;
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+}
+
+.searchInput:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.clearButton {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  margin-left: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.clearButton:hover {
+  color: var(--text-primary);
+  background-color: var(--background-tertiary);
+}
+
+.clearButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.loadingSpinner {
+  margin-left: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-color);
+  border-top: 2px solid var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .searchContainer {
+    margin-bottom: var(--spacing-lg);
+  }
+  
+  .searchInputWrapper {
+    padding: var(--spacing-sm);
+  }
+  
+  .searchInput {
+    font-size: 0.95rem;
+  }
+  
+  .searchIcon {
+    font-size: 1rem;
+    margin-right: var(--spacing-sm);
+  }
+} 

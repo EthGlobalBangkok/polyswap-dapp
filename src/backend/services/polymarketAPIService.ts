@@ -86,7 +86,17 @@ export class PolymarketAPIService {
       
     } catch (error) {
       console.error("Error fetching markets:", error);
-      throw error;
+      if (allMarkets.length === 0) {
+        throw error;
+      }
+      console.log(`Returning ${allMarkets.length} markets that were successfully fetched before the error`);
+      
+      // If maxNb was specified and we have more markets than requested, trim the array
+      if (maxNb && allMarkets.length > maxNb) {
+        return allMarkets.slice(0, maxNb);
+      }
+      
+      return allMarkets;
     }
   }
 

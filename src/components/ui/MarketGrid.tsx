@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Market } from '../../types/market';
-import { ApiMarket, apiService } from '../../services/api';
+import { ApiMarket, apiService, SearchResult } from '../../services/api';
 import MarketCard from './MarketCard';
 import SearchBar from './SearchBar';
 import styles from './MarketGrid.module.css';
@@ -19,6 +19,13 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchActive, setSearchActive] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalResults, setTotalResults] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [currentQuery, setCurrentQuery] = useState('');
+  const [currentCategory, setCurrentCategory] = useState<string | undefined>();
 
   // Convert API market to internal market format - memoized
   const convertApiMarket = useCallback((apiMarket: ApiMarket): Market => {
@@ -38,18 +45,26 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
   }, []);
 
   // Load top markets on component mount
-  const loadTopMarkets = useCallback(async () => {
+  const loadTopMarkets = useCallback(async (page: number = 1) => {
     try {
       setIsLoading(true);
       setError(null);
       setSearchActive(false);
-      const apiMarkets = await apiService.getTopMarkets();
+      setCurrentPage(page);
+      setCurrentQuery('');
+      setCurrentCategory(undefined);
+      
+      const apiMarkets = await apiService.getTopMarkets(page, 100);
       const convertedMarkets = apiMarkets.map(convertApiMarket);
       setMarkets(convertedMarkets);
+      setTotalResults(convertedMarkets.length);
+      setHasMore(convertedMarkets.length >= 100); // Assuming 100 is the page size
     } catch (err) {
       console.error('Failed to load top markets:', err);
       setError('Failed to load markets. Please check your connection and try again.');
       setMarkets([]);
+      setTotalResults(0);
+      setHasMore(false);
     } finally {
       setIsLoading(false);
     }
@@ -60,22 +75,36 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
   }, [loadTopMarkets]);
 
   // Handle search (only on Enter)
-  const handleSearch = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      loadTopMarkets();
+  const handleSearch = useCallback(async (query: string, category?: string, page: number = 1) => {
+    if (!query.trim() && !category) {
+      loadTopMarkets(page);
       return;
     }
     try {
       setIsSearching(true);
       setError(null);
       setSearchActive(true);
-      const apiMarkets = await apiService.searchMarkets({ q: query });
-      const convertedMarkets = apiMarkets.map(convertApiMarket);
+      setCurrentPage(page);
+      setCurrentQuery(query);
+      setCurrentCategory(category);
+      
+      const searchResult: SearchResult = await apiService.searchMarkets({ 
+        q: query, 
+        category: category,
+        page: page,
+        limit: 100
+      });
+      
+      const convertedMarkets = searchResult.markets.map(convertApiMarket);
       setMarkets(convertedMarkets);
+      setTotalResults(convertedMarkets.length);
+      setHasMore(searchResult.pagination.hasMore);
     } catch (err) {
       console.error('Search failed:', err);
       setError('Search failed. Please try again or check your connection.');
       setMarkets([]);
+      setTotalResults(0);
+      setHasMore(false);
     } finally {
       setIsSearching(false);
     }
@@ -85,6 +114,29 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
   const handleClear = useCallback(() => {
     loadTopMarkets();
   }, [loadTopMarkets]);
+
+  // Handle pagination
+  const handleNextPage = useCallback(() => {
+    if (hasMore) {
+      const nextPage = currentPage + 1;
+      if (searchActive) {
+        handleSearch(currentQuery, currentCategory, nextPage);
+      } else {
+        loadTopMarkets(nextPage);
+      }
+    }
+  }, [hasMore, currentPage, searchActive, currentQuery, currentCategory, handleSearch, loadTopMarkets]);
+
+  const handlePrevPage = useCallback(() => {
+    if (currentPage > 1) {
+      const prevPage = currentPage - 1;
+      if (searchActive) {
+        handleSearch(currentQuery, currentCategory, prevPage);
+      } else {
+        loadTopMarkets(prevPage);
+      }
+    }
+  }, [currentPage, searchActive, currentQuery, currentCategory, handleSearch, loadTopMarkets]);
 
   const handleMarketClick = useCallback((market: Market) => {
     console.log('Market clicked:', market.title);
@@ -138,6 +190,38 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
     );
   }, [error]);
 
+  // Memoize the pagination controls
+  const paginationControls = useMemo(() => {
+    if (markets.length === 0 || isLoading || !searchActive) return null;
+    
+    return (
+      <div className={styles.pagination}>
+        <div className={styles.paginationInfo}>
+          <span>Page {currentPage}</span>
+          {totalResults > 0 && (
+            <span>• {totalResults} results</span>
+          )}
+        </div>
+        <div className={styles.paginationButtons}>
+          <button
+            onClick={handlePrevPage}
+            disabled={currentPage <= 1 || isLoading}
+            className={styles.paginationButton}
+          >
+            ← Previous
+          </button>
+          <button
+            onClick={handleNextPage}
+            disabled={!hasMore || isLoading}
+            className={styles.paginationButton}
+          >
+            Next →
+          </button>
+        </div>
+      </div>
+    );
+  }, [markets.length, isLoading, currentPage, totalResults, hasMore, searchActive, handlePrevPage, handleNextPage]);
+
   // Memoize the content area
   const contentArea = useMemo(() => {
     if (isLoading) {
@@ -158,17 +242,20 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
     }
     
     return (
-      <div className={styles.grid}>
-        {markets.map((market) => (
-          <MarketCard
-            key={market.id}
-            market={market}
-            onClick={handleMarketClick}
-          />
-        ))}
-      </div>
+      <>
+        <div className={styles.grid}>
+          {markets.map((market) => (
+            <MarketCard
+              key={market.id}
+              market={market}
+              onClick={handleMarketClick}
+            />
+          ))}
+        </div>
+        {paginationControls}
+      </>
     );
-  }, [isLoading, markets, error, handleMarketClick]);
+  }, [isLoading, markets, error, handleMarketClick, paginationControls]);
 
   return (
     <div className={styles.container}>

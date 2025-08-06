@@ -19,7 +19,15 @@ export interface BackendApiResponse {
   success: boolean;
   data: BackendMarket[];
   count: number;
-  message: string;
+  searchType?: string;
+  keywords?: string[];
+  category?: string | null;
+  pagination?: {
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+  message?: string;
 }
 
 // Frontend market format
@@ -45,6 +53,18 @@ export interface ApiMarket {
 export interface SearchParams {
   q: string;
   type?: 'all' | 'binary' | 'multi-choice';
+  category?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface SearchResult {
+  markets: ApiMarket[];
+  pagination: {
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
 }
 
 class ApiService {
@@ -145,19 +165,40 @@ class ApiService {
       .join(',');
   }
 
-  async getTopMarkets(): Promise<ApiMarket[]> {
-    const response = await this.fetchApi<BackendApiResponse>('/api/markets/top');
+  async getTopMarkets(page: number = 1, limit: number = 100): Promise<ApiMarket[]> {
+    const offset = (page - 1) * limit;
+    const response = await this.fetchApi<BackendApiResponse>(`/api/markets/top?limit=${limit}&offset=${offset}`);
     return response.data.map(market => this.convertBackendMarket(market));
   }
 
-  async searchMarkets(params: SearchParams): Promise<ApiMarket[]> {
+  async searchMarkets(params: SearchParams): Promise<SearchResult> {
     const formattedQuery = this.formatSearchQuery(params.q);
     const searchParams = new URLSearchParams({
       q: formattedQuery,
       type: 'all', // Always include type=all
     });
 
+    // Add category if provided
+    if (params.category) {
+      searchParams.set('category', params.category);
+    }
+
+    // Add pagination parameters
+    const limit = params.limit || 100;
+    const page = params.page || 1;
+    const offset = (page - 1) * limit;
+    searchParams.set('limit', limit.toString());
+    searchParams.set('offset', offset.toString());
+
     const response = await this.fetchApi<BackendApiResponse>(`/api/markets/search?${searchParams.toString()}`);
+    return {
+      markets: response.data.map(market => this.convertBackendMarket(market)),
+      pagination: response.pagination || { limit: 0, offset: 0, hasMore: false },
+    };
+  }
+
+  async getMarketsByCategory(category: string, limit: number = 100): Promise<ApiMarket[]> {
+    const response = await this.fetchApi<BackendApiResponse>(`/api/markets/category/${encodeURIComponent(category)}?limit=${limit}`);
     return response.data.map(market => this.convertBackendMarket(market));
   }
 

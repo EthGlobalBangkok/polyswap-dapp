@@ -12,21 +12,21 @@ export class DatabaseService {
     const lowerQuestion = question.toLowerCase();
     
     if (lowerQuestion.includes('bitcoin') || lowerQuestion.includes('ethereum') || lowerQuestion.includes('crypto') || lowerQuestion.includes('eth') || lowerQuestion.includes('btc')) {
-      return 'Crypto';
+      return 'crypto';
     } else if (lowerQuestion.includes('trump') || lowerQuestion.includes('biden') || lowerQuestion.includes('election') || lowerQuestion.includes('president') || lowerQuestion.includes('politics')) {
-      return 'Politics';
+      return 'politics';
     } else if (lowerQuestion.includes('fed') || lowerQuestion.includes('interest') || lowerQuestion.includes('recession') || lowerQuestion.includes('economy') || lowerQuestion.includes('inflation')) {
-      return 'Economics';
+      return 'economics';
     } else if (lowerQuestion.includes('champion') || lowerQuestion.includes('series') || lowerQuestion.includes('sport') || lowerQuestion.includes('f1') || lowerQuestion.includes('football') || lowerQuestion.includes('basketball')) {
-      return 'Sports';
+      return 'sports';
     } else if (lowerQuestion.includes('movie') || lowerQuestion.includes('film') || lowerQuestion.includes('entertainment')) {
-      return 'Entertainment';
+      return 'entertainment';
     } else if (lowerQuestion.includes('china') || lowerQuestion.includes('russia') || lowerQuestion.includes('ukraine') || lowerQuestion.includes('iran') || lowerQuestion.includes('war')) {
-      return 'World';
+      return 'world';
     } else if (lowerQuestion.includes('ai') || lowerQuestion.includes('artificial intelligence') || lowerQuestion.includes('technology')) {
-      return 'Technology';
+      return 'technology';
     } else {
-      return 'Other';
+      return 'other';
     }
   }
 
@@ -121,6 +121,70 @@ export class DatabaseService {
   }
 
   /**
+   * Search markets by keywords (AND search - all keywords must be present)
+   */
+  static async searchMarketsByKeywords(keywords: string[], limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
+    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' AND ');
+    const sql = `
+      SELECT * FROM markets 
+      WHERE ${conditions}
+      ORDER BY volume DESC 
+      LIMIT $${keywords.length + 1} OFFSET $${keywords.length + 2}
+    `;
+    const values = [...keywords.map(k => `%${k}%`), limit, offset];
+    const result = await query(sql, values);
+    return result.rows;
+  }
+
+  /**
+   * Search markets by any keyword (OR search - any keyword can match)
+   */
+  static async searchMarketsByAnyKeyword(keywords: string[], limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
+    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' OR ');
+    const sql = `
+      SELECT * FROM markets 
+      WHERE ${conditions}
+      ORDER BY volume DESC 
+      LIMIT $${keywords.length + 1} OFFSET $${keywords.length + 2}
+    `;
+    const values = [...keywords.map(k => `%${k}%`), limit, offset];
+    const result = await query(sql, values);
+    return result.rows;
+  }
+
+  /**
+   * Search markets by keywords AND category (AND search - all keywords must be present)
+   */
+  static async searchMarketsByKeywordsAndCategory(keywords: string[], category: string, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
+    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' AND ');
+    const sql = `
+      SELECT * FROM markets 
+      WHERE ${conditions} AND category = $${keywords.length + 1}
+      ORDER BY volume DESC 
+      LIMIT $${keywords.length + 2} OFFSET $${keywords.length + 3}
+    `;
+    const values = [...keywords.map(k => `%${k}%`), category, limit, offset];
+    const result = await query(sql, values);
+    return result.rows;
+  }
+
+  /**
+   * Search markets by any keyword AND category (OR search - any keyword can match)
+   */
+  static async searchMarketsByAnyKeywordAndCategory(keywords: string[], category: string, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
+    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' OR ');
+    const sql = `
+      SELECT * FROM markets 
+      WHERE (${conditions}) AND category = $${keywords.length + 1}
+      ORDER BY volume DESC 
+      LIMIT $${keywords.length + 2} OFFSET $${keywords.length + 3}
+    `;
+    const values = [...keywords.map(k => `%${k}%`), category, limit, offset];
+    const result = await query(sql, values);
+    return result.rows;
+  }
+
+  /**
    * Get markets by volume threshold
    */
   static async getMarketsByVolume(minVolume: number, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
@@ -141,44 +205,6 @@ export class DatabaseService {
         const sql = 'SELECT * FROM markets WHERE LOWER(question) LIKE LOWER($1) ORDER BY created_at DESC';
         const searchPattern = `%${question}%`;
         const result = await query(sql, [searchPattern]);
-        return result.rows;
-    }
-
-  /**
-   * Search markets by multiple keywords (all keywords must be present)
-   */
-    static async searchMarketsByKeywords(keywords: string[], limit: number = 100): Promise<DatabaseMarket[]> {
-        if (keywords.length === 0) {
-            return [];
-        }
-        
-        // Build dynamic SQL with multiple LIKE conditions
-        const conditions = keywords.map((_, index) => `LOWER(question) LIKE LOWER($${index + 1})`);
-        const sql = `SELECT * FROM markets WHERE ${conditions.join(' AND ')} ORDER BY volume DESC LIMIT $${keywords.length + 1}`;
-        
-        // Create search patterns for each keyword
-        const searchPatterns = keywords.map(keyword => `%${keyword.trim()}%`);
-        
-        const result = await query(sql, [...searchPatterns, limit]);
-        return result.rows;
-    }
-
-  /**
-   * Search markets by any of the provided keywords (OR search)
-   */
-    static async searchMarketsByAnyKeyword(keywords: string[], limit: number = 100): Promise<DatabaseMarket[]> {
-        if (keywords.length === 0) {
-            return [];
-        }
-        
-        // Build dynamic SQL with multiple LIKE conditions using OR
-        const conditions = keywords.map((_, index) => `LOWER(question) LIKE LOWER($${index + 1})`);
-        const sql = `SELECT * FROM markets WHERE ${conditions.join(' OR ')} ORDER BY volume DESC LIMIT $${keywords.length + 1}`;
-        
-        // Create search patterns for each keyword
-        const searchPatterns = keywords.map(keyword => `%${keyword.trim()}%`);
-        
-        const result = await query(sql, [...searchPatterns, limit]);
         return result.rows;
     }
 

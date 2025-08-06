@@ -29,44 +29,61 @@ router.get('/top', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/markets/search?q=keyword1,keyword2&type=all|any
- * Search markets by keywords
+ * GET /api/markets/search?q=keyword1,keyword2&type=all|any&category=Politics&limit=100&offset=0
+ * Search markets by keywords and optionally by category
  * Query parameters:
- * - q: comma-separated keywords
+ * - q: comma-separated keywords (optional if category is provided)
  * - type: 'all' (AND search) or 'any' (OR search), default: 'any'
+ * - category: filter by category (Politics, Crypto, Economics, Sports, Entertainment, World, Technology, Other)
  * - limit: maximum number of results, default: 100
+ * - offset: number of records to skip, default: 0
  */
 router.get('/search', async (req: Request, res: Response) => {
   try {
-    const { q, type = 'any', limit = '100'} = req.query;
+    const { q, type = 'any', category, limit = '100', offset = '0'} = req.query;
     
-    if (!q || typeof q !== 'string') {
+    // Allow category-only search (no query required)
+    if (!q && !category) {
       return res.status(400).json({
         success: false,
-        error: 'Missing or invalid query parameter',
-        message: 'Please provide a search query using the "q" parameter'
+        error: 'Missing search parameters',
+        message: 'Please provide either a search query (q) or a category'
       });
     }
     
-    const keywords = q.split(',').map(keyword => keyword.trim()).filter(Boolean);
-    
-    if (keywords.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'No valid keywords provided',
-        message: 'Please provide at least one keyword'
-      });
-    }
-    
+    const keywords = q && typeof q === 'string' ? q.split(',').map((keyword: string) => keyword.trim()).filter(Boolean) : [];
     const maxResults = Math.min(parseInt(limit as string) || 100, 500); // Cap at 500
+    const offsetNum = Math.max(parseInt(offset as string) || 0, 0);
     
     let markets;
-    if (type === 'all') {
-      // AND search - all keywords must be present
-      markets = await DatabaseService.searchMarketsByKeywords(keywords, maxResults);
+    
+    if (category && typeof category === 'string') {
+      if (keywords.length === 0) {
+        // Category-only search
+        markets = await DatabaseService.getMarketsByCategory(category, maxResults, offsetNum);
+      } else {
+        // Search by keywords AND category
+        if (type === 'all') {
+          markets = await DatabaseService.searchMarketsByKeywordsAndCategory(keywords, category, maxResults, offsetNum);
+        } else {
+          markets = await DatabaseService.searchMarketsByAnyKeywordAndCategory(keywords, category, maxResults, offsetNum);
+        }
+      }
     } else {
-      // OR search - any keyword can match
-      markets = await DatabaseService.searchMarketsByAnyKeyword(keywords, maxResults);
+      // Search by keywords only
+      if (keywords.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No valid keywords provided',
+          message: 'Please provide at least one keyword'
+        });
+      }
+      
+      if (type === 'all') {
+        markets = await DatabaseService.searchMarketsByKeywords(keywords, maxResults, offsetNum);
+      } else {
+        markets = await DatabaseService.searchMarketsByAnyKeyword(keywords, maxResults, offsetNum);
+      }
     }
     
     res.json({
@@ -75,6 +92,12 @@ router.get('/search', async (req: Request, res: Response) => {
       count: markets.length,
       searchType: type,
       keywords: keywords,
+      category: category || null,
+      pagination: {
+        limit: maxResults,
+        offset: offsetNum,
+        hasMore: markets.length === maxResults
+      },
       message: `Found ${markets.length} markets`
     });
   } catch (error) {
@@ -82,6 +105,53 @@ router.get('/search', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to search markets',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/markets/category/:category
+ * Get markets by category
+ * Query parameters:
+ * - limit: maximum number of results, default: 100
+ * - offset: number of records to skip, default: 0
+ */
+router.get('/category/:category', async (req: Request, res: Response) => {
+  try {
+    const { category } = req.params;
+    const { limit = '100', offset = '0' } = req.query;
+    
+    if (!category) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing category parameter',
+        message: 'Please provide a category'
+      });
+    }
+    
+    const limitNum = Math.min(parseInt(limit as string) || 100, 500);
+    const offsetNum = Math.max(parseInt(offset as string) || 0, 0);
+    
+    const markets = await DatabaseService.getMarketsByCategory(category, limitNum, offsetNum);
+    
+    res.json({
+      success: true,
+      data: markets,
+      count: markets.length,
+      category: category,
+      pagination: {
+        limit: limitNum,
+        offset: offsetNum,
+        hasMore: markets.length === limitNum
+      },
+      message: `Found ${markets.length} markets in ${category} category`
+    });
+  } catch (error) {
+    console.error('Error fetching markets by category:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch markets by category',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
   }

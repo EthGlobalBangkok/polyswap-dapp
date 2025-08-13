@@ -1,58 +1,31 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-
-// Backend API response format
+// API service for communicating with the backend
 export interface BackendMarket {
   id: string;
   question: string;
-  condition_id: string;
-  category: string;
-  start_date: string;
-  end_date: string;
   volume: string;
+  end_date: string;
   outcomes: string[];
-  outcome_prices: string[];
-  created_at: string;
-  updated_at: string;
+  outcome_prices: number[];
+  category: string;
+  condition_id?: string;
+  description?: string;
 }
 
 export interface BackendApiResponse {
   success: boolean;
   data: BackendMarket[];
   count: number;
-  searchType?: string;
-  keywords?: string[];
-  category?: string | null;
+  message: string;
   pagination?: {
     limit: number;
     offset: number;
     hasMore: boolean;
   };
-  message?: string;
-}
-
-// Frontend market format
-export interface ApiMarket {
-  id: string;
-  title: string;
-  description: string;
-  volume: number;
-  endDate: string;
-  category: string;
-  isActive: boolean;
-  type: 'binary' | 'multi-choice';
-  yesOdds?: number;
-  noOdds?: number;
-  options?: Array<{
-    id: string;
-    label: string;
-    odds: number;
-    color?: string;
-  }>;
 }
 
 export interface SearchParams {
-  q: string;
-  type?: 'all' | 'binary' | 'multi-choice';
+  q?: string;
+  type?: 'all' | 'any';
   category?: string;
   page?: number;
   limit?: number;
@@ -67,149 +40,173 @@ export interface SearchResult {
   };
 }
 
+export interface ApiMarket {
+  id: string;
+  title: string;
+  volume: number;
+  endDate: string;
+  category: string;
+  type: 'binary' | 'multi-choice';
+  yesOdds?: number;
+  noOdds?: number;
+  options?: MarketOption[];
+  conditionId?: string;
+  description?: string;
+}
+
+export interface MarketOption {
+  text: string;
+  odds: number;
+}
+
 class ApiService {
-  private async fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
-    const url = `${API_BASE_URL}${endpoint}`;
+  private baseUrl = '/api'; // Use relative paths for Next.js API routes
+
+  private async fetchApi(endpoint: string, params?: Record<string, string | number>): Promise<any> {
+    // Build the full URL path
+    const fullPath = `${this.baseUrl}${endpoint}`;
     
-    try {
-      const response = await fetch(url, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        ...options,
+    // Create URL with search params
+    const url = new URL(fullPath, window.location.origin);
+    
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          url.searchParams.append(key, String(value));
+        }
       });
+    }
 
+    try {
+      const response = await fetch(url.toString());
       if (!response.ok) {
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-
       return await response.json();
     } catch (error) {
-      console.error('API request error:', error);
+      console.error('API request failed:', error);
       throw error;
     }
   }
 
   // Convert backend market format to frontend format
   private convertBackendMarket(backendMarket: BackendMarket): ApiMarket {
-    const volume = parseFloat(backendMarket.volume);
-    const yesPrice = parseFloat(backendMarket.outcome_prices[0]);
-    const noPrice = parseFloat(backendMarket.outcome_prices[1]);
-    
-    // Convert prices to percentages (prices are 0-1, we need 0-100)
-    const yesOdds = Math.round(yesPrice * 100);
-    const noOdds = Math.round(noPrice * 100);
+    const isBinary = backendMarket.outcomes.length === 2 && 
+                     backendMarket.outcomes.includes('Yes') && 
+                     backendMarket.outcomes.includes('No');
 
-    // Determine if it's a multi-choice market (more than 2 outcomes)
-    const isMultiChoice = backendMarket.outcomes.length > 2;
-
-    if (isMultiChoice) {
-      // Handle multi-choice markets
-      const options = backendMarket.outcomes.map((outcome, index) => ({
-        id: outcome.toLowerCase().replace(/\s+/g, '-'),
-        label: outcome,
-        odds: Math.round(parseFloat(backendMarket.outcome_prices[index]) * 100),
-        color: this.getColorForOption(outcome, index),
+    if (isBinary) {
+      const yesIndex = backendMarket.outcomes.indexOf('Yes');
+      const noIndex = backendMarket.outcomes.indexOf('No');
+      
+      return {
+        id: backendMarket.id,
+        title: backendMarket.question,
+        volume: parseFloat(backendMarket.volume) || 0,
+        endDate: backendMarket.end_date,
+        category: backendMarket.category,
+        type: 'binary',
+        // Convert decimal odds to percentages (multiply by 100) and round to 2 decimals
+        yesOdds: Number(((backendMarket.outcome_prices[yesIndex] || 0) * 100).toFixed(2)),
+        noOdds: Number(((backendMarket.outcome_prices[noIndex] || 0) * 100).toFixed(2)),
+        conditionId: backendMarket.condition_id,
+        description: backendMarket.description
+      };
+        } else {
+      // Multi-choice market
+      const options: MarketOption[] = backendMarket.outcomes.map((outcome, index) => ({
+        text: outcome,
+        // Convert decimal odds to percentages (multiply by 100) and round to 2 decimals
+        odds: Number(((backendMarket.outcome_prices[index] || 0) * 100).toFixed(2))
       }));
 
       return {
         id: backendMarket.id,
         title: backendMarket.question,
-        description: `Market resolves to the winning outcome.`,
-        volume,
+        volume: parseFloat(backendMarket.volume) || 0,
         endDate: backendMarket.end_date,
-        category: backendMarket.category, // Use category from backend
-        isActive: true, // All markets from API are active
+        category: backendMarket.category,
         type: 'multi-choice',
         options,
-      };
-    } else {
-      // Handle binary markets (Yes/No)
-      return {
-        id: backendMarket.id,
-        title: backendMarket.question,
-        description: `Market resolves to "Yes" if the condition is met.`,
-        volume,
-        endDate: backendMarket.end_date,
-        category: backendMarket.category, // Use category from backend
-        isActive: true,
-        type: 'binary',
-        yesOdds,
-        noOdds,
+        conditionId: backendMarket.condition_id,
+        description: backendMarket.description
       };
     }
   }
 
-  // Get color for multi-choice options
-  private getColorForOption(outcome: string, index: number): string {
-    const colors = [
-      '#ef4444', // red
-      '#3b82f6', // blue
-      '#10b981', // green
-      '#f59e0b', // amber
-      '#8b5cf6', // purple
-      '#06b6d4', // cyan
-      '#f97316', // orange
-      '#84cc16', // lime
-    ];
-    
-    return colors[index % colors.length];
-  }
-
-  // Format search query - split words and join with commas
-  private formatSearchQuery(query: string): string {
-    return query
-      .trim()
-      .split(/\s+/)
-      .filter(word => word.length > 0)
-      .join(',');
-  }
-
-  async getTopMarkets(page: number = 1, limit: number = 100): Promise<ApiMarket[]> {
-    const offset = (page - 1) * limit;
-    const response = await this.fetchApi<BackendApiResponse>(`/api/markets/top?limit=${limit}&offset=${offset}`);
-    return response.data.map(market => this.convertBackendMarket(market));
+  async getTopMarkets(): Promise<ApiMarket[]> {
+    const response = await this.fetchApi('/markets/top');
+    if (response.success && response.data) {
+      return response.data.map((market: BackendMarket) => this.convertBackendMarket(market));
+    }
+    throw new Error(response.message || 'Failed to fetch top markets');
   }
 
   async searchMarkets(params: SearchParams): Promise<SearchResult> {
-    const formattedQuery = this.formatSearchQuery(params.q);
-    const searchParams = new URLSearchParams({
-      q: formattedQuery,
-      type: 'all', // Always include type=all
-    });
-
-    // Add category if provided
+    const queryParams: Record<string, string | number> = {};
+    
+    if (params.q) {
+      queryParams.q = params.q;
+    }
+    
+    if (params.type) {
+      queryParams.type = params.type;
+    }
+    
     if (params.category) {
-      searchParams.set('category', params.category);
+      queryParams.category = params.category;
+    }
+    
+    if (params.limit) {
+      queryParams.limit = params.limit;
+    }
+    
+    if (params.page && params.limit) {
+      queryParams.offset = (params.page - 1) * params.limit;
     }
 
-    // Add pagination parameters
-    const limit = params.limit || 100;
-    const page = params.page || 1;
+    const response = await this.fetchApi('/markets/search', queryParams);
+    
+    if (response.success && response.data) {
+      const markets = response.data.map((market: BackendMarket) => this.convertBackendMarket(market));
+      return {
+        markets,
+        pagination: response.pagination || {
+          limit: params.limit || 100,
+          offset: params.page ? (params.page - 1) * (params.limit || 100) : 0,
+          hasMore: false
+        }
+      };
+    }
+    
+    throw new Error(response.message || 'Failed to search markets');
+  }
+
+  async getMarketById(id: string): Promise<ApiMarket> {
+    const response = await this.fetchApi(`/markets/${id}`);
+    if (response.success && response.data) {
+      return this.convertBackendMarket(response.data);
+    }
+    throw new Error(response.message || 'Failed to fetch market');
+  }
+
+  async getMarketsByCategory(category: string, page: number = 1, limit: number = 100): Promise<SearchResult> {
     const offset = (page - 1) * limit;
-    searchParams.set('limit', limit.toString());
-    searchParams.set('offset', offset.toString());
-
-    const response = await this.fetchApi<BackendApiResponse>(`/api/markets/search?${searchParams.toString()}`);
-    return {
-      markets: response.data.map(market => this.convertBackendMarket(market)),
-      pagination: response.pagination || { limit: 0, offset: 0, hasMore: false },
-    };
-  }
-
-  async getMarketsByCategory(category: string, limit: number = 100): Promise<ApiMarket[]> {
-    const response = await this.fetchApi<BackendApiResponse>(`/api/markets/category/${encodeURIComponent(category)}?limit=${limit}`);
-    return response.data.map(market => this.convertBackendMarket(market));
-  }
-
-  async getMarketById(marketId: string): Promise<ApiMarket | null> {
-    try {
-      const response = await this.fetchApi<{ success: boolean; data: BackendMarket }>(`/api/markets/${marketId}`);
-      return response.data ? this.convertBackendMarket(response.data) : null;
-    } catch (error) {
-      console.error('Failed to fetch market by ID:', error);
-      return null;
+    const response = await this.fetchApi(`/markets/category/${category}`, { limit, offset });
+    
+    if (response.success && response.data) {
+      const markets = response.data.map((market: BackendMarket) => this.convertBackendMarket(market));
+      return {
+        markets,
+        pagination: response.pagination || {
+          limit,
+          offset,
+          hasMore: false
+        }
+      };
     }
+    
+    throw new Error(response.message || 'Failed to fetch markets by category');
   }
 }
 

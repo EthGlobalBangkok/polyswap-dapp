@@ -32,33 +32,37 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
     return {
       id: apiMarket.id,
       title: apiMarket.title,
-      description: apiMarket.description,
+      description: apiMarket.description || '',
       volume: apiMarket.volume,
       endDate: apiMarket.endDate,
       category: apiMarket.category,
-      isActive: apiMarket.isActive,
+      isActive: true, // All markets from API are active
       type: apiMarket.type,
       yesOdds: apiMarket.yesOdds,
       noOdds: apiMarket.noOdds,
-      options: apiMarket.options,
+      options: apiMarket.options?.map(option => ({
+        id: option.text.toLowerCase().replace(/\s+/g, '-'),
+        label: option.text,
+        odds: option.odds
+      })),
     };
   }, []);
 
   // Load top markets on component mount
-  const loadTopMarkets = useCallback(async (page: number = 1) => {
+  const loadTopMarkets = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       setSearchActive(false);
-      setCurrentPage(page);
+      setCurrentPage(1);
       setCurrentQuery('');
       setCurrentCategory(undefined);
       
-      const apiMarkets = await apiService.getTopMarkets(page, 100);
+      const apiMarkets = await apiService.getTopMarkets();
       const convertedMarkets = apiMarkets.map(convertApiMarket);
       setMarkets(convertedMarkets);
       setTotalResults(convertedMarkets.length);
-      setHasMore(convertedMarkets.length >= 100); // Assuming 100 is the page size
+      setHasMore(false); // Top markets don't have pagination
     } catch (err) {
       console.error('Failed to load top markets:', err);
       setError('Failed to load markets. Please check your connection and try again.');
@@ -77,7 +81,7 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
   // Handle search (only on Enter)
   const handleSearch = useCallback(async (query: string, category?: string, page: number = 1) => {
     if (!query.trim() && !category) {
-      loadTopMarkets(page);
+      loadTopMarkets();
       return;
     }
     try {
@@ -121,22 +125,20 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
       const nextPage = currentPage + 1;
       if (searchActive) {
         handleSearch(currentQuery, currentCategory, nextPage);
-      } else {
-        loadTopMarkets(nextPage);
       }
+      // Top markets don't have pagination, so no need to handle loadTopMarkets
     }
-  }, [hasMore, currentPage, searchActive, currentQuery, currentCategory, handleSearch, loadTopMarkets]);
+  }, [hasMore, currentPage, searchActive, currentQuery, currentCategory, handleSearch]);
 
   const handlePrevPage = useCallback(() => {
     if (currentPage > 1) {
       const prevPage = currentPage - 1;
       if (searchActive) {
         handleSearch(currentQuery, currentCategory, prevPage);
-      } else {
-        loadTopMarkets(prevPage);
       }
+      // Top markets don't have pagination, so no need to handle loadTopMarkets
     }
-  }, [currentPage, searchActive, currentQuery, currentCategory, handleSearch, loadTopMarkets]);
+  }, [currentPage, searchActive, currentQuery, currentCategory, handleSearch]);
 
   const handleMarketClick = useCallback((market: Market) => {
     console.log('Market clicked:', market.title);

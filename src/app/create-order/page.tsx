@@ -9,7 +9,7 @@ import styles from './page.module.css';
 
 export default function CreateOrderPage() {
   const searchParams = useSearchParams();
-  const marketId = searchParams.get('marketId');
+  const marketId = searchParams?.get('marketId');
   const [market, setMarket] = useState<ApiMarket | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -9,6 +9,8 @@ export async function GET(
 ) {
   try {
     const { identifier } = await params;
+    const UPDATE_INTERVAL = (process.env.MARKET_UPDATE_INTERVAL_MINUTES ?
+      parseInt(process.env.MARKET_UPDATE_INTERVAL_MINUTES) : 5) * 60 * 1000;
     
     if (!identifier) {
       return NextResponse.json({
@@ -25,8 +27,8 @@ export async function GET(
       // First try to get from database
       market = await DatabaseService.getMarketByConditionId(identifier);
       
-      // If not found in database, fetch from Polymarket API
-      if (!market) {
+      // If not found in database or is older than update interval time, fetch from Polymarket API
+      if (!market || !market.updated_at || market.updated_at?.getTime() < Date.now() - UPDATE_INTERVAL) {
         const polymarketMarket = await PolymarketAPIService.getMarketByConditionId(identifier);
         if (polymarketMarket) {
           // Save to database
@@ -40,7 +42,7 @@ export async function GET(
       market = await DatabaseService.getMarketById(identifier);
       
       // If not found in database, fetch from Polymarket API
-      if (!market) {
+      if (!market || !market.updated_at || market.updated_at?.getTime() < Date.now() - UPDATE_INTERVAL) {
         const polymarketMarket = await PolymarketAPIService.getMarketById(identifier);
         if (polymarketMarket) {
           // Save to database

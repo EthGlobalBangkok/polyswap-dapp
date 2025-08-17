@@ -67,7 +67,7 @@ export class PolymarketAPIService {
         }
         
         // Add a small delay to be respectful to the API
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 50));
         
       } while (true);
 

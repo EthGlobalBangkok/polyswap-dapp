@@ -292,6 +292,24 @@ export class DatabaseService {
   }
 
   /**
+   * Remove all markets that have ended (past their end_date)
+   */
+  static async removeClosedMarkets(): Promise<number> {
+    const sql = 'DELETE FROM markets WHERE end_date < CURRENT_TIMESTAMP';
+    const result = await query(sql);
+    return result.rowCount || 0;
+  }
+
+  /**
+   * Remove markets that ended before a specific date
+   */
+  static async removeMarketsEndedBefore(beforeDate: Date): Promise<number> {
+    const sql = 'DELETE FROM markets WHERE end_date < $1';
+    const result = await query(sql, [beforeDate]);
+    return result.rowCount || 0;
+  }
+
+  /**
    * Insert multiple markets at once
    */
   static async insertMarkets(markets: Market[]): Promise<void> {

@@ -73,7 +73,7 @@ export class MarketUpdateService {
       }
 
       // Process markets in batches for better performance
-      const batchSize = 50;
+      const batchSize = 100;
       let successCount = 0;
       let errorCount = 0;
 
@@ -98,6 +98,20 @@ export class MarketUpdateService {
         if (i + batchSize < markets.length) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
+      }
+
+      // Clean up closed/ended markets after updating (if enabled)
+      const shouldRemoveClosed = process.env.AUTO_REMOVE_CLOSED_MARKETS?.toLowerCase() === 'true';
+      if (shouldRemoveClosed) {
+        console.log('🧹 Cleaning up closed/ended markets...');
+        const removedCount = await DatabaseService.removeClosedMarkets();
+        if (removedCount > 0) {
+          console.log(`🗑️ Removed ${removedCount} closed/ended markets from database`);
+        } else {
+          console.log('✅ No closed markets to remove');
+        }
+      } else {
+        console.log('ℹ️ Auto-removal of closed markets is disabled');
       }
 
       // Get updated database stats

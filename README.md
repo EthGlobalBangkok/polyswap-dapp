@@ -94,8 +94,17 @@ npm run lint         # Run ESLint
 
 ### Backend Services
 ```bash
-npm run start:api      # Start API server
-npm run start:listener # Start blockchain listener
+npm run start:api                    # Start API server
+npm run start:listener               # Start blockchain listener + market updater
+npm run start:listener-only          # Start only blockchain listener
+npm run start:market-updater         # Start only market updater (via listener)
+npm run start:market-updater-standalone # Start standalone market updater
+```
+
+### Market Data Management
+```bash
+npm run saveMarkets   # Fetch markets from Polymarket API to data.json
+npm run db:import     # Import markets from data.json to database
 ```
 
 ### Database Management
@@ -110,6 +119,55 @@ npm run db:import     # Import market data
 ```bash
 npm run saveMarkets   # Fetch latest market data from Polymarket
 ```
+
+## 🔄 Automatic Market Updates
+
+PolySwap includes an automatic market update service that keeps your database synchronized with the latest Polymarket data.
+
+### Configuration
+
+Set the update interval in your `.env` file:
+```bash
+MARKET_UPDATE_INTERVAL_MINUTES=60  # Update every 60 minutes (default)
+```
+
+### Running Options
+
+1. **Full Service** (Recommended for production):
+   ```bash
+   npm run start:listener  # Runs both blockchain listener and market updater
+   ```
+
+2. **Market Updater Only**:
+   ```bash
+   npm run start:market-updater  # Market updates via listener with --market-update-only flag
+   # OR
+   npm run start:market-updater-standalone  # Standalone market updater script
+   ```
+
+3. **Blockchain Listener Only**:
+   ```bash
+   npm run start:listener-only  # Only listens for on-chain events
+   ```
+
+### Manual Updates
+
+You can also trigger manual updates via the API:
+```bash
+# Check update service status
+curl http://localhost:3000/api/markets/update
+
+# Trigger manual update
+curl -X POST http://localhost:3000/api/markets/update
+```
+
+### How It Works
+
+- Fetches active markets from Polymarket API every X minutes
+- Updates existing markets and adds new ones to the database
+- Uses optimized batching to avoid overwhelming the API/database
+- Automatically handles errors and retries
+- Provides detailed logging for monitoring
 
 ## 🧑‍💻 Authors
 

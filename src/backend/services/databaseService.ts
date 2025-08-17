@@ -34,6 +34,51 @@ export class DatabaseService {
    * Insert a new market into the database with only essential fields
    */
   static async insertMarket(market: Market): Promise<void> {
+    // Validate required fields first - skip market if any required field is null/invalid
+    if (!market.id || !market.question || !market.conditionId || !market.startDate || !market.endDate) {
+      console.warn(`Skipping market ${market.id || 'unknown'}: Missing required basic fields`);
+      return;
+    }
+
+    // Validate outcomes and outcomePrices are not null and are valid
+    if (!market.outcomes || !market.outcomePrices) {
+      console.warn(`Skipping market ${market.id}: Missing required outcomes or outcomePrices (outcomes: ${!!market.outcomes}, outcomePrices: ${!!market.outcomePrices})`);
+      return;
+    }
+
+    let outcomesData;
+    let pricesData;
+    
+    try {
+      // Parse outcomes data
+      outcomesData = typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes;
+      
+      // Parse outcome prices data
+      pricesData = typeof market.outcomePrices === 'string' ? JSON.parse(market.outcomePrices) : market.outcomePrices;
+
+      // Validate parsed data
+      if (!Array.isArray(outcomesData) || outcomesData.length === 0) {
+        console.warn(`Skipping market ${market.id}: Invalid outcomes data - not a valid array`);
+        return;
+      }
+      
+      if (!Array.isArray(pricesData) || pricesData.length === 0) {
+        console.warn(`Skipping market ${market.id}: Invalid outcomePrices data - not a valid array`);
+        return;
+      }
+
+      // Ensure prices array matches outcomes array length
+      if (pricesData.length !== outcomesData.length) {
+        console.warn(`Skipping market ${market.id}: Mismatched outcomes/prices lengths (outcomes: ${outcomesData.length}, prices: ${pricesData.length})`);
+        return;
+      }
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.warn(`Skipping market ${market.id}: Error parsing outcomes or prices data - ${errorMessage}`);
+      return;
+    }
+
     const sql = `
       INSERT INTO markets (
         id, question, condition_id, category, start_date, end_date, volume, outcomes, outcome_prices
@@ -50,10 +95,6 @@ export class DatabaseService {
         outcome_prices = EXCLUDED.outcome_prices,
         updated_at = CURRENT_TIMESTAMP
     `;
-
-    // Parse and prepare JSON data
-    const outcomesData = typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes;
-    const pricesData = typeof market.outcomePrices === 'string' ? JSON.parse(market.outcomePrices) : market.outcomePrices;
     
     const values = [
       market.id,
@@ -63,11 +104,16 @@ export class DatabaseService {
       new Date(market.startDate),
       new Date(market.endDate),
       parseFloat(market.volume) || 0,
-      JSON.stringify(outcomesData), // Convert back to string for PostgreSQL
-      JSON.stringify(pricesData)    // Convert back to string for PostgreSQL
+      JSON.stringify(outcomesData),
+      JSON.stringify(pricesData)
     ];
 
-    await query(sql, values);
+    try {
+      await query(sql, values);
+    } catch (error) {
+      console.error(`Failed to insert market ${market.id}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -251,40 +297,14 @@ export class DatabaseService {
   static async insertMarkets(markets: Market[]): Promise<void> {
     if (markets.length === 0) return;
 
-    const sql = `
-      INSERT INTO markets (
-        id, question, condition_id, category, start_date, end_date, volume, outcomes, outcome_prices
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9
-      )
-      ON CONFLICT (condition_id) DO UPDATE SET
-        question = EXCLUDED.question,
-        category = EXCLUDED.category,
-        start_date = EXCLUDED.start_date,
-        end_date = EXCLUDED.end_date,
-        volume = EXCLUDED.volume,
-        outcomes = EXCLUDED.outcomes,
-        outcome_prices = EXCLUDED.outcome_prices,
-        updated_at = CURRENT_TIMESTAMP
-    `;
-
     for (const market of markets) {
-      const outcomesData = typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes;
-      const pricesData = typeof market.outcomePrices === 'string' ? JSON.parse(market.outcomePrices) : market.outcomePrices;
-      
-      const values = [
-        market.id,
-        market.question,
-        market.conditionId,
-        this.extractCategory(market.question),
-        new Date(market.startDate),
-        new Date(market.endDate),
-        parseFloat(market.volume) || 0,
-        JSON.stringify(outcomesData),
-        JSON.stringify(pricesData)
-      ];
-
-      await query(sql, values);
+      try {
+        // Use the same validation logic as insertMarket - skip if invalid
+        await this.insertMarket(market);
+      } catch (error) {
+        console.error(`Error inserting market ${market.id}:`, error);
+        // Continue with other markets even if one fails
+      }
     }
   }
 

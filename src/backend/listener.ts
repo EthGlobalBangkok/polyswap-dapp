@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import dotenv from 'dotenv';
 import { DatabaseService } from './services/databaseService';
+import { MarketUpdateService } from './services/marketUpdateService';
 import { 
   ConditionalOrderCreatedEvent, 
   ConditionalOrderParams, 
@@ -16,6 +17,7 @@ const RPC_URL = process.env.RPC_URL!;
 const STARTING_BLOCK = parseInt(process.env.STARTING_BLOCK!);
 const COMPOSABLE_COW_ADDRESS = process.env.COMPOSABLE_COW!;
 const POLYSWAP_HANDLER_ADDRESS = process.env.POLYSWAP_HANDLER!;
+const MARKET_UPDATE_INTERVAL = parseInt(process.env.MARKET_UPDATE_INTERVAL_MINUTES!) || 60;
 
 // Event ABI for ConditionalOrderCreated
 const CONDITIONAL_ORDER_CREATED_ABI = {
@@ -468,8 +470,56 @@ class PolyswapBlockchainListener {
 
 // Main execution
 async function main() {
-  console.log('🎯 Starting Polyswap Blockchain Listener');
-  console.log('=====================================');
+  // Parse command line arguments
+  const args = process.argv.slice(2);
+  const runOnlyUpdater = args.includes('--market-update-only') || args.includes('-u');
+  const runOnlyListener = args.includes('--listener-only') || args.includes('-l');
+  
+  if (runOnlyUpdater && runOnlyListener) {
+    console.error('❌ Cannot use both --market-update-only and --listener-only flags');
+    process.exit(1);
+  }
+
+  if (runOnlyUpdater) {
+    console.log('🔄 Starting Market Update Service Only');
+    console.log('====================================');
+    console.log(`📅 Update interval: ${MARKET_UPDATE_INTERVAL} minutes`);
+    
+    // Test database connection first
+    console.log('🔍 Testing database connection...');
+    const isConnected = await DatabaseService.getMarketStats();
+    console.log('✅ Database connected successfully!');
+    
+    // Handle graceful shutdown
+    process.on('SIGINT', () => {
+      console.log('\n🛑 Received SIGINT, shutting down gracefully...');
+      MarketUpdateService.stopUpdateRoutine();
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', () => {
+      console.log('\n🛑 Received SIGTERM, shutting down gracefully...');
+      MarketUpdateService.stopUpdateRoutine();
+      process.exit(0);
+    });
+
+    // Start only the market update routine
+    MarketUpdateService.startUpdateRoutine(MARKET_UPDATE_INTERVAL);
+    console.log('✅ Market update service started successfully. Press Ctrl+C to stop.');
+    
+    // Keep the process alive
+    process.stdin.resume();
+    return;
+  }
+
+  // Default behavior: start both services or just listener
+  if (runOnlyListener) {
+    console.log('🎯 Starting Polyswap Blockchain Listener Only');
+    console.log('===========================================');
+  } else {
+    console.log('🎯 Starting Polyswap Blockchain Listener & Market Update Service');
+    console.log('================================================================');
+  }
 
   const listener = new PolyswapBlockchainListener();
 
@@ -477,20 +527,40 @@ async function main() {
   process.on('SIGINT', () => {
     console.log('\n🛑 Received SIGINT, shutting down gracefully...');
     listener.stop();
+    if (!runOnlyListener) {
+      MarketUpdateService.stopUpdateRoutine();
+    }
     process.exit(0);
   });
 
   process.on('SIGTERM', () => {
     console.log('\n🛑 Received SIGTERM, shutting down gracefully...');
     listener.stop();
+    if (!runOnlyListener) {
+      MarketUpdateService.stopUpdateRoutine();
+    }
     process.exit(0);
   });
 
   try {
+    // Start the blockchain listener
     await listener.start();
-    console.log('🎧 Listener is now running. Press Ctrl+C to stop.');
+    console.log('🎧 Blockchain listener is now running.');
+    
+    // Start the market update routine if not listener-only mode
+    if (!runOnlyListener) {
+      console.log(`🔄 Starting market update routine with ${MARKET_UPDATE_INTERVAL} minute interval...`);
+      MarketUpdateService.startUpdateRoutine(MARKET_UPDATE_INTERVAL);
+    }
+    
+    const servicesMsg = runOnlyListener ? 'Blockchain listener started' : 'All services started';
+    console.log(`✅ ${servicesMsg} successfully. Press Ctrl+C to stop.`);
+    console.log('\n💡 Available command line options:');
+    console.log('   --market-update-only (-u): Run only market update service');
+    console.log('   --listener-only (-l): Run only blockchain listener');
+    console.log('   (no flags): Run both services');
   } catch (error) {
-    console.error('❌ Failed to start listener:', error);
+    console.error('❌ Failed to start services:', error);
     process.exit(1);
   }
 }

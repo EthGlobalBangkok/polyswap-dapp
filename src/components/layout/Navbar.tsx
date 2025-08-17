@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import styles from './Navbar.module.css';
-import WalletButton from '../ui/WalletButton';
+import {ConnectWallet} from '../ui/Wallet';
 
 const Navbar = () => {
   const router = useRouter();
@@ -31,7 +31,7 @@ const Navbar = () => {
           <button className={styles.ordersButton} onClick={handleOrdersClick}>
             <span>My Orders</span>
           </button>
-          <WalletButton />
+          <ConnectWallet />
         </div>
       </div>
     </nav>

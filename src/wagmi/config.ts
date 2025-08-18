@@ -10,6 +10,7 @@ export const config = createConfig({
     [polygon.id]: http(),
     [polygonAmoy.id]: http(),
   },
+  ssr: true,
   connectors: [
     walletConnect({ projectId })
   ],

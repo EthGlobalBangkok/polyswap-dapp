@@ -42,6 +42,29 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
   // Token selector modals state
   const [showSellTokenSelector, setShowSellTokenSelector] = useState(false);
   const [showBuyTokenSelector, setShowBuyTokenSelector] = useState(false);
+
+  // Date utility functions
+  const formatDateTimeLocal = (date: Date) => {
+    // Format date for datetime-local input using local timezone
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
+  const getMinDateTime = () => {
+    const now = new Date();
+    // Subtract 1 minute to allow for current time selection
+    now.setMinutes(now.getMinutes() - 1);
+    return formatDateTimeLocal(now);
+  };
+
+  const getCurrentDateTime = () => {
+    return formatDateTimeLocal(new Date());
+  };
   
   // Form state
   const [formData, setFormData] = useState<OrderFormData>(() => {
@@ -49,9 +72,15 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
     const nextWeek = new Date();
     nextWeek.setDate(now.getDate() + 7);
     
-    // Format dates for datetime-local input
-    const formatDateTimeLocal = (date: Date) => {
-      return date.toISOString().slice(0, 16);
+    // Use the local formatDateTimeLocal function
+    const formatLocal = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
     };
 
     return {
@@ -59,8 +88,8 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
       buyToken: 'COW',
       sellAmount: '',
       minBuyAmount: '',
-      startDate: formatDateTimeLocal(now),
-      deadline: formatDateTimeLocal(nextWeek),
+      startDate: formatLocal(now), // Default to "now"
+      deadline: formatLocal(nextWeek),
       selectedOutcome: '',
       betPercentage: '50',
     };
@@ -129,6 +158,47 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  // Special handlers for date changes with validation
+  const handleStartDateChange = (value: string) => {
+    const newStartDate = new Date(value);
+    const currentDeadline = new Date(formData.deadline);
+    
+    // If new start date is after current deadline, adjust deadline
+    if (newStartDate >= currentDeadline) {
+      const newDeadline = new Date(newStartDate);
+      newDeadline.setHours(newDeadline.getHours() + 1); // Add 1 hour minimum
+      setFormData(prev => ({
+        ...prev,
+        startDate: value,
+        deadline: formatDateTimeLocal(newDeadline)
+      }));
+    } else {
+      setFormData(prev => ({ ...prev, startDate: value }));
+    }
+  };
+
+  const handleDeadlineChange = (value: string) => {
+    setFormData(prev => ({ ...prev, deadline: value }));
+  };
+
+  const setStartDateToNow = () => {
+    const now = new Date();
+    const currentDeadline = new Date(formData.deadline);
+    
+    // If current deadline is in the past or too close to now, adjust it
+    if (currentDeadline <= now) {
+      const newDeadline = new Date(now);
+      newDeadline.setHours(newDeadline.getHours() + 1);
+      setFormData(prev => ({
+        ...prev,
+        startDate: formatDateTimeLocal(now),
+        deadline: formatDateTimeLocal(newDeadline)
+      }));
+    } else {
+      setFormData(prev => ({ ...prev, startDate: formatDateTimeLocal(now) }));
+    }
+  };
+
   // Utility function to get token data by symbol
   const getTokenData = (symbol: string): Token | undefined => {
     return tokens.find(t => t.symbol === symbol);
@@ -151,6 +221,71 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
 
   const getSelectedBuyToken = (): Token | undefined => {
     return getTokenData(formData.buyToken);
+  };
+
+  // Form validation
+  const isFormValid = (): boolean => {
+    // Check if all required fields are filled
+    const hasValidTokens = formData.sellToken && formData.buyToken && formData.sellToken !== formData.buyToken;
+    const hasValidAmounts = formData.sellAmount && parseFloat(formData.sellAmount) > 0 && 
+                           formData.minBuyAmount && parseFloat(formData.minBuyAmount) > 0;
+    const hasValidOutcome = formData.selectedOutcome;
+    const hasValidPercentage = formData.betPercentage && 
+                              parseFloat(formData.betPercentage) > 0 && 
+                              parseFloat(formData.betPercentage) <= 100;
+    const hasValidDates = formData.startDate && formData.deadline && 
+                         new Date(formData.deadline) > new Date(formData.startDate) &&
+                         new Date(formData.startDate) >= new Date(Date.now() - 60000); // Allow 1 minute tolerance
+
+    return !!(hasValidTokens && hasValidAmounts && hasValidOutcome && hasValidPercentage && hasValidDates);
+  };
+
+  // Get validation errors for display
+  const getValidationErrors = (): string[] => {
+    const errors: string[] = [];
+    
+    if (!formData.sellToken || !formData.buyToken) {
+      errors.push('Please select both tokens');
+    } else if (formData.sellToken === formData.buyToken) {
+      errors.push('Sell and buy tokens must be different');
+    }
+    
+    if (!formData.sellAmount || parseFloat(formData.sellAmount) <= 0) {
+      errors.push('Please enter a valid sell amount');
+    }
+    
+    if (!formData.minBuyAmount || parseFloat(formData.minBuyAmount) <= 0) {
+      errors.push('Please enter a valid minimum buy amount');
+    }
+    
+    if (!formData.selectedOutcome) {
+      errors.push('Please select an outcome');
+    }
+    
+    if (!formData.betPercentage || parseFloat(formData.betPercentage) <= 0 || parseFloat(formData.betPercentage) > 100) {
+      errors.push('Please enter a valid percentage (1-100)');
+    }
+    
+    if (!formData.startDate || !formData.deadline) {
+      errors.push('Please set both start date and deadline');
+    } else {
+      const startDate = new Date(formData.startDate);
+      const deadline = new Date(formData.deadline);
+      const now = new Date();
+      
+      // Allow a tolerance of 1 minute for "now" selection
+      const nowMinusOneMinute = new Date(now.getTime() - 60000); // 1 minute ago
+      
+      if (startDate < nowMinusOneMinute) {
+        errors.push('Start date must be in the future');
+      }
+      
+      if (deadline <= startDate) {
+        errors.push('Deadline must be after start date');
+      }
+    }
+    
+    return errors;
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -514,12 +649,23 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
               <div className={styles.dateRow}>
                 <div className={styles.dateGroup}>
                   <label className={styles.label}>Start Date</label>
-                  <input
-                    type="datetime-local"
-                    value={formData.startDate}
-                    onChange={(e) => handleInputChange('startDate', e.target.value)}
-                    className={styles.dateInput}
-                  />
+                  <div className={styles.dateInputContainer}>
+                    <input
+                      type="datetime-local"
+                      value={formData.startDate}
+                      min={getMinDateTime()}
+                      onChange={(e) => handleStartDateChange(e.target.value)}
+                      className={styles.dateInput}
+                    />
+                    <button
+                      type="button"
+                      onClick={setStartDateToNow}
+                      className={styles.nowButton}
+                      title="Set to current time"
+                    >
+                      Now
+                    </button>
+                  </div>
                 </div>
                 
                 <div className={styles.dateGroup}>
@@ -527,7 +673,8 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
                   <input
                     type="datetime-local"
                     value={formData.deadline}
-                    onChange={(e) => handleInputChange('deadline', e.target.value)}
+                    min={formData.startDate || getMinDateTime()}
+                    onChange={(e) => handleDeadlineChange(e.target.value)}
                     className={styles.dateInput}
                   />
                 </div>
@@ -558,8 +705,25 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
               </div>
             </div>
 
+            {/* Validation Errors */}
+            {!isFormValid() && (
+              <div className={styles.validationErrors}>
+                <h4>Please complete the following:</h4>
+                <ul>
+                  {getValidationErrors().map((error, index) => (
+                    <li key={index}>{error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* Submit Button */}
-            <button type="submit" className={styles.submitButton}>
+            <button 
+              type="submit" 
+              className={`${styles.submitButton} ${!isFormValid() ? styles.submitButtonDisabled : ''}`}
+              disabled={!isFormValid()}
+              title={!isFormValid() ? 'Please complete all required fields' : 'Create your conditional swap order'}
+            >
               Create Order
             </button>
           </form>

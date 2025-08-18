@@ -425,7 +425,14 @@
   flex-direction: column;
 }
 
+.dateInputContainer {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: stretch;
+}
+
 .dateInput {
+  flex: 1;
   background-color: var(--background-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
@@ -437,6 +444,25 @@
 .dateInput:focus {
   outline: none;
   border-color: var(--accent-primary);
+}
+
+.nowButton {
+  background: var(--accent-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 0 var(--spacing-md);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  white-space: nowrap;
+  min-width: 50px;
+}
+
+.nowButton:hover {
+  background: var(--accent-primary-dark);
+  transform: translateY(-1px);
 }
 
 /* Order Summary */
@@ -498,6 +524,50 @@
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
+}
+
+.submitButtonDisabled {
+  background: #333 !important;
+  color: #666 !important;
+  cursor: not-allowed !important;
+  opacity: 0.5;
+}
+
+.submitButtonDisabled:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Validation Errors */
+.validationErrors {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--border-radius-medium);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.validationErrors h4 {
+  margin: 0 0 var(--spacing-sm) 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ef4444;
+}
+
+.validationErrors ul {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+  list-style-type: disc;
+}
+
+.validationErrors li {
+  font-size: 13px;
+  color: #fca5a5;
+  margin-bottom: var(--spacing-xs);
+}
+
+.validationErrors li:last-child {
+  margin-bottom: 0;
 }
 
 /* Loading State */

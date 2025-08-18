@@ -9,9 +9,30 @@ const truncateAddress = (address: string) => {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 };
 
+// Hook to check if component is mounted (prevents hydration issues)
+function useMounted() {
+  const [mounted, setMounted] = React.useState(false);
+  
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+  
+  return mounted;
+}
+
 // Wallet options list component
 export function WalletOptions() {
+  const mounted = useMounted();
   const { connectors, connect, isPending } = useConnect();
+
+  // Don't render until mounted to prevent hydration mismatch
+  if (!mounted) {
+    return (
+      <button className={styles.connectButton} disabled>
+        <span>Connect Wallet</span>
+      </button>
+    );
+  }
 
   // Use the first available connector (WalletConnect)
   const primaryConnector = connectors[0];
@@ -47,12 +68,14 @@ export function WalletOptions() {
 
 // Account display component
 export function Account() {
+  const mounted = useMounted();
   const { address } = useAccount();
   const { disconnect } = useDisconnect();
   const { data: ensName } = useEnsName({ address });
   const { data: ensAvatar } = useEnsAvatar({ name: ensName! });
 
-  if (!address) return null;
+  // Don't render until mounted to prevent hydration mismatch
+  if (!mounted || !address) return null;
 
   return (
     <div className={styles.accountContainer}>

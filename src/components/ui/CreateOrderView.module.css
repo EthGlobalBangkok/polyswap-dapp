@@ -1,0 +1,632 @@
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: var(--spacing-2xl);
+}
+
+.backButton {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  margin-bottom: var(--spacing-lg);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.backButton:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-md);
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.marketInfo {
+  background-color: var(--background-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-2xl);
+}
+
+.marketHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
+.category {
+  background-color: var(--background-tertiary);
+  color: var(--accent-primary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.volume {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.marketTitle {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-sm);
+  line-height: 1.4;
+}
+
+.marketDescription {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: var(--spacing-md);
+}
+
+.marketDetails {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.endDate {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.type {
+  background-color: var(--background-tertiary);
+  color: var(--text-secondary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Order Form Styles */
+.orderForm {
+  background-color: var(--background-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-2xl);
+  margin-bottom: var(--spacing-xl);
+}
+
+.formHeader {
+  margin-bottom: var(--spacing-2xl);
+  text-align: center;
+}
+
+.formHeader h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.formHeader p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+/* Section Styles */
+.sectionTitle {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.swapSection,
+.conditionSection,
+.timingSection {
+  margin-bottom: var(--spacing-2xl);
+  padding: var(--spacing-lg);
+  background-color: var(--background-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+/* Token Input Styles */
+.tokenRow {
+  margin-bottom: var(--spacing-lg);
+}
+
+.tokenGroup {
+  width: 100%;
+}
+
+.label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.tokenInputContainer {
+  display: flex;
+  background-color: var(--background-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color var(--transition-normal);
+}
+
+.tokenInputContainer:focus-within {
+  border-color: var(--accent-primary);
+}
+
+.amountInput {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: var(--spacing-md);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.amountInput::placeholder {
+  color: var(--text-muted);
+}
+
+.tokenSelect {
+  background-color: var(--background-tertiary);
+  border: none;
+  border-left: 1px solid var(--border-color);
+  padding: var(--spacing-md);
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 120px;
+}
+
+.tokenButton {
+  background-color: var(--background-tertiary);
+  border: none;
+  border-left: 1px solid var(--border-color);
+  padding: var(--spacing-md);
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  transition: all var(--transition-normal);
+}
+
+.tokenButton:hover {
+  background-color: var(--background-secondary);
+}
+
+.tokenButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.tokenButtonContent {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.tokenButtonSymbol {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tokenButtonArrow {
+  font-size: 12px;
+  color: var(--text-muted);
+  transition: transform var(--transition-normal);
+}
+
+.tokenButton:hover .tokenButtonArrow {
+  transform: translateY(2px);
+}
+
+.tokenValue {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: var(--spacing-xs);
+  margin-left: var(--spacing-md);
+}
+
+/* Swap Arrow */
+.swapArrow {
+  display: flex;
+  justify-content: center;
+  margin: var(--spacing-md) 0;
+}
+
+.arrowIcon {
+  width: 40px;
+  height: 40px;
+  background-color: var(--background-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  color: var(--text-secondary);
+  transition: all var(--transition-normal);
+}
+
+.arrowIcon:hover {
+  background-color: var(--background-card);
+}
+
+/* Outcome Selection */
+.outcomeSelection {
+  margin-bottom: var(--spacing-lg);
+}
+
+.binaryOptions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+}
+
+.outcomeButton {
+  background-color: var(--background-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.outcomeButton:hover {
+  border-color: var(--accent-primary);
+  background-color: var(--background-tertiary);
+}
+
+.outcomeButton.selected {
+  border-color: var(--accent-primary);
+  background-color: var(--accent-primary-alpha);
+}
+
+.outcomeLabel {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.outcomeOdds {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.outcomeSelect {
+  width: 100%;
+  background-color: var(--background-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+/* Percentage Section */
+.percentageSection {
+  margin-top: var(--spacing-lg);
+}
+
+.activationLabel {
+  display: block;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--accent-primary-alpha);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--accent-primary);
+  text-align: center;
+}
+
+.percentageContainer {
+  margin: var(--spacing-md) 0;
+}
+
+.percentageSlider {
+  width: 100%;
+  height: 6px;
+  background: var(--background-tertiary);
+  border-radius: var(--radius-sm);
+  outline: none;
+  appearance: none;
+  margin-bottom: var(--spacing-sm);
+}
+
+.percentageSlider::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  cursor: pointer;
+  box-shadow: var(--shadow-light);
+}
+
+.percentageSlider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  cursor: pointer;
+  border: none;
+  box-shadow: var(--shadow-light);
+}
+
+.percentageLabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-sm);
+}
+
+.marketPrice {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+/* Date Inputs */
+.dateRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-lg);
+}
+
+.dateGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.dateInput {
+  background-color: var(--background-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.dateInput:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+/* Order Summary */
+.orderSummary {
+  background-color: var(--background-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm) 0;
+  font-size: 0.9rem;
+}
+
+.summaryRow:not(:last-child) {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.summaryRow span:first-child {
+  color: var(--text-secondary);
+}
+
+.summaryRow span:last-child {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.freeText {
+  color: var(--accent-success) !important;
+  font-weight: 600 !important;
+}
+
+/* Submit Button */
+.submitButton {
+  width: 100%;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  color: white;
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  box-shadow: var(--shadow-light);
+}
+
+.submitButton:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-medium);
+}
+
+.submitButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Loading State */
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-2xl) 0;
+  gap: var(--spacing-lg);
+}
+
+.loading .spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border-color);
+  border-top: 3px solid var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading p {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+/* Error State */
+.error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-2xl) 0;
+  gap: var(--spacing-lg);
+  text-align: center;
+}
+
+.error p {
+  color: var(--accent-danger);
+  font-size: 1.1rem;
+  margin: 0;
+  max-width: 400px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .title {
+    font-size: 2rem;
+  }
+  
+  .subtitle {
+    font-size: 1rem;
+  }
+  
+  .marketInfo {
+    padding: var(--spacing-md);
+  }
+  
+  .marketHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+  }
+  
+  .marketDetails {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-xs);
+  }
+  
+  .orderForm {
+    padding: var(--spacing-lg);
+  }
+  
+  .swapSection,
+  .conditionSection,
+  .timingSection {
+    padding: var(--spacing-md);
+  }
+  
+  .binaryOptions {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-sm);
+  }
+  
+  .dateRow {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-md);
+  }
+  
+  .tokenInputContainer {
+    flex-direction: column;
+  }
+  
+  .tokenSelect {
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+    min-width: unset;
+  }
+  
+  .amountInput {
+    padding: var(--spacing-md);
+    font-size: 1.1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .orderForm {
+    padding: var(--spacing-md);
+  }
+  
+  .swapSection,
+  .conditionSection,
+  .timingSection {
+    padding: var(--spacing-sm);
+  }
+  
+  .submitButton {
+    padding: var(--spacing-md);
+    font-size: 1rem;
+  }
+  
+  .amountInput {
+    font-size: 1rem;
+  }
+}

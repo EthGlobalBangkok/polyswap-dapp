@@ -10,6 +10,7 @@
   --text-muted: #666666;
   
   --accent-primary: #3b82f6;
+  --accent-primary-alpha: rgba(59, 130, 246, 0.1);
   --accent-secondary: #1d4ed8;
   --accent-success: #10b981;
   --accent-danger: #ef4444;

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
 import { Market } from '../../types/market';
 import { ApiMarket, apiService, SearchResult } from '../../services/api';
 import MarketCard from './MarketCard';
@@ -13,7 +12,6 @@ interface MarketGridProps {
 }
 
 const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
-  const router = useRouter();
   const [markets, setMarkets] = useState<Market[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
@@ -143,13 +141,10 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
   const handleMarketClick = useCallback((market: Market) => {
     console.log('Market clicked:', market.title);
     
-    // Navigate to create order page with only market ID
-    router.push(`/create-order?marketId=${market.id}`);
-    
     if (onMarketClick) {
       onMarketClick(market);
     }
-  }, [router, onMarketClick]);
+  }, [onMarketClick]);
 
   // Memoize the SearchBar to prevent unnecessary re-renders
   const searchBar = useMemo(() => (

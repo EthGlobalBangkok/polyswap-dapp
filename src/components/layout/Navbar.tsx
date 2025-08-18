@@ -1,18 +1,24 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import styles from './Navbar.module.css';
 import {ConnectWallet} from '../ui/Wallet';
 
-const Navbar = () => {
-  const router = useRouter();
+interface NavbarProps {
+  onOrdersClick?: () => void;
+  onLogoClick?: () => void;
+}
 
+const Navbar = ({ onOrdersClick, onLogoClick }: NavbarProps) => {
   const handleOrdersClick = () => {
-    router.push('/orders');
+    if (onOrdersClick) {
+      onOrdersClick();
+    }
   };
 
   const handleLogoClick = () => {
-    router.push('/');
+    if (onLogoClick) {
+      onLogoClick();
+    }
   };
 
   return (

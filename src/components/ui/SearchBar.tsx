@@ -4,7 +4,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import styles from './SearchBar.module.css';
 
 interface SearchBarProps {
-  onSearch: (query: string, category?: string) => void;
+  onSearch: (query: string, category?: string, isSlug?: boolean) => void;
   onClear: () => void;
   placeholder?: string;
   isLoading?: boolean;
@@ -26,12 +26,23 @@ const SearchBar = ({ onSearch, onClear, placeholder = "Search markets...", isLoa
   const [query, setQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [isSlug, setIsSlug] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setQuery(e.target.value);
+  // Function to detect if input is a slug
+  const detectSlug = useCallback((input: string): boolean => {
+    const trimmed = input.trim();
+    // Slug pattern: lowercase, hyphens, no spaces, no special chars except hyphens
+    const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+    return slugPattern.test(trimmed) && trimmed.length > 0;
   }, []);
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setQuery(value);
+    setIsSlug(detectSlug(value));
+  }, [detectSlug]);
 
   const handleCategoryChange = useCallback((category: string) => {
     setSelectedCategory(category);
@@ -40,9 +51,9 @@ const SearchBar = ({ onSearch, onClear, placeholder = "Search markets...", isLoa
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      onSearch(query.trim(), selectedCategory || undefined);
+      onSearch(query.trim(), selectedCategory || undefined, isSlug);
     }
-  }, [onSearch, query, selectedCategory]);
+  }, [onSearch, query, selectedCategory, isSlug]);
 
   const handleClear = useCallback(() => {
     setQuery('');
@@ -54,8 +65,8 @@ const SearchBar = ({ onSearch, onClear, placeholder = "Search markets...", isLoa
   }, [onClear]);
 
   const handleSearch = useCallback(() => {
-    onSearch(query.trim(), selectedCategory || undefined);
-  }, [onSearch, query, selectedCategory]);
+    onSearch(query.trim(), selectedCategory || undefined, isSlug);
+  }, [onSearch, query, selectedCategory, isSlug]);
 
   // Close dropdown when clicking outside
   const handleClickOutside = useCallback((e: MouseEvent) => {
@@ -90,6 +101,8 @@ const SearchBar = ({ onSearch, onClear, placeholder = "Search markets...", isLoa
           className={styles.searchInput}
           disabled={isLoading}
         />
+        
+
         
         {/* Category Filter Button */}
         <button

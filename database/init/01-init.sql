@@ -4,12 +4,14 @@ CREATE TABLE IF NOT EXISTS markets (
     id VARCHAR(20) PRIMARY KEY,
     question TEXT NOT NULL,
     condition_id VARCHAR(66) NOT NULL UNIQUE, -- Ethereum addresses are 66 chars with 0x prefix
+    slug VARCHAR(255), -- Market slug for URL-friendly identifiers
     category VARCHAR(50) NOT NULL DEFAULT 'Other', -- Market category (Politics, Crypto, Sports, etc.)
     start_date TIMESTAMP WITH TIME ZONE NOT NULL,
     end_date TIMESTAMP WITH TIME ZONE NOT NULL,
     volume DECIMAL(20, 6) NOT NULL DEFAULT 0,
     outcomes JSONB NOT NULL, -- Store as JSON array
     outcome_prices JSONB NOT NULL, -- Store as JSON array
+    clob_token_ids JSONB, -- Store as JSON array of CLOB token IDs
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
@@ -20,6 +22,7 @@ CREATE TABLE IF NOT EXISTS markets (
 
 -- Create indexes for frequently queried columns
 CREATE INDEX IF NOT EXISTS idx_markets_condition_id ON markets(condition_id);
+CREATE INDEX IF NOT EXISTS idx_markets_slug ON markets(slug);
 CREATE INDEX IF NOT EXISTS idx_markets_category ON markets(category);
 CREATE INDEX IF NOT EXISTS idx_markets_end_date ON markets(end_date);
 CREATE INDEX IF NOT EXISTS idx_markets_start_date ON markets(start_date);

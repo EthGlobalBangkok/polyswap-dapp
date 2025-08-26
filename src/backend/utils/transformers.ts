@@ -13,6 +13,10 @@ export function transformDatabaseMarket(dbMarket: DatabaseMarket) {
       : JSON.parse(dbMarket.outcome_prices as string).map((price: string) => parseFloat(price)),
     category: dbMarket.category,
     condition_id: dbMarket.condition_id,
+    slug: dbMarket.slug,
+    clob_token_ids: Array.isArray(dbMarket.clob_token_ids) 
+      ? dbMarket.clob_token_ids 
+      : (dbMarket.clob_token_ids ? JSON.parse(dbMarket.clob_token_ids as string) : []),
     description: '' // Database doesn't store description, could be added later
   };
 }

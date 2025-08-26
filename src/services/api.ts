@@ -8,6 +8,8 @@ export interface BackendMarket {
   outcome_prices: number[];
   category: string;
   condition_id?: string;
+  slug: string;
+  clob_token_ids: string[];
   description?: string;
 }
 
@@ -51,6 +53,8 @@ export interface ApiMarket {
   noOdds?: number;
   options?: MarketOption[];
   conditionId?: string;
+  slug: string;
+  clobTokenIds: string[];
   description?: string;
 }
 
@@ -91,6 +95,16 @@ class ApiService {
 
   // Convert backend market format to frontend format
   private convertBackendMarket(backendMarket: BackendMarket): ApiMarket {
+    // Validate that backendMarket has the required properties
+    if (!backendMarket || !backendMarket.outcomes || !backendMarket.outcome_prices) {
+      throw new Error('Invalid market data structure');
+    }
+    
+    // Ensure outcomes and outcome_prices are arrays
+    if (!Array.isArray(backendMarket.outcomes) || !Array.isArray(backendMarket.outcome_prices)) {
+      throw new Error('Invalid outcomes or outcome_prices format');
+    }
+    
     const isBinary = backendMarket.outcomes.length === 2 && 
                      backendMarket.outcomes.includes('Yes') && 
                      backendMarket.outcomes.includes('No');
@@ -110,6 +124,12 @@ class ApiService {
         yesOdds: Number(((backendMarket.outcome_prices[yesIndex] || 0) * 100).toFixed(2)),
         noOdds: Number(((backendMarket.outcome_prices[noIndex] || 0) * 100).toFixed(2)),
         conditionId: backendMarket.condition_id,
+        slug: backendMarket.slug,
+        clobTokenIds: Array.isArray(backendMarket.clob_token_ids) 
+          ? backendMarket.clob_token_ids 
+          : typeof backendMarket.clob_token_ids === 'string' 
+            ? JSON.parse(backendMarket.clob_token_ids) 
+            : [],
         description: backendMarket.description
       };
         } else {
@@ -129,6 +149,12 @@ class ApiService {
         type: 'multi-choice',
         options,
         conditionId: backendMarket.condition_id,
+        slug: backendMarket.slug,
+        clobTokenIds: Array.isArray(backendMarket.clob_token_ids) 
+          ? backendMarket.clob_token_ids 
+          : typeof backendMarket.clob_token_ids === 'string' 
+            ? JSON.parse(backendMarket.clob_token_ids) 
+            : [],
         description: backendMarket.description
       };
     }
@@ -207,6 +233,17 @@ class ApiService {
     }
     
     throw new Error(response.message || 'Failed to fetch markets by category');
+  }
+
+  async getMarketBySlug(slug: string): Promise<ApiMarket> {
+    const response = await this.fetchApi(`/markets/search?q=${slug}&type=slug`);
+    
+    if (response.success && response.data && Array.isArray(response.data) && response.data.length > 0) {
+      const marketData = response.data[0];
+      return this.convertBackendMarket(marketData);
+    }
+    
+    throw new Error(response.message || 'No market found with slug: ' + slug);
   }
 }
 

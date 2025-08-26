@@ -21,6 +21,11 @@ export interface Market {
   
   // For multi-choice markets (elections, etc.)
   options?: MarketOption[];
+  
+  // Additional fields for Polymarket integration
+  slug: string;
+  clobTokenIds: string[];
+  conditionId?: string;
 }
 
 export interface MarketCardProps {

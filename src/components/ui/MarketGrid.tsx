@@ -43,6 +43,9 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
         label: option.text,
         odds: option.odds
       })),
+      slug: apiMarket.slug,
+      clobTokenIds: apiMarket.clobTokenIds,
+      conditionId: apiMarket.conditionId,
     };
   }, []);
 
@@ -77,7 +80,7 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
   }, [loadTopMarkets]);
 
   // Handle search (only on Enter)
-  const handleSearch = useCallback(async (query: string, category?: string, page: number = 1) => {
+  const handleSearch = useCallback(async (query: string, category?: string, isSlug?: boolean, page: number = 1) => {
     if (!query.trim() && !category) {
       loadTopMarkets();
       return;
@@ -90,7 +93,25 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
       setCurrentQuery(query);
       setCurrentCategory(category);
       
-      const searchResult: SearchResult = await apiService.searchMarkets({ 
+      let searchResult: SearchResult;
+      
+      if (isSlug) {
+        // For slug searches, try to get the market directly by slug
+        try {
+          const market = await apiService.getMarketBySlug(query);
+          const convertedMarket = convertApiMarket(market);
+          setMarkets([convertedMarket]);
+          setTotalResults(1);
+          setHasMore(false);
+          setIsSearching(false);
+          return;
+        } catch (slugError) {
+          console.error('Slug search failed:', slugError);
+        }
+      }
+      
+      // Regular search (keywords, category, etc.)
+      searchResult = await apiService.searchMarkets({ 
         q: query, 
         category: category,
         page: page,
@@ -122,7 +143,7 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
     if (hasMore) {
       const nextPage = currentPage + 1;
       if (searchActive) {
-        handleSearch(currentQuery, currentCategory, nextPage);
+        handleSearch(currentQuery, currentCategory, false, nextPage);
       }
       // Top markets don't have pagination, so no need to handle loadTopMarkets
     }
@@ -132,15 +153,13 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
     if (currentPage > 1) {
       const prevPage = currentPage - 1;
       if (searchActive) {
-        handleSearch(currentQuery, currentCategory, prevPage);
+        handleSearch(currentQuery, currentCategory, false, prevPage);
       }
       // Top markets don't have pagination, so no need to handle loadTopMarkets
     }
   }, [currentPage, searchActive, currentQuery, currentCategory, handleSearch]);
 
   const handleMarketClick = useCallback((market: Market) => {
-    console.log('Market clicked:', market.title);
-    
     if (onMarketClick) {
       onMarketClick(market);
     }

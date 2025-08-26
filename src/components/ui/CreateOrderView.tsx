@@ -341,7 +341,6 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
       deadlineTimestamp: new Date(formData.deadline).getTime(),
     };
     
-    console.log('Order data with decimals:', orderData);
     // TODO: Implement order submission to smart contract
   };
 
@@ -469,6 +468,18 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
               <span className={styles.endDate}>Ends {new Date(market.endDate).toLocaleDateString()}</span>
               <span className={styles.type}>{market.type === 'binary' ? 'Binary' : 'Multi-Choice'}</span>
             </div>
+            {market.slug && (
+              <div className={styles.polymarketLink}>
+                <a
+                  href={`https://polymarket.com/event/${market.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.polymarketButton}
+                >
+                  🔗 See on Polymarket
+                </a>
+              </div>
+            )}
           </div>
 
           {/* Order Form */}

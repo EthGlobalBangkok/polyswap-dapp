@@ -12,13 +12,13 @@ export async function GET(
     const UPDATE_INTERVAL = (process.env.MARKET_UPDATE_INTERVAL_MINUTES ?
       parseInt(process.env.MARKET_UPDATE_INTERVAL_MINUTES) : 5) * 60 * 1000;
     
-    if (!identifier) {
-      return NextResponse.json({
-        success: false,
-        error: 'Missing identifier',
-        message: 'Please provide a market ID or condition ID'
-      }, { status: 400 });
-    }
+          if (!identifier) {
+        return NextResponse.json({
+          success: false,
+          error: 'Missing identifier',
+          message: 'Please provide a market ID or condition ID'
+        }, { status: 400 });
+      }
     
     let market;
     
@@ -38,7 +38,7 @@ export async function GET(
         }
       }
     } else {
-      // First try to get from database by ID
+      // Try to get from database by ID
       market = await DatabaseService.getMarketById(identifier);
       
       // If not found in database, fetch from Polymarket API
@@ -57,7 +57,7 @@ export async function GET(
       return NextResponse.json({
         success: false,
         error: 'Market not found',
-        message: `No market found with identifier: ${identifier}`
+        message: `No market found with ID or condition ID: ${identifier}`
       }, { status: 404 });
     }
     

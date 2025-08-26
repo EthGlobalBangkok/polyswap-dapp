@@ -81,18 +81,20 @@ export class DatabaseService {
 
     const sql = `
       INSERT INTO markets (
-        id, question, condition_id, category, start_date, end_date, volume, outcomes, outcome_prices
+        id, question, condition_id, slug, category, start_date, end_date, volume, outcomes, outcome_prices, clob_token_ids
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
       )
       ON CONFLICT (condition_id) DO UPDATE SET
         question = EXCLUDED.question,
+        slug = EXCLUDED.slug,
         category = EXCLUDED.category,
         start_date = EXCLUDED.start_date,
         end_date = EXCLUDED.end_date,
         volume = EXCLUDED.volume,
         outcomes = EXCLUDED.outcomes,
         outcome_prices = EXCLUDED.outcome_prices,
+        clob_token_ids = EXCLUDED.clob_token_ids,
         updated_at = CURRENT_TIMESTAMP
     `;
     
@@ -100,12 +102,14 @@ export class DatabaseService {
       market.id,
       market.question,
       market.conditionId,
+      market.slug,
       this.extractCategory(market.question),
       new Date(market.startDate),
       new Date(market.endDate),
       parseFloat(market.volume) || 0,
       JSON.stringify(outcomesData),
-      JSON.stringify(pricesData)
+      JSON.stringify(pricesData),
+      JSON.stringify(market.clobTokenIds)
     ];
 
     try {
@@ -255,6 +259,19 @@ export class DatabaseService {
     }
 
   /**
+   * Get market by slug
+   */
+  static async getMarketBySlug(slug: string): Promise<DatabaseMarket | null> {
+    const sql = 'SELECT * FROM markets WHERE slug = $1';
+    const result = await query(sql, [slug]);
+    if (result.rows.length > 0) {
+      return result.rows[0];
+    } else {
+      return null;
+    }
+  }
+
+  /**
    * Get markets ending after a specific date with pagination
    */
   static async getMarketsEndingAfter(endDate: Date, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
@@ -279,6 +296,19 @@ export class DatabaseService {
       LIMIT $2 OFFSET $3
     `;
     const result = await query(sql, [category, limit, offset]);
+    return result.rows;
+  }
+
+  /**
+   * Get markets by CLOB token ID
+   */
+  static async getMarketsByClobTokenId(clobTokenId: string): Promise<DatabaseMarket[]> {
+    const sql = `
+      SELECT * FROM markets 
+      WHERE clob_token_ids::text LIKE $1 
+      ORDER BY volume DESC
+    `;
+    const result = await query(sql, [`%${clobTokenId}%`]);
     return result.rows;
   }
 

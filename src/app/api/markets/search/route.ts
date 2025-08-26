@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../backend/services/databaseService';
 import { transformDatabaseMarkets } from '../../../../backend/utils/transformers';
+import { DatabaseMarket } from '@/backend/interfaces/Database';
 
 export async function GET(request: NextRequest) {
   try {
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
     const maxResults = Math.min(parseInt(limit) || 100, 500); // Cap at 500
     const offsetNum = Math.max(parseInt(offset) || 0, 0);
     
-    let markets;
+    let markets: DatabaseMarket[] = [];
     
     if (category) {
       if (keywords.length === 0) {
@@ -48,14 +49,24 @@ export async function GET(request: NextRequest) {
           message: 'Please provide at least one keyword'
         }, { status: 400 });
       }
-      
-      if (type === 'all') {
+      if (type === 'slug') {
+        let market = await DatabaseService.getMarketBySlug(keywords[0]);
+        if (market) {
+          markets.push(market);
+        }
+      } else if (type === 'all') {
         markets = await DatabaseService.searchMarketsByKeywords(keywords, maxResults, offsetNum);
       } else {
         markets = await DatabaseService.searchMarketsByAnyKeyword(keywords, maxResults, offsetNum);
       }
     }
-    
+    if (!markets) {
+      return NextResponse.json({
+        success: false,
+        error: 'No markets found',
+        message: 'No markets found'
+      }, { status: 404 });
+    }
     return NextResponse.json({
       success: true,
       data: transformDatabaseMarkets(markets),

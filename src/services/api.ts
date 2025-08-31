@@ -1,4 +1,6 @@
 // API service for communicating with the backend
+import { DatabasePolyswapOrder } from '../backend/interfaces/PolyswapOrder';
+
 export interface BackendMarket {
   id: string;
   question: string;
@@ -130,6 +132,42 @@ class ApiService {
       return {
         success: false,
         error: 'Failed to create order',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Get polyswap orders by owner address
+  async getOrdersByOwner(
+    ownerAddress: string, 
+    limit: number = 100, 
+    offset: number = 0
+  ): Promise<{
+    success: boolean;
+    data?: DatabasePolyswapOrder[];
+    count?: number;
+    pagination?: {
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const params = new URLSearchParams({
+        limit: limit.toString(),
+        offset: offset.toString()
+      });
+      
+      const response = await fetch(`${this.baseUrl}/polyswap/orders/${ownerAddress}?${params}`);
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Failed to fetch orders by owner:', error);
+      return {
+        success: false,
+        error: 'Failed to fetch orders',
         message: error instanceof Error ? error.message : 'Unknown error'
       };
     }
@@ -289,4 +327,4 @@ class ApiService {
   }
 }
 
-export const apiService = new ApiService(); 
+export const apiService = new ApiService();

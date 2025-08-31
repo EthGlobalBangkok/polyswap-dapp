@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS polyswap_orders (
     block_number BIGINT NOT NULL, -- Block number where event was emitted
     transaction_hash VARCHAR(66) NOT NULL, -- Transaction hash
     log_index INTEGER NOT NULL, -- Log index within the transaction
+    status VARCHAR(20) NOT NULL DEFAULT 'draft', -- Order status: draft|live|filled|canceled
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
@@ -68,9 +69,7 @@ CREATE TABLE IF NOT EXISTS polyswap_orders (
     CONSTRAINT valid_sell_amount CHECK (sell_amount > 0),
     CONSTRAINT valid_min_buy_amount CHECK (min_buy_amount > 0),
     CONSTRAINT valid_times CHECK (end_time > start_time),
-    
-    -- Unique constraint for block_number + transaction_hash + log_index
-    CONSTRAINT unique_event UNIQUE (block_number, transaction_hash, log_index)
+    CONSTRAINT valid_status CHECK (status IN ('draft', 'live', 'filled', 'canceled'))
 );
 
 -- Create indexes for frequently queried columns
@@ -82,6 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_polyswap_orders_start_time ON polyswap_orders(sta
 CREATE INDEX IF NOT EXISTS idx_polyswap_orders_end_time ON polyswap_orders(end_time);
 CREATE INDEX IF NOT EXISTS idx_polyswap_orders_block_number ON polyswap_orders(block_number);
 CREATE INDEX IF NOT EXISTS idx_polyswap_orders_polymarket_hash ON polyswap_orders(polymarket_order_hash);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_status ON polyswap_orders(status);
 
 -- Create trigger to automatically update updated_at for polyswap_orders
 CREATE TRIGGER update_polyswap_orders_updated_at 

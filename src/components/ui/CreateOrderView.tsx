@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAccount } from 'wagmi';
 import { apiService, ApiMarket } from '../../services/api';
 import TokenSelector from './TokenSelector';
 import TokenIcon from './TokenIcon';
@@ -33,11 +34,13 @@ interface CreateOrderViewProps {
 }
 
 export default function CreateOrderView({ marketId, onBack }: CreateOrderViewProps) {
+  const { address } = useAccount();
   const [market, setMarket] = useState<ApiMarket | null>(null);
   const [tokens, setTokens] = useState<Token[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingTokens, setIsLoadingTokens] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
   // Token selector modals state
   const [showSellTokenSelector, setShowSellTokenSelector] = useState(false);
@@ -88,7 +91,7 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
       buyToken: 'COW',
       sellAmount: '',
       minBuyAmount: '',
-      startDate: formatLocal(now), // Default to "now"
+      startDate: 'now', // Default to "now"
       deadline: formatLocal(nextWeek),
       selectedOutcome: '',
       betPercentage: '50',
@@ -106,6 +109,7 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
       try {
         setIsLoading(true);
         setError(null);
+        setSuccessMessage(null);
         const marketData = await apiService.getMarketById(marketId);
         setMarket(marketData);
         
@@ -160,6 +164,12 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
 
   // Special handlers for date changes with validation
   const handleStartDateChange = (value: string) => {
+    // If value is empty, set to "now"
+    if (!value) {
+      setFormData(prev => ({ ...prev, startDate: 'now' }));
+      return;
+    }
+    
     const newStartDate = new Date(value);
     const currentDeadline = new Date(formData.deadline);
     
@@ -191,11 +201,11 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
       newDeadline.setHours(newDeadline.getHours() + 1);
       setFormData(prev => ({
         ...prev,
-        startDate: formatDateTimeLocal(now),
+        startDate: 'now',
         deadline: formatDateTimeLocal(newDeadline)
       }));
     } else {
-      setFormData(prev => ({ ...prev, startDate: formatDateTimeLocal(now) }));
+      setFormData(prev => ({ ...prev, startDate: 'now' }));
     }
   };
 
@@ -225,6 +235,9 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
 
   // Form validation
   const isFormValid = (): boolean => {
+    // Check if wallet is connected
+    if (!address) return false;
+    
     // Check if all required fields are filled
     const hasValidTokens = formData.sellToken && formData.buyToken && formData.sellToken !== formData.buyToken;
     const hasValidAmounts = formData.sellAmount && parseFloat(formData.sellAmount) > 0 && 
@@ -234,8 +247,8 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
                               parseFloat(formData.betPercentage) > 0 && 
                               parseFloat(formData.betPercentage) <= 100;
     const hasValidDates = formData.startDate && formData.deadline && 
-                         new Date(formData.deadline) > new Date(formData.startDate) &&
-                         new Date(formData.startDate) >= new Date(Date.now() - 60000); // Allow 1 minute tolerance
+                         new Date(formData.deadline) > (formData.startDate === 'now' ? new Date() : new Date(formData.startDate)) &&
+                         (formData.startDate === 'now' || new Date(formData.startDate) >= new Date(Date.now() - 60000)); // Allow 1 minute tolerance
 
     return !!(hasValidTokens && hasValidAmounts && hasValidOutcome && hasValidPercentage && hasValidDates);
   };
@@ -243,6 +256,10 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
   // Get validation errors for display
   const getValidationErrors = (): string[] => {
     const errors: string[] = [];
+    
+    if (!address) {
+      errors.push('Please connect your wallet to create an order');
+    }
     
     if (!formData.sellToken || !formData.buyToken) {
       errors.push('Please select both tokens');
@@ -276,7 +293,7 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
       // Allow a tolerance of 1 minute for "now" selection
       const nowMinusOneMinute = new Date(now.getTime() - 60000); // 1 minute ago
       
-      if (startDate < nowMinusOneMinute) {
+      if (formData.startDate !== 'now' && startDate < nowMinusOneMinute) {
         errors.push('Start date must be in the future');
       }
       
@@ -288,8 +305,14 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
     return errors;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check if wallet is connected
+    if (!address) {
+      setError('Please connect your wallet to create an order');
+      return;
+    }
     
     // Get token data for smart contract interaction
     const sellTokenData = getTokenData(formData.sellToken);
@@ -304,44 +327,81 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
     const sellAmountFormatted = formatTokenAmount(formData.sellAmount, sellTokenData.decimals);
     const minBuyAmountFormatted = formatTokenAmount(formData.minBuyAmount, buyTokenData.decimals);
     
-    // Create simplified order object with only essential data
+    // Create order data for API submission
     const orderData = {
-      // Smart contract amounts (with decimals)
+      // Token addresses
+      sellToken: sellTokenData.address,
+      buyToken: buyTokenData.address,
+      
+      // Amounts (as formatted strings for API)
       sellAmount: sellAmountFormatted.toString(),
       minBuyAmount: minBuyAmountFormatted.toString(),
       
       // Order parameters
-      outcome: formData.selectedOutcome,
+      selectedOutcome: formData.selectedOutcome,
       betPercentage: formData.betPercentage,
       startDate: formData.startDate,
       deadline: formData.deadline,
       
-      // Token data with addresses and metadata for smart contract
-      sellTokenData: {
-        symbol: sellTokenData.symbol,
-        name: sellTokenData.name,
-        address: sellTokenData.address,
-        decimals: sellTokenData.decimals,
-        logoURI: sellTokenData.logoURI,
-      },
-      buyTokenData: {
-        symbol: buyTokenData.symbol,
-        name: buyTokenData.name,
-        address: buyTokenData.address,
-        decimals: buyTokenData.decimals,
-        logoURI: buyTokenData.logoURI,
-      },
-      
       // Market context
       marketId,
       marketTitle: market?.title || '',
+      marketDescription: market?.description || '',
+      
+      // CLOB token ID for Polymarket (from market data)
+      clobTokenId: market?.clobTokenIds?.[0] || undefined, // Use first token ID for now
+      
+      // Owner (Safe address from connected wallet)
+      owner: address,
       
       // Timestamps for smart contract
       startTimestamp: new Date(formData.startDate).getTime(),
       deadlineTimestamp: new Date(formData.deadline).getTime(),
     };
     
-    // TODO: Implement order submission to smart contract
+    try {
+      // Show loading state
+      setIsLoading(true);
+      setError(null);
+      setSuccessMessage(null);
+      
+      // Submit order to backend API using ApiService
+      const result = await apiService.createPolyswapOrder(orderData);
+      
+      if (result.success) {
+        // Order created successfully
+        console.log('Order created successfully:', result.data);
+        
+        // Show success message
+        setSuccessMessage(`Order created successfully! Order Hash: ${result.data.polymarketOrder.hash}`);
+        setError(null);
+        
+        // Reset form
+        setFormData({
+          sellToken: 'USDC',
+          buyToken: 'COW',
+          sellAmount: '',
+          minBuyAmount: '',
+          startDate: 'now',
+          deadline: formatDateTimeLocal(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), // 1 week from now
+          selectedOutcome: '',
+          betPercentage: '50',
+        });
+        
+        // Clear success message after 5 seconds
+        setTimeout(() => setSuccessMessage(null), 5000);
+      } else {
+        // Handle API error
+        setError(result.message || 'Failed to create order');
+        setSuccessMessage(null);
+        console.error('API error:', result.error);
+      }
+    } catch (error) {
+      console.error('Failed to submit order:', error);
+      setError('Failed to submit order. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const calculateMinReceive = () => {
@@ -416,6 +476,7 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'Not set';
+    if (dateString === 'now') return 'Now';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
       month: 'short',
@@ -487,6 +548,16 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
             <div className={styles.formHeader}>
               <h3>Create Your Conditional Order</h3>
               <p>This order will execute automatically when your prediction is correct</p>
+              {!address && (
+                <div className={styles.walletWarning}>
+                  ⚠️ Please connect your wallet to create an order
+                </div>
+              )}
+              {address && (
+                <div className={styles.walletConnected}>
+                  ✅ Wallet connected: {address.slice(0, 6)}...{address.slice(-4)}
+                </div>
+              )}
             </div>
 
             {/* Swap Configuration */}
@@ -663,10 +734,11 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
                   <div className={styles.dateInputContainer}>
                     <input
                       type="datetime-local"
-                      value={formData.startDate}
+                      value={formData.startDate === 'now' ? '' : formData.startDate}
                       min={getMinDateTime()}
                       onChange={(e) => handleStartDateChange(e.target.value)}
                       className={styles.dateInput}
+                      placeholder={formData.startDate === 'now' ? 'Now' : ''}
                     />
                     <button
                       type="button"
@@ -716,6 +788,22 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
               </div>
             </div>
 
+            {/* Success Message */}
+            {successMessage && (
+              <div className={styles.successMessage}>
+                <h4>✅ Success!</h4>
+                <p>{successMessage}</p>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {error && (
+              <div className={styles.errorMessage}>
+                <h4>❌ Error</h4>
+                <p>{error}</p>
+              </div>
+            )}
+
             {/* Validation Errors */}
             {!isFormValid() && (
               <div className={styles.validationErrors}>
@@ -731,11 +819,18 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
             {/* Submit Button */}
             <button 
               type="submit" 
-              className={`${styles.submitButton} ${!isFormValid() ? styles.submitButtonDisabled : ''}`}
-              disabled={!isFormValid()}
-              title={!isFormValid() ? 'Please complete all required fields' : 'Create your conditional swap order'}
+              className={`${styles.submitButton} ${!isFormValid() || isLoading ? styles.submitButtonDisabled : ''}`}
+              disabled={!isFormValid() || isLoading}
+              title={!isFormValid() ? 'Please complete all required fields' : isLoading ? 'Creating order...' : 'Create your conditional swap order'}
             >
-              Create Order
+              {isLoading ? (
+                <>
+                  <div className={styles.spinner}></div>
+                  Creating Order...
+                </>
+              ) : (
+                'Create Order'
+              )}
             </button>
           </form>
         </>

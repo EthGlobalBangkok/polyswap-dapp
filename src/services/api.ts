@@ -93,6 +93,48 @@ class ApiService {
     }
   }
 
+  // Create a new polyswap order
+  async createPolyswapOrder(orderData: {
+    sellToken: string;
+    buyToken: string;
+    sellAmount: string;
+    minBuyAmount: string;
+    selectedOutcome: string;
+    betPercentage: string;
+    startDate: string;
+    deadline: string;
+    marketId: string;
+    marketTitle?: string;
+    marketDescription?: string;
+    clobTokenId?: string;
+    owner: string;
+  }): Promise<{
+    success: boolean;
+    data?: any;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/polyswap/orders/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(orderData),
+      });
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Failed to create polyswap order:', error);
+      return {
+        success: false,
+        error: 'Failed to create order',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
   // Convert backend market format to frontend format
   private convertBackendMarket(backendMarket: BackendMarket): ApiMarket {
     // Validate that backendMarket has the required properties

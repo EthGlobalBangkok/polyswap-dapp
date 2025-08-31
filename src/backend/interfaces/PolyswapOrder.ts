@@ -60,6 +60,7 @@ export interface DatabasePolyswapOrder {
   block_number: number;
   transaction_hash: string;
   log_index: number;
+  status: 'draft' | 'live' | 'filled' | 'canceled';
   created_at: Date;
   updated_at: Date;
 }

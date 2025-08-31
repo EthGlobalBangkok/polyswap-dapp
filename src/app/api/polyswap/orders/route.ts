@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DatabaseService } from '../../../backend/services/databaseService';
+import { DatabaseService } from '../../../../backend/services/databaseService';
 
 export async function GET(request: NextRequest) {
   try {
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       },
       filters: {
         fromBlock: fromBlock ? parseInt(fromBlock) : undefined,
-        fromBlock: toBlock ? parseInt(toBlock) : undefined,
+        toBlock: toBlock ? parseInt(toBlock) : undefined,
         sellToken,
         buyToken
       },

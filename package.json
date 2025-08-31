@@ -9,8 +9,6 @@
     "start": "next start",
     "lint": "next lint",
     "get-polymarket-creds": "tsx script/getPolymarketCreds.ts",
-    "test-polymarket": "tsx script/test.ts",
-    "start:api": "tsx src/backend/index.ts",
     "start:listener": "tsx src/backend/listener.ts",
     "start:listener-only": "tsx src/backend/listener.ts --listener-only",
     "start:market-updater": "tsx src/backend/listener.ts --market-update-only",

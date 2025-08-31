@@ -162,6 +162,31 @@
   font-size: 0.95rem;
 }
 
+/* Wallet Status Indicators */
+.walletWarning {
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-top: var(--spacing-md);
+  color: #ef4444;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+.walletConnected {
+  background-color: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-top: var(--spacing-md);
+  color: #22c55e;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-align: center;
+}
+
 /* Section Styles */
 .sectionTitle {
   font-size: 1.1rem;
@@ -473,6 +498,11 @@
   border-color: var(--accent-primary);
 }
 
+.dateInput::placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .nowButton {
   background: var(--accent-primary);
   color: white;
@@ -553,6 +583,17 @@
   transform: none;
 }
 
+.submitButton .spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top: 2px solid currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: var(--spacing-sm);
+  display: inline-block;
+}
+
 .submitButtonDisabled {
   background: #333 !important;
   color: #666 !important;
@@ -563,6 +604,50 @@
 .submitButtonDisabled:hover {
   transform: none !important;
   box-shadow: none !important;
+}
+
+/* Success Message */
+.successMessage {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.successMessage h4 {
+  margin: 0 0 var(--spacing-sm) 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #22c55e;
+}
+
+.successMessage p {
+  margin: 0;
+  font-size: 13px;
+  color: #16a34a;
+}
+
+/* Error Message */
+.errorMessage {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.errorMessage h4 {
+  margin: 0 0 var(--spacing-sm) 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ef4444;
+}
+
+.errorMessage p {
+  margin: 0;
+  font-size: 13px;
+  color: #dc2626;
 }
 
 /* Validation Errors */

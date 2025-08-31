@@ -385,6 +385,70 @@ export class DatabaseService {
   }
 
   /**
+   * Insert a polyswap order from frontend form
+   */
+  static async insertPolyswapOrderFromForm(orderData: {
+    sellToken: string;
+    buyToken: string;
+    sellAmount: string;
+    minBuyAmount: string;
+    selectedOutcome: string;
+    betPercentage: string;
+    startDate: string;
+    deadline: string;
+    marketId: string;
+    marketTitle?: string;
+    marketDescription?: string;
+    polymarketOrderHash: string;
+    owner: string;
+  }): Promise<string> {
+    // Generate a unique order hash (in production, this would come from the smart contract)
+    const orderHash = `0x${Math.random().toString(16).substr(2, 64)}`;
+    
+    const sql = `
+      INSERT INTO polyswap_orders (
+        order_hash, owner, handler, sell_token, buy_token,
+        sell_amount, min_buy_amount, start_time, end_time, polymarket_order_hash,
+        app_data, block_number, transaction_hash, log_index, status
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+      )
+      ON CONFLICT (order_hash) DO UPDATE SET
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING order_hash
+    `;
+
+    // For now, use placeholder values for blockchain-specific fields
+    // In production, these would come from the actual blockchain transaction
+    const values = [
+      orderHash,
+      orderData.owner.toLowerCase(), // Use actual owner address from request
+      '0x0000000000000000000000000000000000000000', // Placeholder handler address
+      orderData.sellToken.toLowerCase(),
+      orderData.buyToken.toLowerCase(),
+      orderData.sellAmount,
+      orderData.minBuyAmount,
+      new Date(orderData.startDate), // startDate is now ISO string from backend
+      new Date(orderData.deadline),  // Use the date string directly
+      orderData.polymarketOrderHash,
+      '0x0000000000000000000000000000000000000000000000000000000000000000', // Placeholder app_data
+      0, // Placeholder block number
+      '0x0000000000000000000000000000000000000000000000000000000000000000', // Placeholder transaction hash
+      0,  // Placeholder log index
+      'draft' // Default status for frontend-created orders
+    ];
+
+    try {
+      const result = await query(sql, values);
+      console.log(`✅ Successfully inserted frontend order ${orderHash}`);
+      return orderHash;
+    } catch (error) {
+      console.error(`❌ Database error inserting frontend order ${orderHash}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Insert a polyswap order from blockchain event
    */
   static async insertPolyswapOrder(order: PolyswapOrderRecord): Promise<void> {
@@ -392,9 +456,9 @@ export class DatabaseService {
       INSERT INTO polyswap_orders (
         order_hash, owner, handler, sell_token, buy_token,
         sell_amount, min_buy_amount, start_time, end_time, polymarket_order_hash,
-        app_data, block_number, transaction_hash, log_index
+        app_data, block_number, transaction_hash, log_index, status
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
       )
       ON CONFLICT (order_hash) DO UPDATE SET
         updated_at = CURRENT_TIMESTAMP
@@ -422,7 +486,8 @@ export class DatabaseService {
       order.appData,
       blockNumber,
       order.transactionHash,
-      logIndex
+      logIndex,
+      'live' // Blockchain events indicate live orders
     ];
 
     try {
@@ -510,6 +575,39 @@ export class DatabaseService {
       ORDER BY created_at DESC
     `;
     const result = await query(sql, [polymarketHash]);
+    return result.rows;
+  }
+
+  /**
+   * Update order status
+   */
+  static async updateOrderStatus(orderHash: string, status: 'draft' | 'live' | 'filled' | 'canceled'): Promise<boolean> {
+    const sql = `
+      UPDATE polyswap_orders 
+      SET status = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE order_hash = $2
+      RETURNING order_hash
+    `;
+    try {
+      const result = await query(sql, [status, orderHash]);
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error(`❌ Error updating order status for ${orderHash}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Get orders by status
+   */
+  static async getOrdersByStatus(status: 'draft' | 'live' | 'filled' | 'canceled', limit: number = 100, offset: number = 0): Promise<DatabasePolyswapOrder[]> {
+    const sql = `
+      SELECT * FROM polyswap_orders 
+      WHERE status = $1 
+      ORDER BY created_at DESC 
+      LIMIT $2 OFFSET $3
+    `;
+    const result = await query(sql, [status, limit, offset]);
     return result.rows;
   }
 }

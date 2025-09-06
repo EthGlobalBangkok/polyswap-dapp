@@ -167,11 +167,15 @@ export async function PUT(request: NextRequest) {
     }
 
     try {
-      const orderResult = await polymarketOrderService.postGTCOrder({
+      // Convert end_time to Unix timestamp for expiration
+      const expirationTimestamp = Math.floor(new Date(order.end_time).getTime() / 1000);
+      
+      const orderResult = await polymarketOrderService.postGTDOrder({
         tokenID: tokenId,
         price: price, // Use the calculated price from bet percentage
         side: 'BUY',
         size: 5,
+        expiration: expirationTimestamp
       });
       
       console.log('Polymarket order result:', orderResult);

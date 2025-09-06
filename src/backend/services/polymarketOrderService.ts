@@ -91,7 +91,13 @@ export class PolymarketOrderService {
       this.provider = new ethers.JsonRpcProvider(rpcUrl);
       
       // Create ethers v6 signer
-      const v6Signer = new ethers.Wallet(process.env.PK as string, this.provider);
+      // Ensure private key has 0x prefix for ethers v6
+      const pk = process.env.PK;
+      if (!pk) {
+        throw new Error('Private key (PK) is not set in environment variables');
+      }
+      const privateKey = pk.startsWith('0x') ? pk : `0x${pk}`;
+      const v6Signer = new ethers.Wallet(privateKey, this.provider);
       
       // Add the ethers v5 method name for compatibility
       (v6Signer as any)._signTypedData = v6Signer.signTypedData.bind(v6Signer);

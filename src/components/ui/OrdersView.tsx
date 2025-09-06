@@ -90,12 +90,12 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
     }
   };
 
-  const toggleOrderExpansion = (orderHash: string) => {
+  const toggleOrderExpansion = (orderId: string) => {
     const newExpanded = new Set(expandedOrders);
-    if (newExpanded.has(orderHash)) {
-      newExpanded.delete(orderHash);
+    if (newExpanded.has(orderId)) {
+      newExpanded.delete(orderId);
     } else {
-      newExpanded.add(orderHash);
+      newExpanded.add(orderId);
     }
     setExpandedOrders(newExpanded);
   };
@@ -181,6 +181,10 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
   const getBlockExplorerLink = (hash: string, type: 'tx' | 'address' = 'tx') => {
     // Using Polygon block explorer - adjust for your network
     const baseUrl = 'https://polygonscan.com';
+    // Handle empty or invalid hashes
+    if (!hash || hash === 'N/A') {
+      return '#';
+    }
     return `${baseUrl}/${type}/${hash}`;
   };
 
@@ -273,12 +277,12 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
             </div>
             
             {orders.map((order) => (
-              <div key={order.order_hash} className={styles.orderRow}>
+              <div key={order.id} className={styles.orderRow}>
                 <div className={styles.orderMain}>
                   <div className={styles.cell}>
                     <div className={styles.marketInfo}>
                       <div className={styles.orderHash}>
-                        Order #{order.order_hash.slice(0, 8)}...
+                        Order #{order.order_hash ? order.order_hash.slice(0, 8) : 'N/A'}...
                       </div>
                       <div className={styles.orderCondition}>
                         Condition-based swap
@@ -322,15 +326,15 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
                   <div className={styles.cell}>
                     <button
                       className={styles.expandButton}
-                      onClick={() => toggleOrderExpansion(order.order_hash)}
-                      title={expandedOrders.has(order.order_hash) ? 'Collapse' : 'Expand details'}
+                      onClick={() => toggleOrderExpansion(String(order.id))}
+                      title={expandedOrders.has(String(order.id)) ? 'Collapse' : 'Expand details'}
                     >
-                      {expandedOrders.has(order.order_hash) ? '▲' : '▼'}
+                      {expandedOrders.has(String(order.id)) ? '▲' : '▼'}
                     </button>
                   </div>
                 </div>
                 
-                {expandedOrders.has(order.order_hash) && (
+                {expandedOrders.has(String(order.id)) && (
                   <div className={styles.orderDetails}>
                     <div className={styles.detailsGrid}>
                       <div className={styles.detailSection}>
@@ -338,12 +342,12 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
                         <div className={styles.detailRow}>
                           <span>Order Hash:</span>
                           <a
-                            href={getBlockExplorerLink(order.order_hash)}
+                            href={getBlockExplorerLink(order.order_hash || '')}
                             target="_blank"
                             rel="noopener noreferrer"
                             className={styles.hashLink}
                           >
-                            {order.order_hash}
+                            {order.order_hash || 'N/A'}
                           </a>
                         </div>
                         <div className={styles.detailRow}>

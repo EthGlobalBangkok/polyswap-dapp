@@ -17,7 +17,9 @@
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",
-    "db:import": "tsx script/importJsonData.ts"
+    "db:import": "tsx script/importJsonData.ts",
+    "cancel-polymarket-orders": "tsx script/cancelPolymarketOrders.ts",
+    "sell-polymarket-positions": "tsx script/sellPolymarketPositions.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.85.3",

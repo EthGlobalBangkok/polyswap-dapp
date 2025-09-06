@@ -50,6 +50,16 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // validate bet percentage (should be between 0 and 100)
+    const betPercentageNum = parseFloat(body.betPercentage);
+    if (isNaN(betPercentageNum) || betPercentageNum <= 0 || betPercentageNum > 100) {
+      return NextResponse.json({
+        success: false,
+        error: 'Invalid bet percentage',
+        message: 'Bet percentage must be a number between 1 and 100'
+      }, { status: 400 });
+    }
+
     // Validate and process dates
     let startDate: Date;
     if (body.startDate === 'now') {
@@ -87,9 +97,27 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // TODO: Initialize and create Polymarket order here
-    // For now, using hardcoded data as placeholders
-    const polymarketOrderHash = '0xb90339c2d581c7ea40005c38efbc88145494015133c687e8c74ccac1891acf3f';
+    // check the outcome selected if it exist in the market selected
+    const market = await DatabaseService.getMarketById(body.marketId);
+    if (!market) {
+      return NextResponse.json({
+        success: false,
+        error: 'Market not found',
+        message: 'The specified market does not exist'
+      }, { status: 404 });
+    }
+
+    console.log('Market found:', market);
+    if (!market.outcomes.includes(body.selectedOutcome)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Invalid outcome selected',
+        message: 'The selected outcome is not valid for this market'
+      }, { status: 400 });
+    }
+
+    // Parse bet percentage
+    const betPercentageValue = parseFloat(body.betPercentage);
 
     // Create polyswap order data for database
     const orderData = {
@@ -102,14 +130,15 @@ export async function POST(request: NextRequest) {
       startDate: startDate.toISOString(),
       deadline: deadline.toISOString(),
       marketId: body.marketId,
-      polymarketOrderHash: polymarketOrderHash,
       owner: body.owner,
+      outcomeSelected: body.selectedOutcome,
+      betPercentageValue: betPercentageValue,
     };
 
-    // Save to database
-    let orderHash: string;
+    // Save order to database
+    let orderId: number;
     try {
-      orderHash = await DatabaseService.insertPolyswapOrderFromForm(orderData);
+      orderId = await DatabaseService.insertPolyswapOrderFromForm(orderData);
     } catch (error) {
       console.error('Failed to save order to database:', error);
       return NextResponse.json({
@@ -119,23 +148,12 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
     
-    // Create transaction data for conditional order creation
-    // This is a simplified example - in production, you'd construct the actual ComposableCoW transaction sent to a safe
-    const transactionData = {
-      to: process.env.COMPOSABLE_COW,
-      data: "0x", // TODO: Encode the actual createWithContext call data
-      value: "0",
-      chainId: parseInt(process.env.CHAIN_ID || "137")
-    };
 
     return NextResponse.json({
       success: true,
       data: {
-        transaction: transactionData,
-        polymarketOrder: {
-          hash: polymarketOrderHash,
-          status: 'placeholder' // TODO: Replace with actual Polymarket order status
-        }
+        orderId, // Return the numerical ID instead of orderHash
+        status: 'draft'
       },
     });
 

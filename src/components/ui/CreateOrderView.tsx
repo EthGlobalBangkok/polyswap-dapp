@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { apiService, ApiMarket } from '../../services/api';
 import TokenSelector from './TokenSelector';
 import TokenIcon from './TokenIcon';
+import OrderBroadcastPopup from './OrderBroadcastPopup/OrderBroadcastPopup';
 import styles from './CreateOrderView.module.css';
 
 // Types for the order form
@@ -41,6 +42,8 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
   const [isLoadingTokens, setIsLoadingTokens] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [orderId, setOrderId] = useState<number | null>(null); // Changed from orderHash to orderId
+  const [showBroadcastPopup, setShowBroadcastPopup] = useState(false);
   
   // Token selector modals state
   const [showSellTokenSelector, setShowSellTokenSelector] = useState(false);
@@ -372,8 +375,11 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
         // Order created successfully
         console.log('Order created successfully:', result.data);
         
-        // Show success message
-        setSuccessMessage(`Order created successfully! Order Hash: ${result.data.polymarketOrder.hash}`);
+        // Show the order broadcast popup
+        const newOrderId = result.data.orderId;
+        console.log('Setting order ID:', newOrderId);
+        setOrderId(newOrderId); // Changed from orderHash to orderId
+        setShowBroadcastPopup(true);
         setError(null);
         
         // Reset form
@@ -387,9 +393,6 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
           selectedOutcome: '',
           betPercentage: '50',
         });
-        
-        // Clear success message after 5 seconds
-        setTimeout(() => setSuccessMessage(null), 5000);
       } else {
         // Handle API error
         setError(result.message || 'Failed to create order');
@@ -854,6 +857,17 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
         selectedToken={getSelectedBuyToken()}
         title="Select a token to receive"
       />
+      
+      {orderId && (
+        <div>
+          <p>Debug: orderId = {orderId}, showBroadcastPopup = {showBroadcastPopup ? 'true' : 'false'}</p>
+          <OrderBroadcastPopup
+            isOpen={showBroadcastPopup}
+            onClose={() => setShowBroadcastPopup(false)}
+            orderId={orderId}
+          />
+        </div>
+      )}
     </div>
   );
 }

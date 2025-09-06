@@ -174,12 +174,12 @@ export class DatabaseService {
    * Search markets by keywords (AND search - all keywords must be present)
    */
   static async searchMarketsByKeywords(keywords: string[], limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' AND ');
+    const conditions = keywords.map((_, index) => `question ILIKE ${index + 1}`).join(' AND ');
     const sql = `
       SELECT * FROM markets 
       WHERE ${conditions}
       ORDER BY volume DESC 
-      LIMIT $${keywords.length + 1} OFFSET $${keywords.length + 2}
+      LIMIT ${keywords.length + 1} OFFSET ${keywords.length + 2}
     `;
     const values = [...keywords.map(k => `%${k}%`), limit, offset];
     const result = await query(sql, values);
@@ -190,12 +190,12 @@ export class DatabaseService {
    * Search markets by any keyword (OR search - any keyword can match)
    */
   static async searchMarketsByAnyKeyword(keywords: string[], limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' OR ');
+    const conditions = keywords.map((_, index) => `question ILIKE ${index + 1}`).join(' OR ');
     const sql = `
       SELECT * FROM markets 
       WHERE ${conditions}
       ORDER BY volume DESC 
-      LIMIT $${keywords.length + 1} OFFSET $${keywords.length + 2}
+      LIMIT ${keywords.length + 1} OFFSET ${keywords.length + 2}
     `;
     const values = [...keywords.map(k => `%${k}%`), limit, offset];
     const result = await query(sql, values);
@@ -206,12 +206,12 @@ export class DatabaseService {
    * Search markets by keywords AND category (AND search - all keywords must be present)
    */
   static async searchMarketsByKeywordsAndCategory(keywords: string[], category: string, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' AND ');
+    const conditions = keywords.map((_, index) => `question ILIKE ${index + 1}`).join(' AND ');
     const sql = `
       SELECT * FROM markets 
-      WHERE ${conditions} AND category = $${keywords.length + 1}
+      WHERE ${conditions} AND category = ${keywords.length + 1}
       ORDER BY volume DESC 
-      LIMIT $${keywords.length + 2} OFFSET $${keywords.length + 3}
+      LIMIT ${keywords.length + 2} OFFSET ${keywords.length + 3}
     `;
     const values = [...keywords.map(k => `%${k}%`), category, limit, offset];
     const result = await query(sql, values);
@@ -222,12 +222,12 @@ export class DatabaseService {
    * Search markets by any keyword AND category (OR search - any keyword can match)
    */
   static async searchMarketsByAnyKeywordAndCategory(keywords: string[], category: string, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' OR ');
+    const conditions = keywords.map((_, index) => `question ILIKE ${index + 1}`).join(' OR ');
     const sql = `
       SELECT * FROM markets 
-      WHERE (${conditions}) AND category = $${keywords.length + 1}
+      WHERE (${conditions}) AND category = ${keywords.length + 1}
       ORDER BY volume DESC 
-      LIMIT $${keywords.length + 2} OFFSET $${keywords.length + 3}
+      LIMIT ${keywords.length + 2} OFFSET ${keywords.length + 3}
     `;
     const values = [...keywords.map(k => `%${k}%`), category, limit, offset];
     const result = await query(sql, values);
@@ -388,62 +388,52 @@ export class DatabaseService {
    * Insert a polyswap order from frontend form
    */
   static async insertPolyswapOrderFromForm(orderData: {
-    sellToken: string;
-    buyToken: string;
-    sellAmount: string;
-    minBuyAmount: string;
+    sellToken: string; 
+    buyToken: string; 
+    sellAmount: string; 
+    minBuyAmount: string; 
     selectedOutcome: string;
-    betPercentage: string;
-    startDate: string;
-    deadline: string;
-    marketId: string;
-    marketTitle?: string;
-    marketDescription?: string;
-    polymarketOrderHash: string;
-    owner: string;
-  }): Promise<string> {
-    // Generate a unique order hash (in production, this would come from the smart contract)
-    const orderHash = `0x${Math.random().toString(16).substr(2, 64)}`;
-    
+    startDate: string; 
+    deadline: string; 
+    marketId: string; 
+    owner: string; 
+    outcomeSelected: number; 
+    betPercentageValue: number; 
+  }): Promise<number> {
     const sql = `
       INSERT INTO polyswap_orders (
-        order_hash, owner, handler, sell_token, buy_token,
-        sell_amount, min_buy_amount, start_time, end_time, polymarket_order_hash,
-        app_data, block_number, transaction_hash, log_index, status
+        owner, sell_token, buy_token,
+        sell_amount, min_buy_amount, start_time, end_time, market_id, 
+        outcome_selected, bet_percentage, status
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
       )
-      ON CONFLICT (order_hash) DO UPDATE SET
-        updated_at = CURRENT_TIMESTAMP
-      RETURNING order_hash
+      RETURNING id
     `;
 
-    // For now, use placeholder values for blockchain-specific fields
-    // In production, these would come from the actual blockchain transaction
+    console.log('Inserting frontend order with data:', orderData);
+    // all null value are filed that are filled later during the order creation flow
     const values = [
-      orderHash,
       orderData.owner.toLowerCase(), // Use actual owner address from request
-      '0x0000000000000000000000000000000000000000', // Placeholder handler address
       orderData.sellToken.toLowerCase(),
       orderData.buyToken.toLowerCase(),
       orderData.sellAmount,
       orderData.minBuyAmount,
       new Date(orderData.startDate), // startDate is now ISO string from backend
       new Date(orderData.deadline),  // Use the date string directly
-      orderData.polymarketOrderHash,
-      '0x0000000000000000000000000000000000000000000000000000000000000000', // Placeholder app_data
-      0, // Placeholder block number
-      '0x0000000000000000000000000000000000000000000000000000000000000000', // Placeholder transaction hash
-      0,  // Placeholder log index
+      orderData.marketId, // Market ID linking the order to the market
+      orderData.outcomeSelected, // Outcome selected index
+      orderData.betPercentageValue, // Bet percentage
       'draft' // Default status for frontend-created orders
     ];
 
     try {
       const result = await query(sql, values);
-      console.log(`✅ Successfully inserted frontend order ${orderHash}`);
-      return orderHash;
+      const orderId = result.rows[0].id;
+      console.log(`✅ Successfully inserted frontend order with ID ${orderId}`);
+      return orderId;
     } catch (error) {
-      console.error(`❌ Database error inserting frontend order ${orderHash}:`, error);
+      console.error(`❌ Database error inserting frontend order:`, error);
       throw error;
     }
   }
@@ -461,6 +451,20 @@ export class DatabaseService {
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
       )
       ON CONFLICT (order_hash) DO UPDATE SET
+        owner = EXCLUDED.owner,
+        handler = EXCLUDED.handler,
+        sell_token = EXCLUDED.sell_token,
+        buy_token = EXCLUDED.buy_token,
+        sell_amount = EXCLUDED.sell_amount,
+        min_buy_amount = EXCLUDED.min_buy_amount,
+        start_time = EXCLUDED.start_time,
+        end_time = EXCLUDED.end_time,
+        polymarket_order_hash = EXCLUDED.polymarket_order_hash,
+        app_data = EXCLUDED.app_data,
+        block_number = EXCLUDED.block_number,
+        transaction_hash = EXCLUDED.transaction_hash,
+        log_index = EXCLUDED.log_index,
+        status = EXCLUDED.status,
         updated_at = CURRENT_TIMESTAMP
     `;
 
@@ -544,6 +548,15 @@ export class DatabaseService {
   }
 
   /**
+   * Get polyswap order by numerical ID
+   */
+  static async getPolyswapOrderById(id: number): Promise<DatabasePolyswapOrder | null> {
+    const sql = 'SELECT * FROM polyswap_orders WHERE id = $1';
+    const result = await query(sql, [id]);
+    return result.rows[0] || null;
+  }
+
+  /**
    * Get the latest processed block number for the listener
    */
   static async getLatestProcessedBlock(): Promise<number> {
@@ -593,6 +606,82 @@ export class DatabaseService {
       return result.rows.length > 0;
     } catch (error) {
       console.error(`❌ Error updating order status for ${orderHash}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Update Polymarket order hash for a draft order using order hash
+   */
+  static async updateOrderPolymarketHash(orderHash: string, polymarketOrderHash: string): Promise<boolean> {
+    const sql = `
+      UPDATE polyswap_orders 
+      SET polymarket_order_hash = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE order_hash = $2
+      RETURNING order_hash
+    `;
+    try {
+      const result = await query(sql, [polymarketOrderHash, orderHash]);
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error(`❌ Error updating Polymarket order hash for ${orderHash}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Update Polymarket order hash for a draft order using numerical ID
+   */
+  static async updateOrderPolymarketHashById(orderId: number, polymarketOrderHash: string): Promise<boolean> {
+    const sql = `
+      UPDATE polyswap_orders 
+      SET polymarket_order_hash = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+      RETURNING id
+    `;
+    try {
+      const result = await query(sql, [polymarketOrderHash, orderId]);
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error(`❌ Error updating Polymarket order hash for order ID ${orderId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Update transaction hash for an order using order hash
+   */
+  static async updateOrderTransactionHash(orderHash: string, transactionHash: string): Promise<boolean> {
+    const sql = `
+      UPDATE polyswap_orders 
+      SET transaction_hash = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE order_hash = $2
+      RETURNING order_hash
+    `;
+    try {
+      const result = await query(sql, [transactionHash, orderHash]);
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error(`❌ Error updating transaction hash for ${orderHash}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Update transaction hash for an order using numerical ID
+   */
+  static async updateOrderTransactionHashById(orderId: number, transactionHash: string): Promise<boolean> {
+    const sql = `
+      UPDATE polyswap_orders 
+      SET transaction_hash = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+      RETURNING id
+    `;
+    try {
+      const result = await query(sql, [transactionHash, orderId]);
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error(`❌ Error updating transaction hash for order ID ${orderId}:`, error);
       return false;
     }
   }

@@ -137,6 +137,87 @@ class ApiService {
     }
   }
 
+  // Create Polymarket order for a draft order
+  async createPolymarketOrder(orderHash: string): Promise<{
+    success: boolean;
+    data?: {
+      polymarketOrderHash: string;
+    };
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/polyswap/orders/polymarket`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ orderHash }),
+      });
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Failed to create polymarket order:', error);
+      return {
+        success: false,
+        error: 'Failed to create polymarket order',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Get transaction data for signing
+  async getTransactionData(orderHash: string): Promise<{
+    success: boolean;
+    data?: {
+      transaction: any;
+    };
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/polyswap/orders/${orderHash}/transaction`);
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Failed to fetch transaction data:', error);
+      return {
+        success: false,
+        error: 'Failed to fetch transaction data',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Update order with transaction hash
+  async updateOrderTransactionHash(orderHash: string, transactionHash: string): Promise<{
+    success: boolean;
+    data?: any;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/polyswap/orders/${orderHash}/transaction`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ transactionHash }),
+      });
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Failed to update transaction hash:', error);
+      return {
+        success: false,
+        error: 'Failed to update transaction hash',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
   // Get polyswap orders by owner address
   async getOrdersByOwner(
     ownerAddress: string, 

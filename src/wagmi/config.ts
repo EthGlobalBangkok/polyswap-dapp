@@ -1,14 +1,13 @@
 import { createConfig, http } from 'wagmi'
-import { polygon, polygonAmoy } from 'wagmi/chains'
-import { safe, walletConnect } from 'wagmi/connectors'
+import { polygon } from 'wagmi/chains'
+import { walletConnect } from 'wagmi/connectors'
 
-const projectId = 'c0030b76ad13b6c833cb8925480f09f3'
+const projectId = '939b6191396abf894a6b94010d6c177b'
 
 export const config = createConfig({
-  chains: [polygon, polygonAmoy],
+  chains: [polygon],
   transports: {
     [polygon.id]: http(),
-    [polygonAmoy.id]: http(),
   },
   ssr: true,
   connectors: [

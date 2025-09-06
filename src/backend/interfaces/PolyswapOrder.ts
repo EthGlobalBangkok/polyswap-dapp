@@ -46,7 +46,8 @@ export interface PolyswapOrderRecord {
 
 // Database interface for the polyswap_orders table
 export interface DatabasePolyswapOrder {
-  order_hash: string;
+  id: number;
+  order_hash: string | null;
   owner: string;
   handler: string;
   sell_token: string;
@@ -60,6 +61,9 @@ export interface DatabasePolyswapOrder {
   block_number: number;
   transaction_hash: string;
   log_index: number;
+  market_id: string | null;
+  outcome_selected: number | null; // Selected outcome index
+  bet_percentage: number | null; // Bet percentage (0-100)
   status: 'draft' | 'live' | 'filled' | 'canceled';
   created_at: Date;
   updated_at: Date;

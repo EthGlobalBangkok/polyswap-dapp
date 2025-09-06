@@ -1,0 +1,307 @@
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.popup {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+}
+
+.closeButton {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+
+.closeButton:hover {
+  background-color: #f0f0f0;
+}
+
+.content {
+  padding: 24px;
+  padding-top: 60px;
+}
+
+/* Step Indicator */
+.stepIndicator {
+  display: flex;
+  justify-content: space-between;
+  position: relative;
+  margin-bottom: 40px;
+}
+
+.stepLine {
+  position: absolute;
+  top: 15px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: #e0e0e0;
+  z-index: 1;
+}
+
+.stepItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 2;
+  flex: 1;
+}
+
+.stepNumber {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  font-weight: bold;
+  color: #666;
+  border: 2px solid #e0e0e0;
+}
+
+.stepNumber.completed {
+  background-color: #4CAF50;
+  color: white;
+  border-color: #4CAF50;
+}
+
+.stepNumber.active {
+  background-color: #2196F3;
+  color: white;
+  border-color: #2196F3;
+  transform: scale(1.1);
+}
+
+.stepLabel {
+  font-size: 12px;
+  color: #666;
+  text-align: center;
+  max-width: 100px;
+}
+
+.stepLabel.active {
+  color: #2196F3;
+  font-weight: 500;
+}
+
+/* Step Content */
+.stepContent {
+  text-align: center;
+}
+
+.stepTitle {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #333;
+}
+
+.stepDescription {
+  font-size: 16px;
+  color: #666;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+/* Info Box */
+.infoBox {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+  text-align: left;
+}
+
+.infoBox h3 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  color: #333;
+  font-size: 16px;
+}
+
+.infoBox ul {
+  padding-left: 20px;
+  margin: 0;
+}
+
+.infoBox ul li {
+  margin-bottom: 8px;
+  color: #666;
+}
+
+/* Transaction Details */
+.transactionDetails {
+  font-size: 14px;
+}
+
+.detailRow {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.detailLabel {
+  color: #666;
+  font-weight: 500;
+}
+
+.detailValue {
+  color: #333;
+  font-family: monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.transactionHash {
+  font-size: 12px;
+  color: #666;
+  font-family: monospace;
+  margin-top: 8px;
+}
+
+/* Buttons */
+.primaryButton {
+  background-color: #2196F3;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background-color 0.2s;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background-color: #1976D2;
+}
+
+.primaryButton:disabled {
+  background-color: #BBDEFB;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  background-color: #f0f0f0;
+  color: #333;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background-color 0.2s;
+}
+
+.secondaryButton:hover {
+  background-color: #e0e0e0;
+}
+
+.buttonGroup {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.buttonGroup .primaryButton,
+.buttonGroup .secondaryButton {
+  flex: 1;
+  width: auto;
+}
+
+/* Loading Spinner */
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #2196F3;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loadingSpinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 0;
+}
+
+.loadingSpinner p {
+  margin: 0;
+  color: #666;
+}
+
+/* Success/Error Icons */
+.successIcon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background-color: #4CAF50;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  font-weight: bold;
+  margin: 0 auto 20px;
+}
+
+.errorIcon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background-color: #f44336;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  font-weight: bold;
+  margin: 0 auto 20px;
+}

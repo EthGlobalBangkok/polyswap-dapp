@@ -118,7 +118,28 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
         
         // Set default outcome for binary markets
         if (marketData.type === 'binary') {
-          setFormData(prev => ({ ...prev, selectedOutcome: 'yes' }));
+          // For traditional binary markets with yesOdds/noOdds
+          if (marketData.yesOdds !== undefined && marketData.noOdds !== undefined) {
+            setFormData(prev => ({ ...prev, selectedOutcome: 'Yes' }));
+          }
+          // For non-traditional binary markets with options
+          else if (marketData.options && marketData.options.length >= 2) {
+            setFormData(prev => ({ ...prev, selectedOutcome: marketData.options[0].text }));
+          } else {
+            // Handle case where options is undefined or empty
+            setError('Market data error: Invalid binary market structure');
+            return;
+          }
+        }
+        // Set default outcome for multi-choice markets
+        else if (marketData.type === 'multi-choice') {
+          if (marketData.options && marketData.options.length > 0) {
+            setFormData(prev => ({ ...prev, selectedOutcome: marketData.options[0].text }));
+          } else {
+            // Handle case where options is undefined or empty
+            setError('Market data error: Invalid multi-choice market structure');
+            return;
+          }
         }
       } catch (err) {
         console.error('Failed to fetch market:', err);
@@ -492,7 +513,7 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
 
   const getOutcomeDisplay = () => {
     if (!formData.selectedOutcome) return 'Not selected';
-    return formData.selectedOutcome.toUpperCase();
+    return formData.selectedOutcome;
   };
 
   return (
@@ -667,44 +688,72 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
               <div className={styles.outcomeSelection}>
                 <label className={styles.label}>Select Outcome</label>
                 {market.type === 'binary' ? (
-                  <div className={styles.binaryOptions}>
-                    <button
-                      type="button"
-                      className={`${styles.outcomeButton} ${formData.selectedOutcome === 'yes' ? styles.selected : ''}`}
-                      onClick={() => handleInputChange('selectedOutcome', 'yes')}
-                    >
-                      <span className={styles.outcomeLabel}>YES</span>
-                      <span className={styles.outcomeOdds}>{market.yesOdds}%</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`${styles.outcomeButton} ${formData.selectedOutcome === 'no' ? styles.selected : ''}`}
-                      onClick={() => handleInputChange('selectedOutcome', 'no')}
-                    >
-                      <span className={styles.outcomeLabel}>NO</span>
-                      <span className={styles.outcomeOdds}>{market.noOdds}%</span>
-                    </button>
-                  </div>
-                ) : (
+                  // Check if this is a traditional binary market with yesOdds/noOdds
+                  market.yesOdds !== undefined && market.noOdds !== undefined ? (
+                    <div className={styles.binaryOptions}>
+                      <button
+                        type="button"
+                        className={`${styles.outcomeButton} ${formData.selectedOutcome === 'Yes' ? styles.selected : ''}`}
+                        onClick={() => handleInputChange('selectedOutcome', 'Yes')}
+                      >
+                        <span className={styles.outcomeLabel}>YES</span>
+                        <span className={styles.outcomeOdds}>{market.yesOdds}%</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.outcomeButton} ${formData.selectedOutcome === 'No' ? styles.selected : ''}`}
+                        onClick={() => handleInputChange('selectedOutcome', 'No')}
+                      >
+                        <span className={styles.outcomeLabel}>NO</span>
+                        <span className={styles.outcomeOdds}>{market.noOdds}%</span>
+                      </button>
+                    </div>
+                  ) : market.options && market.options.length >= 2 ? (
+                    // For non-traditional binary markets with options
+                    <div className={styles.binaryOptions}>
+                      {market.options.map((option, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          className={`${styles.outcomeButton} ${formData.selectedOutcome === option.text ? styles.selected : ''}`}
+                          onClick={() => handleInputChange('selectedOutcome', option.text)}
+                        >
+                          <span className={styles.outcomeLabel}>{option.text.toUpperCase()}</span>
+                          <span className={styles.outcomeOdds}>{option.odds}%</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    // Error state for binary markets with no valid options
+                    <div className={styles.error}>
+                      Market data error: Invalid binary market structure
+                    </div>
+                  )
+                ) : market.options && market.options.length > 0 ? (
                   <select
                     value={formData.selectedOutcome}
                     onChange={(e) => handleInputChange('selectedOutcome', e.target.value)}
                     className={styles.outcomeSelect}
                   >
                     <option value="">Select an outcome</option>
-                    {market.options?.map((option, index) => (
+                    {market.options.map((option, index) => (
                       <option key={index} value={option.text}>
                         {option.text} ({option.odds}%)
                       </option>
                     ))}
                   </select>
+                ) : (
+                  // Error state for multi-choice markets with no valid options
+                  <div className={styles.error}>
+                    Market data error: Invalid multi-choice market structure
+                  </div>
                 )}
               </div>
 
               {/* Bet Percentage */}
               <div className={styles.percentageSection}>
                 <label className={styles.activationLabel}>
-                  Activation Condition: When {formData.selectedOutcome.toUpperCase()} reaches {formData.betPercentage}%
+                  Activation Condition: When {formData.selectedOutcome || 'selected outcome'} reaches {formData.betPercentage}%
                 </label>
                 <div className={styles.percentageContainer}>
                   <input
@@ -722,7 +771,13 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
                   </div>
                 </div>
                 <div className={styles.marketPrice}>
-                  Market: {formData.selectedOutcome === 'yes' ? market.yesOdds : market.noOdds}%
+                  Market: {
+                    market.type === 'binary' && market.yesOdds !== undefined && market.noOdds !== undefined
+                      ? (formData.selectedOutcome === 'Yes' ? market.yesOdds : market.noOdds)
+                      : market.options && market.options.length > 0 
+                        ? market.options.find(option => option.text === formData.selectedOutcome)?.odds || 0
+                        : 0
+                  }%
                 </div>
               </div>
             </div>

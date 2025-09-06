@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../../backend/services/databaseService';
-import { polymarketOrderService } from '../../../../../backend/services/polymarketOrderService';
-import { PolymarketAPIService } from '../../../../../backend/services/polymarketAPIService';
+import { getPolymarketOrderService } from '../../../../../backend/services/polymarketOrderService';
 
 export async function PUT(request: NextRequest) {
   try {
@@ -100,30 +99,70 @@ export async function PUT(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Validate outcome selected index
-    if (order.outcome_selected < 0 || order.outcome_selected >= clobTokenIds.length) {
+    // Validate outcome selected (is the value of an outcome like yes/no so search in array the outcome and save the array index)
+    // Parse outcomes from market data
+    let outcomes: string[] = [];
+    try {
+      outcomes = Array.isArray(market.outcomes) 
+        ? market.outcomes 
+        : JSON.parse(market.outcomes as unknown as string);
+    } catch (parseError) {
+      console.error('Failed to parse outcomes:', parseError);
       return NextResponse.json({
         success: false,
-        error: 'Invalid outcome selected',
-        message: `Outcome selected (${order.outcome_selected}) is out of range for market with ${clobTokenIds.length} outcomes`
+        error: 'Invalid market data',
+        message: 'Failed to parse outcomes from market data'
+      }, { status: 500 });
+    }
+
+    // Validate we have outcomes
+    if (!outcomes || outcomes.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: 'Missing outcomes',
+        message: 'Market does not have any outcomes'
       }, { status: 400 });
     }
 
+    // Find the index of the selected outcome in the outcomes array
+    const outcomeIndex = outcomes.indexOf(order.outcome_selected);
+    if (outcomeIndex === -1) {
+      return NextResponse.json({
+        success: false,
+        error: 'Invalid outcome selected',
+        message: `Outcome '${order.outcome_selected}' is not valid for this market. Valid outcomes are: ${outcomes.join(', ')}`
+      }, { status: 400 });
+    }
+
+    // Validate that we have a CLOB token ID for the selected outcome
+    if (outcomeIndex >= clobTokenIds.length) {
+      return NextResponse.json({
+        success: false,
+        error: 'Missing CLOB token ID',
+        message: `No CLOB token ID found for outcome '${order.outcome_selected}'`
+      }, { status: 500 });
+    }
+
     // Get the token ID for the selected outcome
-    const tokenId = clobTokenIds[order.outcome_selected];
+    const tokenId = clobTokenIds[outcomeIndex];
 
     // Calculate the price based on bet percentage (convert from percentage to decimal)
     const price = order.bet_percentage / 100;
 
+    // Get singleton instance of Polymarket service
+    const polymarketOrderService = getPolymarketOrderService();
+    
     // Initialize Polymarket service
     try {
+      console.log('Initializing Polymarket service...');
       await polymarketOrderService.initialize();
+      
     } catch (initError) {
       console.error('Failed to initialize Polymarket service:', initError);
       return NextResponse.json({
         success: false,
         error: 'Service initialization failed',
-        message: 'Failed to initialize Polymarket service'
+        message: `Failed to initialize Polymarket service: ${initError instanceof Error ? initError.message : 'Unknown error'}`
       }, { status: 500 });
     }
 
@@ -135,8 +174,18 @@ export async function PUT(request: NextRequest) {
         size: 5,
       });
       
+      console.log('Polymarket order result:', orderResult);
       // Extract the order hash from the response
-      const polymarketOrderHash = orderResult.response.id
+      const polymarketOrderHash = orderResult.response.orderID;
+      console.log('Polymarket order created with hash:', polymarketOrderHash);
+      
+      if (!polymarketOrderHash) {
+        return NextResponse.json({
+          success: false,
+          error: 'Missing Polymarket order hash',
+          message: 'Polymarket did not return an order hash'
+        }, { status: 500 });
+      }
       
       // Update the order with the Polymarket order hash using the numerical ID
       const updated = await DatabaseService.updateOrderPolymarketHashById(orderIdNum, polymarketOrderHash);
@@ -153,7 +202,8 @@ export async function PUT(request: NextRequest) {
         success: true,
         data: {
           orderId: orderIdNum,
-          polymarketOrderHash,
+          polymarketOrderHash: polymarketOrderHash,
+          txs: orderResult.response.transactionsHashes,
           message: 'Polymarket order created successfully'
         }
       });

@@ -62,7 +62,7 @@ export interface DatabasePolyswapOrder {
   transaction_hash: string;
   log_index: number;
   market_id: string | null;
-  outcome_selected: number | null; // Selected outcome index
+  outcome_selected: string | null; // Selected outcome index
   bet_percentage: number | null; // Bet percentage (0-100)
   status: 'draft' | 'live' | 'filled' | 'canceled';
   created_at: Date;

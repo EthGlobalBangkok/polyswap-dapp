@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DatabaseService } from '../../../../../../backend/services/databaseService';
+import { DatabaseService } from '../../../../../../../backend/services/databaseService';
 
 export async function GET(
   request: NextRequest,
@@ -30,7 +30,7 @@ export async function GET(
     }
 
     // Check if order has a Polymarket order hash
-    if (!order.polymarket_order_hash || order.polymarket_order_hash === '0x0000000000000000000000000000000000000000000000000000000000000000') {
+    if (!order.polymarket_order_hash) {
       return NextResponse.json({
         success: false,
         error: 'Missing Polymarket order',

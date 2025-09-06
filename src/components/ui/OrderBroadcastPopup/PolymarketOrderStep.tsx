@@ -33,7 +33,10 @@ export const PolymarketOrderStep: React.FC<PolymarketOrderStepProps> = ({
       if (result.success) {
         onCreateSuccess(result.data.polymarketOrderHash);
       } else {
-        onError(result.message || 'Failed to create Polymarket order');
+        // More detailed error handling
+        const errorMessage = result.message || result.error || 'Failed to create Polymarket order';
+        console.error('Polymarket order creation failed:', result);
+        onError(`Polymarket order creation failed: ${errorMessage}`);
       }
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Failed to create Polymarket order');

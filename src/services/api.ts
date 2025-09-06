@@ -266,11 +266,13 @@ class ApiService {
       throw new Error('Invalid outcomes or outcome_prices format');
     }
     
-    const isBinary = backendMarket.outcomes.length === 2 && 
-                     backendMarket.outcomes.includes('Yes') && 
-                     backendMarket.outcomes.includes('No');
+    // For binary markets, we still check if it's a traditional Yes/No market
+    // but we also create options for non-traditional binary markets
+    const isTraditionalBinary = backendMarket.outcomes.length === 2 && 
+                                backendMarket.outcomes.includes('Yes') && 
+                                backendMarket.outcomes.includes('No');
 
-    if (isBinary) {
+    if (isTraditionalBinary) {
       const yesIndex = backendMarket.outcomes.indexOf('Yes');
       const noIndex = backendMarket.outcomes.indexOf('No');
       
@@ -293,7 +295,32 @@ class ApiService {
             : [],
         description: backendMarket.description
       };
-        } else {
+    } else if (backendMarket.outcomes.length === 2) {
+      // Non-traditional binary market - create options instead of hardcoding yes/no
+      const options: MarketOption[] = backendMarket.outcomes.map((outcome, index) => ({
+        text: outcome,
+        // Convert decimal odds to percentages (multiply by 100) and round to 2 decimals
+        odds: Number(((backendMarket.outcome_prices[index] || 0) * 100).toFixed(2))
+      }));
+
+      return {
+        id: backendMarket.id,
+        title: backendMarket.question,
+        volume: parseFloat(backendMarket.volume) || 0,
+        endDate: backendMarket.end_date,
+        category: backendMarket.category,
+        type: 'binary', // Still mark as binary for UI purposes
+        options, // Include options for non-traditional binary markets
+        conditionId: backendMarket.condition_id,
+        slug: backendMarket.slug,
+        clobTokenIds: Array.isArray(backendMarket.clob_token_ids) 
+          ? backendMarket.clob_token_ids 
+          : typeof backendMarket.clob_token_ids === 'string' 
+            ? JSON.parse(backendMarket.clob_token_ids) 
+            : [],
+        description: backendMarket.description
+      };
+    } else {
       // Multi-choice market
       const options: MarketOption[] = backendMarket.outcomes.map((outcome, index) => ({
         text: outcome,

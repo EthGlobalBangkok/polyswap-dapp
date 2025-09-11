@@ -1,4 +1,4 @@
-import { ApiKeyCreds, ClobClient, Side, OrderType } from "@polymarket/clob-client";
+import { ApiKeyCreds, ClobClient, Side, OrderType, AssetType } from "@polymarket/clob-client";
 import { ethers } from "ethers";
 
 export interface PolymarketOrderConfig {
@@ -227,7 +227,7 @@ export class PolymarketOrderService {
       console.log(`Token ${token} has ${decimals} decimals`);
       
       return decimals;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to get token decimals:', error);
       
       // Log additional details about the error
@@ -271,15 +271,23 @@ export class PolymarketOrderService {
     this.checkInitialization();
     
     try {
+      if (!(config.price > 0)) {
+        throw new Error('Price must be greater than 0');
+      }
+
+      // Ensure order notional (price * size) is at least $1
+      const minSizeForOneDollar = Math.ceil((1 / config.price) * 1_000_000) / 1_000_000; // 6-decimal precision
+      const sizeToUse = config.size < minSizeForOneDollar ? minSizeForOneDollar : config.size;
+
       const decimals = await this.getTokenDecimals(this.USDC);
       // Convert all values to BigInt for arithmetic operations in ethers v6
       const priceBigInt = BigInt(Math.floor(config.price * 1000000));
-      const sizeBigInt = BigInt(Math.floor(config.size * 1000000));
+      const sizeBigInt = BigInt(Math.floor(sizeToUse * 1000000));
       const decimalsMultiplier = BigInt(10) ** BigInt(decimals);
       // Calculate required amount: (price * size) * (10 ** decimals)
       // We need to be careful with the precision here
       const requiredAmount = (priceBigInt * sizeBigInt * decimalsMultiplier) / (1000000n * 1000000n);
-      
+
       let ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
       if (!ok) {
         throw new Error('Insufficient allowance for USDC');
@@ -290,7 +298,7 @@ export class PolymarketOrderService {
           tokenID: config.tokenID,
           price: config.price,
           side: config.side === 'BUY' ? Side.BUY : Side.SELL,
-          size: config.size,
+          size: sizeToUse,
           feeRateBps: config.feeRateBps || 0,
         }, { tickSize: "0.01" }, OrderType.GTC);
 
@@ -315,13 +323,24 @@ export class PolymarketOrderService {
     this.checkInitialization();
     
     try {
+      if (!(config.price > 0)) {
+        throw new Error('Price must be greater than 0');
+      }
+
+      // Ensure order notional (price * size) is at least $1
+      const minSizeForOneDollar = Math.ceil((1 / config.price) * 1_000_000) / 1_000_000; // 6-decimal precision
+      const sizeToUse = config.size < minSizeForOneDollar ? minSizeForOneDollar : config.size;
+
       const decimals = await this.getTokenDecimals(this.USDC);
       // Convert all values to BigInt for arithmetic operations in ethers v6
       const priceBigInt = BigInt(Math.floor(config.price * 1000000));
-      const sizeBigInt = BigInt(Math.floor(config.size * 1000000));
+      const sizeBigInt = BigInt(Math.floor(sizeToUse * 1000000));
       const decimalsMultiplier = BigInt(10) ** BigInt(decimals);
       // Calculate required amount: (price * size) * (10 ** decimals)
       const requiredAmount = (priceBigInt * sizeBigInt * decimalsMultiplier) / (1000000n * 1000000n);
+
+      const res = await this.clobClient?.getBalanceAllowance({ asset_type: AssetType.COLLATERAL })
+      console.log("Balance and allowances:", res);
       
       let ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
       if (!ok) {
@@ -333,7 +352,7 @@ export class PolymarketOrderService {
           tokenID: config.tokenID,
           price: config.price,
           side: config.side === 'BUY' ? Side.BUY : Side.SELL,
-          size: config.size,
+          size: sizeToUse,
           feeRateBps: config.feeRateBps || 0,
           expiration: config.expiration
         }, { tickSize: "0.01" }, OrderType.GTD);

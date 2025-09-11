@@ -33,8 +33,8 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
         <h3>Order Details:</h3>
         <div className={styles.transactionDetails}>
           <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>Order Hash:</span>
-            <span className={styles.detailValue}>{orderHash.substring(0, 10)}...{orderHash.substring(orderHash.length - 8)}</span>
+            <span className={styles.detailLabel}>Order ID:</span>
+            <span className={styles.detailValue}>{orderId}</span>
           </div>
           <div className={styles.detailRow}>
             <span className={styles.detailLabel}>Polymarket Hash:</span>

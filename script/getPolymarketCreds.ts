@@ -10,15 +10,19 @@ const __dirname = dirname(__filename);
 dotenvConfig({ path: resolve(__dirname, "../.env") });
 
 async function main() {
-    const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL || "https://polygon-rpc.com");
+    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL || "https://polygon-rpc.com");
     const wallet = new ethers.Wallet(process.env.PK as string, provider);
     const chainId = parseInt(`${process.env.CHAIN_ID || Chain.POLYGON}`) as Chain;
     const nonce = parseInt(process.env.NONCE || "0");
     
     console.log(`Address: ${wallet.address}, chainId: ${chainId}`);
 
+    const v6Signer = new ethers.Wallet(process.env.PK as string, provider);
+    // Add the ethers v5 method name for compatibility
+    (v6Signer as any)._signTypedData = v6Signer.signTypedData.bind(v6Signer);
+
     const host = process.env.CLOB_API_URL || "https://clob.polymarket.com";
-    const clobClient = new ClobClient(host, chainId, wallet);
+    const clobClient = new ClobClient(host, chainId, v6Signer as any);
 
     const resp = await clobClient.createApiKey(nonce);
     console.log("🎉 API Key Created Successfully!");

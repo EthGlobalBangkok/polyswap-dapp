@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styles from './OrderBroadcastPopup.module.css';
 
 interface TransactionSignStepProps {
@@ -25,6 +25,12 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
   onError
 }) => {
   const [isLoading, setIsLoading] = useState(false);
+  const didFetchRef = useRef(false);
+
+  // Reset guard when orderId changes so we fetch once per order
+  useEffect(() => {
+    didFetchRef.current = false;
+  }, [orderId]);
 
   useEffect(() => {
     const fetchTransactionData = async () => {
@@ -46,8 +52,12 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
       }
     };
 
-    fetchTransactionData();
-  }, [orderId, onGetTransactionData, onError]); // Updated dependency
+    // Guard to avoid multiple calls (e.g., React Strict Mode) and re-renders
+    if (!didFetchRef.current) {
+      didFetchRef.current = true;
+      fetchTransactionData();
+    }
+  }, [orderId]);
 
   const handleSignTransaction = () => {
     onSendTransaction();

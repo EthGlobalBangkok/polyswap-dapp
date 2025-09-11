@@ -47,6 +47,31 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
     hash: state.transactionHash as `0x${string}`,
   });
 
+  // On open, fetch order to determine resume step from DB status and polymarket hash
+  useEffect(() => {
+    let abort = false;
+    const primeFromDb = async () => {
+      if (!isOpen || !orderId) return;
+      try {
+        const res = await fetch(`/api/polyswap/orders/id/${orderId}`);
+        const json = await res.json();
+        if (!res.ok || !json.success) return;
+        if (abort) return;
+        const order = json.data as { status: string; polymarket_order_hash?: string | null; transaction_hash?: string | null };
+        // If Polymarket order already created, skip to transaction step
+        if (order.polymarket_order_hash) {
+          setState(prev => ({
+            ...prev,
+            step: 'transaction',
+            polymarketOrderHash: order.polymarket_order_hash || undefined
+          }));
+        }
+      } catch {}
+    };
+    primeFromDb();
+    return () => { abort = true; };
+  }, [isOpen, orderId]);
+
   // Handle transaction status changes
   useEffect(() => {
     if (isSuccess && state.step === 'transaction') {
@@ -184,12 +209,15 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
             error={state.error || 'unknown_error'}
             errorMessage={state.errorMessage || 'An unknown error occurred'}
             onRetry={() => {
-              // Reset to polymarket step to retry the whole process
-              setState({
-                step: 'polymarket',
-                error: undefined,
-                errorMessage: undefined
-              });
+              // Resume only the failed step
+              if (state.error === 'polymarket_creation_failed') {
+                setState(prev => ({ ...prev, step: 'polymarket', error: undefined, errorMessage: undefined }));
+              } else if (state.error === 'transaction_preparation_failed' || state.error === 'send_transaction_failed' || state.error === 'transaction_failed') {
+                setState(prev => ({ ...prev, step: 'transaction', error: undefined, errorMessage: undefined }));
+              } else {
+                // default back to transaction if polymarket already exists, else polymarket
+                setState(prev => ({ ...prev, step: prev.polymarketOrderHash ? 'transaction' : 'polymarket', error: undefined, errorMessage: undefined }));
+              }
             }}
             onClose={handleClose}
           />

@@ -174,12 +174,14 @@ export class DatabaseService {
    * Search markets by keywords (AND search - all keywords must be present)
    */
   static async searchMarketsByKeywords(keywords: string[], limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE ${index + 1}`).join(' AND ');
+    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' AND ');
+    const limitIndex = keywords.length + 1;
+    const offsetIndex = keywords.length + 2;
     const sql = `
       SELECT * FROM markets 
       WHERE ${conditions}
       ORDER BY volume DESC 
-      LIMIT ${keywords.length + 1} OFFSET ${keywords.length + 2}
+      LIMIT $${limitIndex} OFFSET $${offsetIndex}
     `;
     const values = [...keywords.map(k => `%${k}%`), limit, offset];
     const result = await query(sql, values);
@@ -190,12 +192,14 @@ export class DatabaseService {
    * Search markets by any keyword (OR search - any keyword can match)
    */
   static async searchMarketsByAnyKeyword(keywords: string[], limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE ${index + 1}`).join(' OR ');
+    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' OR ');
+    const limitIndex = keywords.length + 1;
+    const offsetIndex = keywords.length + 2;
     const sql = `
       SELECT * FROM markets 
       WHERE ${conditions}
       ORDER BY volume DESC 
-      LIMIT ${keywords.length + 1} OFFSET ${keywords.length + 2}
+      LIMIT $${limitIndex} OFFSET $${offsetIndex}
     `;
     const values = [...keywords.map(k => `%${k}%`), limit, offset];
     const result = await query(sql, values);
@@ -206,12 +210,15 @@ export class DatabaseService {
    * Search markets by keywords AND category (AND search - all keywords must be present)
    */
   static async searchMarketsByKeywordsAndCategory(keywords: string[], category: string, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE ${index + 1}`).join(' AND ');
+    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' AND ');
+    const categoryIndex = keywords.length + 1;
+    const limitIndex = keywords.length + 2;
+    const offsetIndex = keywords.length + 3;
     const sql = `
       SELECT * FROM markets 
-      WHERE ${conditions} AND category = ${keywords.length + 1}
+      WHERE ${conditions} AND category = $${categoryIndex}
       ORDER BY volume DESC 
-      LIMIT ${keywords.length + 2} OFFSET ${keywords.length + 3}
+      LIMIT $${limitIndex} OFFSET $${offsetIndex}
     `;
     const values = [...keywords.map(k => `%${k}%`), category, limit, offset];
     const result = await query(sql, values);
@@ -222,12 +229,15 @@ export class DatabaseService {
    * Search markets by any keyword AND category (OR search - any keyword can match)
    */
   static async searchMarketsByAnyKeywordAndCategory(keywords: string[], category: string, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE ${index + 1}`).join(' OR ');
+    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' OR ');
+    const categoryIndex = keywords.length + 1;
+    const limitIndex = keywords.length + 2;
+    const offsetIndex = keywords.length + 3;
     const sql = `
       SELECT * FROM markets 
-      WHERE (${conditions}) AND category = ${keywords.length + 1}
+      WHERE (${conditions}) AND category = $${categoryIndex}
       ORDER BY volume DESC 
-      LIMIT ${keywords.length + 2} OFFSET ${keywords.length + 3}
+      LIMIT $${limitIndex} OFFSET $${offsetIndex}
     `;
     const values = [...keywords.map(k => `%${k}%`), category, limit, offset];
     const result = await query(sql, values);

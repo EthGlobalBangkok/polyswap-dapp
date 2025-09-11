@@ -423,15 +423,15 @@ class ApiService {
     throw new Error(response.message || 'Failed to fetch markets by category');
   }
 
-  async getMarketBySlug(slug: string): Promise<ApiMarket> {
+  async getMarketBySlug(slug: string): Promise<ApiMarket | null> {
     const response = await this.fetchApi(`/markets/search?q=${slug}&type=slug`);
     
     if (response.success && response.data && Array.isArray(response.data) && response.data.length > 0) {
       const marketData = response.data[0];
       return this.convertBackendMarket(marketData);
     }
-    
-    throw new Error(response.message || 'No market found with slug: ' + slug);
+    // Gracefully indicate no slug match without throwing
+    return null;
   }
 }
 

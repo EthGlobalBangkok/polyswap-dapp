@@ -97,17 +97,16 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
       
       if (isSlug) {
         // For slug searches, try to get the market directly by slug
-        try {
-          const market = await apiService.getMarketBySlug(query);
+        const market = await apiService.getMarketBySlug(query);
+        if (market) {
           const convertedMarket = convertApiMarket(market);
           setMarkets([convertedMarket]);
           setTotalResults(1);
           setHasMore(false);
           setIsSearching(false);
           return;
-        } catch (slugError) {
-          console.error('Slug search failed:', slugError);
         }
+        // If not found, silently fall back to regular search
       }
       
       // Regular search (keywords, category, etc.)

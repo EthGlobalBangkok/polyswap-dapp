@@ -25,6 +25,17 @@ export function WalletOptions() {
   const mounted = useMounted();
   const { connectors, connect, isPending } = useConnect();
 
+  // Check if we're in Safe Apps environment
+  const isSafeApp = typeof window !== 'undefined' && window.parent !== window;
+  
+  // Debug: log available connectors
+  React.useEffect(() => {
+    if (mounted) {
+      console.log('Available connectors:', connectors.map(c => ({ name: c.name, id: c.id })));
+      console.log('Is Safe App environment:', isSafeApp);
+    }
+  }, [connectors, isSafeApp, mounted]);
+
   // Don't render until mounted to prevent hydration mismatch
   if (!mounted) {
     return (
@@ -33,9 +44,11 @@ export function WalletOptions() {
       </button>
     );
   }
-
-  // Use the first available connector (WalletConnect)
-  const primaryConnector = connectors[0];
+  
+  // Use Safe connector if in Safe Apps environment, otherwise use WalletConnect
+  const primaryConnector = isSafeApp 
+    ? connectors.find(connector => connector.name === 'Safe') 
+    : connectors.find(connector => connector.name === 'WalletConnect') || connectors[0];
 
   if (!primaryConnector) {
     return (
@@ -45,6 +58,33 @@ export function WalletOptions() {
           <span>Loading...</span>
         </div>
       </button>
+    );
+  }
+
+  // Show connector selection if we have multiple options
+  if (connectors.length > 1 && !isSafeApp) {
+    return (
+      <div className={styles.walletOptions}>
+        {connectors.map((connector) => (
+          <button
+            key={connector.id}
+            className={styles.connectButton}
+            onClick={() => connect({ connector })}
+            disabled={isPending}
+          >
+            {isPending ? (
+              <>
+                <div className={styles.spinner}></div>
+                <span>Connecting...</span>
+              </>
+            ) : (
+              <span>
+                {connector.name === 'WalletConnect' ? 'Connect with Safe Mobile' : connector.name}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
     );
   }
 
@@ -60,7 +100,9 @@ export function WalletOptions() {
           <span>Connecting...</span>
         </>
       ) : (
-        <span>Connect Wallet</span>
+        <span>
+          {isSafeApp ? 'Connect Safe Wallet' : 'Connect Wallet'}
+        </span>
       )}
     </button>
   );

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../../../../backend/services/databaseService';
+import { TransactionEncodingService } from '../../../../../../../backend/services/transactionEncodingService';
+import { PolyswapOrderData } from '../../../../../../../backend/interfaces/PolyswapOrder';
 
 export async function GET(
   request: NextRequest,
@@ -29,8 +31,21 @@ export async function GET(
       }, { status: 404 });
     }
 
+    // Debug: log the order data
+    console.log('Order data from database:', {
+      id: order.id,
+      sell_token: order.sell_token,
+      buy_token: order.buy_token,
+      sell_amount: order.sell_amount,
+      min_buy_amount: order.min_buy_amount,
+      polymarket_order_hash: order.polymarket_order_hash,
+      app_data: order.app_data,
+      start_time: order.start_time,
+      end_time: order.end_time
+    });
+
     // Check if order has a Polymarket order hash
-    if (!order.polymarket_order_hash) {
+    if (!order.polymarket_order_hash || order.polymarket_order_hash === '0x0000000000000000000000000000000000000000000000000000000000000000') {
       return NextResponse.json({
         success: false,
         error: 'Missing Polymarket order',
@@ -38,14 +53,38 @@ export async function GET(
       }, { status: 400 });
     }
 
-    // TODO: Generate actual transaction data for signing
-    // This would involve encoding the createWithContext call data for ComposableCoW
-    const transactionData = {
-      to: process.env.COMPOSABLE_COW,
-      data: "0x", // TODO: Encode the actual createWithContext call data
-      value: "0",
-      chainId: parseInt(process.env.CHAIN_ID || "137")
+    // Validate required fields and provide defaults
+    const sellToken = order.sell_token || '';
+    const buyToken = order.buy_token || '';
+    const sellAmount = order.sell_amount || '0';
+    const minBuyAmount = order.min_buy_amount || '0';
+    const polymarketOrderHash = order.polymarket_order_hash;
+    const appData = order.app_data || '0x0000000000000000000000000000000000000000000000000000000000000000';
+
+    // Additional validation
+    if (!sellToken || !buyToken || !polymarketOrderHash) {
+      return NextResponse.json({
+        success: false,
+        error: 'Invalid order data',
+        message: 'Order is missing required fields (sellToken, buyToken, or polymarketOrderHash)'
+      }, { status: 400 });
+    }
+
+    // Convert database order to PolyswapOrderData format
+    const polyswapOrderData: PolyswapOrderData = {
+      sellToken: sellToken,
+      buyToken: buyToken,
+      receiver: order.owner,
+      sellAmount: sellAmount,
+      minBuyAmount: minBuyAmount,
+      t0: Math.floor(order.start_time.getTime() / 1000).toString(), // Convert to timestamp
+      t: Math.floor(order.end_time.getTime() / 1000).toString(), // Convert to timestamp
+      polymarketOrderHash: polymarketOrderHash,
+      appData: appData
     };
+
+    // Generate transaction data for signing
+    const transactionData = TransactionEncodingService.createTransaction(polyswapOrderData);
 
     return NextResponse.json({
       success: true,

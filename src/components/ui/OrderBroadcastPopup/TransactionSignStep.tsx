@@ -117,8 +117,16 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
       <h2 className={styles.stepTitle}>Sign Transaction</h2>
       <p className={styles.stepDescription}>
         Your Polymarket order has been created. Now you need to sign and broadcast 
-        your PolySwap order on-chain.
+        your PolySwap conditional order using your Safe wallet.
       </p>
+      
+      <div className={styles.infoBox} style={{ marginBottom: '16px', fontSize: '14px', color: '#666' }}>
+        <p><strong>📱 For WalletConnect users:</strong></p>
+        <p>• Check your Safe mobile/desktop app for the transaction request</p>
+        <p>• The transaction will be queued if additional signatures are required</p>
+        <p>• Multi-signature execution is handled automatically by your Safe</p>
+        <p>• If you see RPC errors, the transaction may still be queued successfully</p>
+      </div>
       
       <div className={styles.infoBox}>
         <h3>Transaction Details:</h3>
@@ -145,7 +153,7 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
             Signing...
           </>
         ) : (
-          'Sign & Broadcast Order'
+          'Sign & Execute Safe Transaction'
         )}
       </button>
     </div>

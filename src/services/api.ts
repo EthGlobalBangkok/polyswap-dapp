@@ -167,7 +167,7 @@ class ApiService {
     }
   }
 
-  // Get transaction data for signing
+  // Get transaction data for signing by order hash
   async getTransactionData(orderHash: string): Promise<{
     success: boolean;
     data?: {
@@ -177,7 +177,7 @@ class ApiService {
     error?: string;
   }> {
     try {
-      const response = await fetch(`${this.baseUrl}/polyswap/orders/${orderHash}/transaction`);
+      const response = await fetch(`${this.baseUrl}/polyswap/orders/hash/${orderHash}/transaction`);
       const result = await response.json();
       return result;
     } catch (error) {
@@ -190,7 +190,32 @@ class ApiService {
     }
   }
 
-  // Update order with transaction hash
+  // Get transaction data for signing by order ID
+  async getTransactionDataById(orderId: number): Promise<{
+    success: boolean;
+    data?: {
+      transaction: any;
+      orderId: number;
+      polymarketOrderHash: string;
+    };
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/polyswap/orders/id/${orderId}/transaction`);
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Failed to fetch transaction data:', error);
+      return {
+        success: false,
+        error: 'Failed to fetch transaction data',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Update order with transaction hash by order hash
   async updateOrderTransactionHash(orderHash: string, transactionHash: string): Promise<{
     success: boolean;
     data?: any;
@@ -198,7 +223,35 @@ class ApiService {
     error?: string;
   }> {
     try {
-      const response = await fetch(`${this.baseUrl}/polyswap/orders/${orderHash}/transaction`, {
+      const response = await fetch(`${this.baseUrl}/polyswap/orders/hash/${orderHash}/transaction`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ transactionHash }),
+      });
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Failed to update transaction hash:', error);
+      return {
+        success: false,
+        error: 'Failed to update transaction hash',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Update order with transaction hash by order ID
+  async updateOrderTransactionHashById(orderId: number, transactionHash: string): Promise<{
+    success: boolean;
+    data?: any;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/polyswap/orders/id/${orderId}/transaction`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

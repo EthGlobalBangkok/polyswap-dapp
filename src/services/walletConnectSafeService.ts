@@ -6,6 +6,10 @@ export interface WalletConnectSafeTransactionRequest {
   value: string;
 }
 
+export interface WalletConnectSafeBatchTransactionRequest {
+  transactions: WalletConnectSafeTransactionRequest[];
+}
+
 export interface WalletConnectSafeTransactionResult {
   transactionHash: string;
   success: boolean;
@@ -296,6 +300,116 @@ export class WalletConnectSafeService {
       console.error('Error getting Safe info:', error);
       return { isSafe: false };
     }
+  }
+
+  /**
+   * Send a batch of transactions to Safe via WalletConnect
+   * Uses MultiSend contract for batching multiple transactions, or direct transaction for single transaction
+   */
+  async sendBatchTransaction(
+    batchRequest: WalletConnectSafeBatchTransactionRequest
+  ): Promise<WalletConnectSafeTransactionResult> {
+    if (!this.signer || !this.provider) {
+      throw new Error('Service not initialized. Call initialize() first.');
+    }
+
+    try {
+      console.log('Sending Safe batch transaction via WalletConnect:', batchRequest);
+
+      // If there's only one transaction, send it directly instead of using MultiSend
+      if (batchRequest.transactions.length === 1) {
+        console.log('Single transaction detected, sending directly without MultiSend');
+        return await this.sendTransaction(batchRequest.transactions[0]);
+      }
+
+      // For multiple transactions, use MultiSend
+      console.log('Multiple transactions detected, using MultiSend');
+      
+      // For WalletConnect with Safe, we can try using MultiSend
+      // MultiSend allows batching multiple transactions into one
+      const MULTISEND_ADDRESS = '0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761'; // Ethereum mainnet MultiSend
+      
+      // Encode batch transaction data for MultiSend
+      const batchData = await this.encodeBatchTransactionData(batchRequest.transactions);
+      
+      const multisendTransaction: WalletConnectSafeTransactionRequest = {
+        to: MULTISEND_ADDRESS,
+        data: batchData,
+        value: '0'
+      };
+
+      // Send the batched transaction via MultiSend
+      return await this.sendTransaction(multisendTransaction);
+
+    } catch (error) {
+      console.error('Error sending batch Safe transaction via WalletConnect:', error);
+      throw new Error(error instanceof Error ? error.message : 'Failed to send batch transaction');
+    }
+  }
+
+  /**
+   * Encode multiple transactions for MultiSend contract
+   */
+  private async encodeBatchTransactionData(transactions: WalletConnectSafeTransactionRequest[]): Promise<string> {
+    try {
+      // MultiSend ABI for multiSend function
+      const multisendInterface = new ethers.Interface([
+        'function multiSend(bytes transactions)'
+      ]);
+
+      // Encode each transaction for MultiSend format
+      // Each transaction: operation (1 byte) + to (20 bytes) + value (32 bytes) + dataLength (32 bytes) + data (dataLength bytes)
+      let encodedTransactions = '0x';
+      
+      for (const tx of transactions) {
+        const operation = '00'; // CALL operation
+        const to = tx.to.slice(2).padStart(40, '0'); // Remove 0x and pad to 20 bytes
+        const value = BigInt(tx.value || '0').toString(16).padStart(64, '0'); // 32 bytes
+        const dataLength = ((tx.data.length - 2) / 2).toString(16).padStart(64, '0'); // 32 bytes
+        const data = tx.data.slice(2); // Remove 0x
+        
+        encodedTransactions += operation + to + value + dataLength + data;
+      }
+
+      // Encode the multiSend call
+      return multisendInterface.encodeFunctionData('multiSend', [encodedTransactions]);
+
+    } catch (error) {
+      console.error('Error encoding batch transaction data:', error);
+      throw new Error('Failed to encode batch transaction data');
+    }
+  }
+
+  /**
+   * Fallback: send transactions sequentially if batch fails
+   */
+  async sendTransactionsSequentially(
+    batchRequest: WalletConnectSafeBatchTransactionRequest
+  ): Promise<WalletConnectSafeTransactionResult[]> {
+    if (!this.signer || !this.provider) {
+      throw new Error('Service not initialized. Call initialize() first.');
+    }
+
+    const results: WalletConnectSafeTransactionResult[] = [];
+    
+    for (let i = 0; i < batchRequest.transactions.length; i++) {
+      const tx = batchRequest.transactions[i];
+      console.log(`Sending transaction ${i + 1}/${batchRequest.transactions.length}:`, tx);
+      
+      try {
+        const result = await this.sendTransaction(tx);
+        results.push(result);
+      } catch (error) {
+        console.error(`Transaction ${i + 1} failed:`, error);
+        // Continue with remaining transactions
+        results.push({
+          transactionHash: '',
+          success: false
+        });
+      }
+    }
+
+    return results;
   }
 
   isInitialized(): boolean {

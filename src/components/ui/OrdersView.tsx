@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { apiService } from '../../services/api';
 import { DatabasePolyswapOrder } from '../../backend/interfaces/PolyswapOrder';
+import OrderBroadcastPopup from './OrderBroadcastPopup/OrderBroadcastPopup';
 import styles from './OrdersView.module.css';
 
 interface Token {
@@ -27,6 +28,10 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [tokens, setTokens] = useState<Map<string, Token>>(new Map());
   const [tokensLoading, setTokensLoading] = useState(true);
+  
+  // OrderBroadcastPopup state
+  const [showBroadcastPopup, setShowBroadcastPopup] = useState(false);
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
 
   // Fetch tokens on component mount
   useEffect(() => {
@@ -98,6 +103,52 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
       newExpanded.add(orderId);
     }
     setExpandedOrders(newExpanded);
+  };
+
+  const handleContinueCreation = (order: DatabasePolyswapOrder) => {
+    console.log('Continuing creation for order:', order.id, {
+      hasPolymarketOrder: !!order.polymarket_order_hash && order.polymarket_order_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000',
+      hasTransaction: !!order.transaction_hash && order.transaction_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+    });
+    setSelectedOrderId(order.id);
+    setShowBroadcastPopup(true);
+  };
+
+  const getContinueButtonText = (order: DatabasePolyswapOrder): string => {
+    const hasPolymarketOrder = order.polymarket_order_hash && 
+                              order.polymarket_order_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000';
+    const hasTransaction = order.transaction_hash && 
+                          order.transaction_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000';
+    
+    if (!hasPolymarketOrder) {
+      return 'Create Polymarket Order';
+    } else if (!hasTransaction) {
+      return 'Sign Transaction';
+    } else {
+      return 'View Status';
+    }
+  };
+
+  const getContinueButtonTitle = (order: DatabasePolyswapOrder): string => {
+    const hasPolymarketOrder = order.polymarket_order_hash && 
+                              order.polymarket_order_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000';
+    const hasTransaction = order.transaction_hash && 
+                          order.transaction_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000';
+    
+    if (!hasPolymarketOrder) {
+      return 'Continue with creating the Polymarket order';
+    } else if (!hasTransaction) {
+      return 'Continue with signing and broadcasting the transaction';
+    } else {
+      return 'View the current status of the order broadcast process';
+    }
+  };
+
+  const handleCloseBroadcastPopup = () => {
+    setShowBroadcastPopup(false);
+    setSelectedOrderId(null);
+    // Refresh orders to get updated status
+    fetchOrders();
   };
 
   const getStatusDisplay = (status: string) => {
@@ -324,18 +375,66 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
                   </div>
                   
                   <div className={styles.cell}>
-                    <button
-                      className={styles.expandButton}
-                      onClick={() => toggleOrderExpansion(String(order.id))}
-                      title={expandedOrders.has(String(order.id)) ? 'Collapse' : 'Expand details'}
-                    >
-                      {expandedOrders.has(String(order.id)) ? '▲' : '▼'}
-                    </button>
+                    <div className={styles.actionButtons}>
+                      {order.status === 'draft' && (
+                        <button
+                          className={styles.continueButton}
+                          onClick={() => handleContinueCreation(order)}
+                          title={getContinueButtonTitle(order)}
+                        >
+                          {getContinueButtonText(order)}
+                        </button>
+                      )}
+                      <button
+                        className={styles.expandButton}
+                        onClick={() => toggleOrderExpansion(String(order.id))}
+                        title={expandedOrders.has(String(order.id)) ? 'Collapse' : 'Expand details'}
+                      >
+                        {expandedOrders.has(String(order.id)) ? '▲' : '▼'}
+                      </button>
+                    </div>
                   </div>
                 </div>
                 
                 {expandedOrders.has(String(order.id)) && (
                   <div className={styles.orderDetails}>
+                    {order.status === 'draft' && (
+                      <div className={styles.progressSection}>
+                        <h4>Creation Progress</h4>
+                        <div className={styles.progressSteps}>
+                          <div className={styles.progressStep}>
+                            <span className={`${styles.stepIndicator} ${styles.stepCompleted}`}>✓</span>
+                            <span className={styles.stepText}>Order Created</span>
+                          </div>
+                          <div className={styles.progressStep}>
+                            <span className={`${styles.stepIndicator} ${
+                              order.polymarket_order_hash && 
+                              order.polymarket_order_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+                                ? styles.stepCompleted 
+                                : styles.stepPending
+                            }`}>
+                              {order.polymarket_order_hash && 
+                               order.polymarket_order_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000' 
+                                ? '✓' : '○'}
+                            </span>
+                            <span className={styles.stepText}>Polymarket Order</span>
+                          </div>
+                          <div className={styles.progressStep}>
+                            <span className={`${styles.stepIndicator} ${
+                              order.transaction_hash && 
+                              order.transaction_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+                                ? styles.stepCompleted 
+                                : styles.stepPending
+                            }`}>
+                              {order.transaction_hash && 
+                               order.transaction_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+                                ? '✓' : '○'}
+                            </span>
+                            <span className={styles.stepText}>Transaction Signed</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className={styles.detailsGrid}>
                       <div className={styles.detailSection}>
                         <h4>Order Details</h4>
@@ -460,6 +559,15 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
           </div>
         )}
       </div>
+      
+      {/* Order Broadcast Popup for continuing draft orders */}
+      {selectedOrderId && (
+        <OrderBroadcastPopup
+          isOpen={showBroadcastPopup}
+          onClose={handleCloseBroadcastPopup}
+          orderId={selectedOrderId}
+        />
+      )}
     </div>
   );
 }

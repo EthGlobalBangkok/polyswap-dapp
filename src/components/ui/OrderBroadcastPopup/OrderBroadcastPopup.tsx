@@ -239,13 +239,30 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
       
       let transactionHash: string;
       
+      // Check if this is a batch transaction
+      const isBatchTransaction = state.transactionData.isBatch && state.transactionData.transactions;
+      
       if (isSafeApp) {
-        // Use Safe SDK for Safe Apps
-        const result = await safeService.createSafeTransaction({
-          to: state.transactionData.to,
-          data: state.transactionData.data,
-          value: state.transactionData.value
-        });
+        let result;
+        
+        if (isBatchTransaction) {
+          // Use Safe SDK batch transaction method
+          console.log('Sending batch transaction via Safe SDK:', state.transactionData.transactions);
+          result = await safeService.createBatchTransaction(
+            state.transactionData.transactions.map((tx: any) => ({
+              to: tx.to,
+              data: tx.data,
+              value: tx.value
+            }))
+          );
+        } else {
+          // Use Safe SDK for single transaction
+          result = await safeService.createSafeTransaction({
+            to: state.transactionData.to,
+            data: state.transactionData.data,
+            value: state.transactionData.value
+          });
+        }
 
         setState(prev => ({
           ...prev,
@@ -271,56 +288,86 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
         
         let result;
         try {
-          // Try the raw method first (more compatible with Safe)
-          console.log('Attempting Safe transaction via WalletConnect...');
-          result = await walletConnectSafeService.sendTransactionRaw({
-            to: state.transactionData.to,
-            data: state.transactionData.data,
-            value: state.transactionData.value
-          });
-        } catch (rawError) {
-          console.log('Raw method failed, trying standard method:', rawError);
-          
-          // Check if it's a WalletConnect connection issue
-          if (rawError instanceof Error && 
-              (rawError.message.includes('WalletConnect connection') || 
-               rawError.message.includes('publish payload') ||
-               rawError.message.includes('Failed to publish'))) {
-            
-            setState(prev => ({
-              ...prev,
-              step: 'error',
-              error: 'walletconnect_connection_issue',
-              errorMessage: 'WalletConnect connection issue. Please disconnect and reconnect your Safe wallet, then try again.'
-            }));
-            return;
-          }
-          
-          // Fallback to standard transaction method
-          try {
-            result = await walletConnectSafeService.sendTransaction({
+          if (isBatchTransaction) {
+            // Try batch transaction first
+            console.log('Attempting Safe batch transaction via WalletConnect:', state.transactionData.transactions);
+            try {
+              result = await walletConnectSafeService.sendBatchTransaction({
+                transactions: state.transactionData.transactions
+              });
+            } catch (batchError) {
+              console.log('Batch transaction failed, trying sequential:', batchError);
+              // Fallback to sequential transactions
+              const sequentialResults = await walletConnectSafeService.sendTransactionsSequentially({
+                transactions: state.transactionData.transactions
+              });
+              
+              // Use the first successful result or the last one
+              const successfulResult = sequentialResults.find(r => r.success) || sequentialResults[sequentialResults.length - 1];
+              if (successfulResult && successfulResult.success) {
+                result = successfulResult;
+              } else {
+                throw new Error('All sequential transactions failed');
+              }
+            }
+          } else {
+            // Try the raw method first (more compatible with Safe)
+            console.log('Attempting Safe transaction via WalletConnect...');
+            result = await walletConnectSafeService.sendTransactionRaw({
               to: state.transactionData.to,
               data: state.transactionData.data,
               value: state.transactionData.value
             });
-          } catch (standardError) {
-            console.error('Both Safe service methods failed, trying Wagmi direct transaction:', standardError);
+          }
+        } catch (rawError) {
+          // Only apply fallback logic for non-batch transactions
+          if (!isBatchTransaction) {
+            console.log('Raw method failed, trying standard method:', rawError);
             
-            // Final fallback: use Wagmi's direct transaction
-            try {
-              console.log('Using Wagmi direct transaction as final fallback');
-              wagmiSendTransaction({
-                to: state.transactionData.to as `0x${string}`,
-                data: state.transactionData.data as `0x${string}`,
-                value: BigInt(state.transactionData.value || '0'),
-              });
+            // Check if it's a WalletConnect connection issue
+            if (rawError instanceof Error && 
+                (rawError.message.includes('WalletConnect connection') || 
+                 rawError.message.includes('publish payload') ||
+                 rawError.message.includes('Failed to publish'))) {
               
-              // This is async, we'll handle the result in the useEffect
+              setState(prev => ({
+                ...prev,
+                step: 'error',
+                error: 'walletconnect_connection_issue',
+                errorMessage: 'WalletConnect connection issue. Please disconnect and reconnect your Safe wallet, then try again.'
+              }));
               return;
-            } catch (wagmiError) {
-              console.error('All transaction methods failed including Wagmi:', wagmiError);
-              throw new Error('All transaction methods failed. Please check your connection and try again.');
             }
+            
+            // Fallback to standard transaction method
+            try {
+              result = await walletConnectSafeService.sendTransaction({
+                to: state.transactionData.to,
+                data: state.transactionData.data,
+                value: state.transactionData.value
+              });
+            } catch (standardError) {
+              console.error('Both Safe service methods failed, trying Wagmi direct transaction:', standardError);
+              
+              // Final fallback: use Wagmi's direct transaction
+              try {
+                console.log('Using Wagmi direct transaction as final fallback');
+                wagmiSendTransaction({
+                  to: state.transactionData.to as `0x${string}`,
+                  data: state.transactionData.data as `0x${string}`,
+                  value: BigInt(state.transactionData.value || '0'),
+                });
+                
+                // This is async, we'll handle the result in the useEffect
+                return;
+              } catch (wagmiError) {
+                console.error('All transaction methods failed including Wagmi:', wagmiError);
+                throw new Error('All transaction methods failed. Please check your connection and try again.');
+              }
+            }
+          } else {
+            // For batch transactions, we already handled fallbacks above
+            throw rawError;
           }
         }
 

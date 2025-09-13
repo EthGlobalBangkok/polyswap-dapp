@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useAccount, usePublicClient } from 'wagmi';
 import styles from './OrderBroadcastPopup.module.css';
 
 interface TransactionSignStepProps {
@@ -14,6 +15,25 @@ interface TransactionSignStepProps {
   onError: (errorMessage: string) => void;
 }
 
+interface BatchTransactionData {
+  transactions: Array<{
+    to: string;
+    data: string;
+    value: string;
+  }>;
+  needsApproval: boolean;
+  approvalTransaction?: {
+    to: string;
+    data: string;
+    value: string;
+  };
+  mainTransaction: {
+    to: string;
+    data: string;
+    value: string;
+  };
+}
+
 export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({ 
   orderId, // Changed from orderHash to orderId
   polymarketOrderHash,
@@ -24,40 +44,94 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
   transactionHash,
   onError
 }) => {
+  const { address } = useAccount();
+  const publicClient = usePublicClient();
   const [isLoading, setIsLoading] = useState(false);
+  const [batchData, setBatchData] = useState<BatchTransactionData | null>(null);
+  const [transactionSummary, setTransactionSummary] = useState<{
+    transactionCount: number;
+    hasApproval: boolean;
+    summary: string[];
+  } | null>(null);
   const didFetchRef = useRef(false);
 
   // Reset guard when orderId changes so we fetch once per order
   useEffect(() => {
     didFetchRef.current = false;
+    setBatchData(null);
+    setTransactionSummary(null);
   }, [orderId]);
 
   useEffect(() => {
-    const fetchTransactionData = async () => {
+    const fetchBatchTransactionData = async () => {
+      if (!address || !publicClient) {
+        onError('Wallet not connected');
+        return;
+      }
+
       setIsLoading(true);
       
       try {
-        const response = await fetch(`/api/polyswap/orders/id/${orderId}/transaction`); // Updated to use numerical ID endpoint
+        // Get RPC URL from public client
+        const rpcUrl = (publicClient as any).transport?.url || 'https://polygon-rpc.com';
+        
+        console.log('Fetching batch transaction data with:', {
+          orderId,
+          ownerAddress: address,
+          rpcUrl
+        });
+
+        const response = await fetch(`/api/polyswap/orders/id/${orderId}/batch-transaction`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ownerAddress: address,
+            rpcUrl: rpcUrl
+          })
+        });
+
         const result = await response.json();
         
         if (result.success) {
-          onGetTransactionData(result.data.transaction);
+          const batch = result.data.batchTransaction;
+          setBatchData(batch);
+          setTransactionSummary(result.data.summary);
+          
+          // For backwards compatibility, pass the main transaction or first transaction
+          const transactionToPass = batch.transactions.length === 1 
+            ? batch.transactions[0]
+            : { transactions: batch.transactions, isBatch: true };
+          
+          onGetTransactionData(transactionToPass);
+          
+          console.log('Batch transaction prepared:', {
+            needsApproval: batch.needsApproval,
+            transactionCount: batch.transactions.length,
+            gasEstimate: result.data.gasEstimate
+          });
         } else {
-          onError(result.message || 'Failed to get transaction data');
+          if (result.error === 'insufficient_balance') {
+            onError(`Insufficient balance: ${result.message}`);
+          } else {
+            onError(result.message || 'Failed to prepare batch transaction');
+          }
         }
       } catch (error) {
-        onError(error instanceof Error ? error.message : 'Failed to get transaction data');
+        console.error('Error fetching batch transaction data:', error);
+        onError(error instanceof Error ? error.message : 'Failed to prepare batch transaction');
       } finally {
         setIsLoading(false);
       }
     };
 
     // Guard to avoid multiple calls (e.g., React Strict Mode) and re-renders
-    if (!didFetchRef.current) {
+    if (!didFetchRef.current && address && publicClient) {
       didFetchRef.current = true;
-      fetchTransactionData();
+      fetchBatchTransactionData();
     }
-  }, [orderId]);
+  }, [orderId, address, publicClient, onGetTransactionData, onError]);
 
   const handleSignTransaction = () => {
     onSendTransaction();
@@ -114,11 +188,29 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
 
   return (
     <div className={styles.stepContent}>
-      <h2 className={styles.stepTitle}>Sign Transaction</h2>
+      <h2 className={styles.stepTitle}>
+        {batchData?.needsApproval ? 'Sign Batch Transaction (with Approval)' : 'Sign Transaction'}
+      </h2>
       <p className={styles.stepDescription}>
         Your Polymarket order has been created. Now you need to sign and broadcast 
         your PolySwap conditional order using your Safe wallet.
       </p>
+      
+      {batchData?.needsApproval && (
+        <div className={styles.infoBox} style={{ marginBottom: '16px', backgroundColor: '#fff3cd', border: '1px solid #ffeaa7' }}>
+          <h3 style={{ color: '#856404', marginTop: '0' }}>⚠️ ERC20 Approval Required</h3>
+          <p style={{ color: '#856404', marginBottom: '8px' }}>
+            This transaction requires approval to spend your tokens. The batch will include:
+          </p>
+          {transactionSummary && (
+            <ol style={{ color: '#856404', marginLeft: '16px' }}>
+              {transactionSummary.summary.map((step, index) => (
+                <li key={index}>{step}</li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
       
       <div className={styles.infoBox} style={{ marginBottom: '16px', fontSize: '14px', color: '#666' }}>
         <p><strong>📱 For WalletConnect users:</strong></p>
@@ -126,11 +218,20 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
         <p>• The transaction will be queued if additional signatures are required</p>
         <p>• Multi-signature execution is handled automatically by your Safe</p>
         <p>• If you see RPC errors, the transaction may still be queued successfully</p>
+        {batchData?.needsApproval && (
+          <p>• <strong>Batch transactions may take longer to process</strong></p>
+        )}
       </div>
       
       <div className={styles.infoBox}>
         <h3>Transaction Details:</h3>
         <div className={styles.transactionDetails}>
+          <div className={styles.detailRow}>
+            <span className={styles.detailLabel}>Transaction Type:</span>
+            <span className={styles.detailValue}>
+              {batchData?.needsApproval ? `Batch (${transactionSummary?.transactionCount} transactions)` : 'Single Transaction'}
+            </span>
+          </div>
           <div className={styles.detailRow}>
             <span className={styles.detailLabel}>Order Hash:</span>
             <span className={styles.detailValue}>{polymarketOrderHash.substring(0, 10)}...{polymarketOrderHash.substring(polymarketOrderHash.length - 8)}</span>
@@ -139,6 +240,12 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
             <span className={styles.detailLabel}>Polymarket Hash:</span>
             <span className={styles.detailValue}>{polymarketOrderHash.substring(0, 10)}...{polymarketOrderHash.substring(polymarketOrderHash.length - 8)}</span>
           </div>
+          {batchData?.needsApproval && (
+            <div className={styles.detailRow}>
+              <span className={styles.detailLabel}>Includes Approval:</span>
+              <span className={styles.detailValue} style={{ color: '#28a745' }}>Yes (Unlimited)</span>
+            </div>
+          )}
         </div>
       </div>
       
@@ -153,7 +260,9 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
             Signing...
           </>
         ) : (
-          'Sign & Execute Safe Transaction'
+          batchData?.needsApproval 
+            ? 'Sign & Execute Batch Transaction'
+            : 'Sign & Execute Safe Transaction'
         )}
       </button>
     </div>

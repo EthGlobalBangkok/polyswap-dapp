@@ -395,6 +395,38 @@
   color: var(--text-muted);
 }
 
+/* Action Buttons */
+.actionButtons {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
+}
+
+.continueButton {
+  background-color: var(--accent-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.continueButton:hover {
+  background-color: var(--accent-secondary);
+  transform: translateY(-1px);
+}
+
+.continueButton:active {
+  transform: translateY(0);
+}
+
 /* Expand Button */
 .expandButton {
   background-color: var(--background-tertiary);
@@ -423,6 +455,70 @@
   padding: var(--spacing-lg) var(--spacing-2xl);
   background-color: var(--background-secondary);
   border-top: 1px solid var(--border-color);
+}
+
+/* Progress Section */
+.progressSection {
+  margin-bottom: var(--spacing-xl);
+  padding: var(--spacing-lg);
+  background-color: var(--background-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.progressSection h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 var(--spacing-lg) 0;
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.progressSteps {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+}
+
+.progressStep {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex: 1;
+  min-width: 0;
+}
+
+.stepIndicator {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.stepCompleted {
+  background-color: var(--accent-success);
+  color: white;
+}
+
+.stepPending {
+  background-color: var(--background-tertiary);
+  color: var(--text-muted);
+  border: 2px solid var(--border-color);
+}
+
+.stepText {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .detailsGrid {
@@ -557,6 +653,17 @@
     gap: var(--spacing-xs);
   }
   
+  .actionButtons {
+    justify-content: flex-start;
+    width: 100%;
+    margin-top: var(--spacing-sm);
+  }
+  
+  .continueButton {
+    font-size: 0.8rem;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+  
   .tokenFlow {
     flex-wrap: wrap;
   }
@@ -591,5 +698,16 @@
   
   .detailSection {
     gap: var(--spacing-sm);
+  }
+  
+  .progressSteps {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--spacing-md);
+  }
+  
+  .progressStep {
+    flex: none;
+    justify-content: flex-start;
   }
 }

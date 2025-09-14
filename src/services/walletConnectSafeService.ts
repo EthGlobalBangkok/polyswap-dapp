@@ -87,7 +87,7 @@ export class WalletConnectSafeService {
         }
 
         // Send via the provider's JSON-RPC directly
-        const txHash = await this.provider!.send('eth_sendTransaction', [rawTxRequest]);
+        const txHash = await (this.provider as any).send('eth_sendTransaction', [rawTxRequest]);
         
         console.log('Raw transaction sent successfully, hash:', txHash);
 
@@ -155,10 +155,17 @@ export class WalletConnectSafeService {
       };
 
       console.log('Sending transaction with params:', txRequest);
-      
-      // Send transaction to Safe via WalletConnect
+
+      // Send transaction to Safe via WalletConnect with timeout
       // The Safe mobile/desktop app will handle the signing and execution
-      const tx = await this.signer.sendTransaction(txRequest);
+      console.log('⏳ Waiting for user to sign transaction in Safe app...');
+
+      const tx = await Promise.race([
+        this.signer.sendTransaction(txRequest),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Transaction signing timeout - user may have rejected or closed the Safe app')), 120000)
+        )
+      ]) as any;
 
       console.log('Transaction sent, hash:', tx.hash);
 
@@ -197,16 +204,39 @@ export class WalletConnectSafeService {
     } catch (error) {
       console.error('Error sending Safe transaction via WalletConnect:', error);
       
-      // Check if it's a user rejection
+      // Enhanced error handling for user rejection and common Safe errors
       if (error instanceof Error) {
-        if (error.message.includes('User rejected') || error.message.includes('denied')) {
-          throw new Error('Transaction was rejected by user');
+        // User rejection patterns
+        if (error.message.includes('User rejected') ||
+            error.message.includes('denied') ||
+            error.message.includes('User denied') ||
+            error.message.includes('rejected') ||
+            error.message.includes('User cancelled') ||
+            error.message.includes('Transaction was cancelled') ||
+            error.message.includes('ACTION_REJECTED') ||
+            (error as any).code === 4001) {
+          throw new Error('Transaction signing was refused by user');
         }
+
+        // Safe-specific rejection patterns
+        if (error.message.includes('Safe transaction was rejected') ||
+            error.message.includes('Transaction rejected by Safe') ||
+            error.message.includes('User rejected the Safe transaction')) {
+          throw new Error('Transaction signing was refused in Safe wallet');
+        }
+
+        // Other common errors
         if (error.message.includes('insufficient funds')) {
           throw new Error('Insufficient funds for transaction');
         }
         if (error.message.includes('gas')) {
           throw new Error('Gas estimation failed - check contract parameters');
+        }
+        if (error.message.includes('nonce')) {
+          throw new Error('Transaction nonce error - please retry');
+        }
+        if (error.message.includes('replacement')) {
+          throw new Error('Transaction replacement error - please wait and retry');
         }
       }
       
@@ -304,7 +334,7 @@ export class WalletConnectSafeService {
 
   /**
    * Send a batch of transactions to Safe via WalletConnect
-   * Uses MultiSend contract for batching multiple transactions, or direct transaction for single transaction
+   * Safe WalletConnect doesn't support direct MultiSend calls, so we fall back to sequential transactions
    */
   async sendBatchTransaction(
     batchRequest: WalletConnectSafeBatchTransactionRequest
@@ -316,91 +346,80 @@ export class WalletConnectSafeService {
     try {
       console.log('Sending Safe batch transaction via WalletConnect:', batchRequest);
 
-      // If there's only one transaction, send it directly instead of using MultiSend
+      // If there's only one transaction, send it directly
       if (batchRequest.transactions.length === 1) {
-        console.log('Single transaction detected, sending directly without MultiSend');
+        console.log('Single transaction detected, sending directly');
         return await this.sendTransaction(batchRequest.transactions[0]);
       }
 
-      // For multiple transactions, use MultiSend
-      console.log('Multiple transactions detected, using MultiSend');
-      
-      // For WalletConnect with Safe, we can try using MultiSend
-      // MultiSend allows batching multiple transactions into one
-      const MULTISEND_ADDRESS = '0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761'; // Ethereum mainnet MultiSend
-      
-      // Encode batch transaction data for MultiSend
-      const batchData = await this.encodeBatchTransactionData(batchRequest.transactions);
-      
-      const multisendTransaction: WalletConnectSafeTransactionRequest = {
-        to: MULTISEND_ADDRESS,
-        data: batchData,
-        value: '0'
-      };
+      // For Safe WalletConnect, batch transactions through MultiSend don't work reliably
+      // because the MultiSend contract requires delegatecall which WalletConnect can't handle properly
+      console.log('Multiple transactions detected - Safe WalletConnect requires sequential execution');
 
-      // Send the batched transaction via MultiSend
-      return await this.sendTransaction(multisendTransaction);
+      // Use sequential transactions as the primary method for Safe WalletConnect
+      const results = await this.sendTransactionsSequentially(batchRequest);
+      const successfulResult = results.find(r => r.success);
 
-    } catch (error) {
-      console.error('Error sending batch Safe transaction via WalletConnect:', error);
-      throw new Error(error instanceof Error ? error.message : 'Failed to send batch transaction');
-    }
-  }
-
-  /**
-   * Encode multiple transactions for MultiSend contract
-   */
-  private async encodeBatchTransactionData(transactions: WalletConnectSafeTransactionRequest[]): Promise<string> {
-    try {
-      // MultiSend ABI for multiSend function
-      const multisendInterface = new ethers.Interface([
-        'function multiSend(bytes transactions)'
-      ]);
-
-      // Encode each transaction for MultiSend format
-      // Each transaction: operation (1 byte) + to (20 bytes) + value (32 bytes) + dataLength (32 bytes) + data (dataLength bytes)
-      let encodedTransactions = '0x';
-      
-      for (const tx of transactions) {
-        const operation = '00'; // CALL operation
-        const to = tx.to.slice(2).padStart(40, '0'); // Remove 0x and pad to 20 bytes
-        const value = BigInt(tx.value || '0').toString(16).padStart(64, '0'); // 32 bytes
-        const dataLength = ((tx.data.length - 2) / 2).toString(16).padStart(64, '0'); // 32 bytes
-        const data = tx.data.slice(2); // Remove 0x
-        
-        encodedTransactions += operation + to + value + dataLength + data;
+      if (successfulResult) {
+        return successfulResult;
+      } else {
+        throw new Error('All transactions failed in sequential execution');
       }
 
-      // Encode the multiSend call
-      return multisendInterface.encodeFunctionData('multiSend', [encodedTransactions]);
-
     } catch (error) {
-      console.error('Error encoding batch transaction data:', error);
-      throw new Error('Failed to encode batch transaction data');
+      console.error('Error sending Safe transactions via WalletConnect:', error);
+      throw new Error(`Safe transaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
+
 
   /**
    * Fallback: send transactions sequentially if batch fails
    */
   async sendTransactionsSequentially(
-    batchRequest: WalletConnectSafeBatchTransactionRequest
+    batchRequest: WalletConnectSafeBatchTransactionRequest,
+    onProgress?: (current: number, total: number, txType: string) => void
   ): Promise<WalletConnectSafeTransactionResult[]> {
     if (!this.signer || !this.provider) {
       throw new Error('Service not initialized. Call initialize() first.');
     }
 
     const results: WalletConnectSafeTransactionResult[] = [];
-    
+    const totalTxs = batchRequest.transactions.length;
+
     for (let i = 0; i < batchRequest.transactions.length; i++) {
       const tx = batchRequest.transactions[i];
-      console.log(`Sending transaction ${i + 1}/${batchRequest.transactions.length}:`, tx);
-      
+      const currentTx = i + 1;
+
+      // Determine transaction type for better UX
+      let txType = 'Transaction';
+      if (totalTxs > 1) {
+        if (i === 0 && tx.data.startsWith('0x095ea7b3')) {
+          txType = 'Token Approval';
+        } else if (i === 1 || totalTxs === 1) {
+          txType = 'Conditional Order';
+        } else {
+          txType = `Transaction ${currentTx}`;
+        }
+      }
+
+      console.log(`Sending transaction ${currentTx}/${totalTxs} (${txType}):`, tx);
+
+      // Call progress callback
+      if (onProgress) {
+        onProgress(currentTx - 1, totalTxs, txType); // -1 because we're about to start this transaction
+      }
+
       try {
         const result = await this.sendTransaction(tx);
         results.push(result);
+
+        // Update progress after successful transaction
+        if (onProgress) {
+          onProgress(currentTx, totalTxs, txType);
+        }
       } catch (error) {
-        console.error(`Transaction ${i + 1} failed:`, error);
+        console.error(`Transaction ${currentTx} (${txType}) failed:`, error);
         // Continue with remaining transactions
         results.push({
           transactionHash: '',

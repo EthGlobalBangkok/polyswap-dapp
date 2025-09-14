@@ -456,9 +456,10 @@ export class DatabaseService {
       INSERT INTO polyswap_orders (
         order_hash, owner, handler, sell_token, buy_token,
         sell_amount, min_buy_amount, start_time, end_time, polymarket_order_hash,
-        app_data, block_number, transaction_hash, log_index, status
+        app_data, block_number, transaction_hash, log_index, market_id,
+        outcome_selected, bet_percentage, status
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
       )
       ON CONFLICT (order_hash) DO UPDATE SET
         owner = EXCLUDED.owner,
@@ -474,6 +475,9 @@ export class DatabaseService {
         block_number = EXCLUDED.block_number,
         transaction_hash = EXCLUDED.transaction_hash,
         log_index = EXCLUDED.log_index,
+        market_id = EXCLUDED.market_id,
+        outcome_selected = EXCLUDED.outcome_selected,
+        bet_percentage = EXCLUDED.bet_percentage,
         status = EXCLUDED.status,
         updated_at = CURRENT_TIMESTAMP
     `;
@@ -501,6 +505,9 @@ export class DatabaseService {
       blockNumber,
       order.transactionHash,
       logIndex,
+      null, // market_id - not available from blockchain events
+      null, // outcome_selected - not available from blockchain events
+      null, // bet_percentage - not available from blockchain events
       'live' // Blockchain events indicate live orders
     ];
 
@@ -678,17 +685,18 @@ export class DatabaseService {
   }
 
   /**
-   * Update transaction hash for an order using numerical ID
+   * Update transaction hash for an order using numerical ID and set status to live
    */
   static async updateOrderTransactionHashById(orderId: number, transactionHash: string): Promise<boolean> {
     const sql = `
-      UPDATE polyswap_orders 
-      SET transaction_hash = $1, updated_at = CURRENT_TIMESTAMP
+      UPDATE polyswap_orders
+      SET transaction_hash = $1, status = 'live', updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
       RETURNING id
     `;
     try {
       const result = await query(sql, [transactionHash, orderId]);
+      console.log(`✅ Order ID ${orderId} updated with transaction hash and set to live status`);
       return result.rows.length > 0;
     } catch (error) {
       console.error(`❌ Error updating transaction hash for order ID ${orderId}:`, error);

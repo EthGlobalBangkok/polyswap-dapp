@@ -62,9 +62,9 @@ CREATE TABLE IF NOT EXISTS polyswap_orders (
     block_number BIGINT, -- Block number where event was emitted
     transaction_hash VARCHAR(66), -- Transaction hash
     log_index INTEGER, -- Log index within the transaction
-    market_id VARCHAR(20) NOT NULL, -- Link to markets.id
-    outcome_selected VARCHAR(256) NOT NULL, -- Selected outcome index
-    bet_percentage DECIMAL(5, 2) NOT NULL, -- Bet percentage (0-100)
+    market_id VARCHAR(20), -- Link to markets.id
+    outcome_selected VARCHAR(256), -- Selected outcome index
+    bet_percentage DECIMAL(5, 2), -- Bet percentage (0-100)
     status VARCHAR(20) NOT NULL DEFAULT 'draft', -- Order status: draft|live|filled|canceled
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS polyswap_orders (
     CONSTRAINT valid_min_buy_amount CHECK (min_buy_amount > 0),
     CONSTRAINT valid_times CHECK (end_time > start_time),
     CONSTRAINT valid_status CHECK (status IN ('draft', 'live', 'filled', 'canceled')),
-    CONSTRAINT valid_bet_percentage CHECK (bet_percentage >= 0 AND bet_percentage <= 100),
+    CONSTRAINT valid_bet_percentage CHECK (bet_percentage IS NULL OR (bet_percentage >= 0 AND bet_percentage <= 100)),
     CONSTRAINT fk_market FOREIGN KEY (market_id) REFERENCES markets(id) ON DELETE SET NULL
 );
 

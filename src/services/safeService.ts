@@ -22,12 +22,18 @@ export class SafeService {
   async initialize(safeAddress: string, provider: ethers.Provider, signer?: ethers.Signer): Promise<void> {
     this.provider = provider;
     this.signer = signer || null;
-    
-    // Initialize Safe SDK - the new version accepts provider directly
-    this.safe = await Safe.create({
-      provider: signer || provider,
-      safeAddress: safeAddress,
-    });
+
+    // Initialize Safe SDK v6.1.1 using the correct API
+    try {
+      this.safe = await Safe.init({
+        provider: signer || provider,
+        safeAddress: safeAddress,
+      });
+      console.log('✅ Safe initialized successfully with address:', safeAddress);
+    } catch (error) {
+      console.error('❌ Safe initialization failed:', error);
+      throw new Error(`Failed to initialize Safe: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async createSafeTransaction(

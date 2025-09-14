@@ -18,6 +18,7 @@ const STARTING_BLOCK = parseInt(process.env.STARTING_BLOCK!);
 const COMPOSABLE_COW_ADDRESS = process.env.COMPOSABLE_COW!;
 const POLYSWAP_HANDLER_ADDRESS = process.env.POLYSWAP_HANDLER!;
 const MARKET_UPDATE_INTERVAL = parseInt(process.env.MARKET_UPDATE_INTERVAL_MINUTES!) || 60;
+const BATCH_SIZE = parseInt(process.env.BATCH_SIZE!) || 100;
 
 // Event ABI for ConditionalOrderCreated
 const CONDITIONAL_ORDER_CREATED_ABI = {
@@ -51,6 +52,7 @@ class PolyswapBlockchainListener {
   private contract: ethers.Contract;
   private isRunning: boolean = false;
   private lastProcessedBlock: number = STARTING_BLOCK;
+  private pollingInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     console.log('🚀 Initializing Polyswap Blockchain Listener...');
@@ -110,25 +112,28 @@ class PolyswapBlockchainListener {
 
       console.log(`🔍 Processing historical events from block ${this.lastProcessedBlock} to ${currentBlock}`);
 
-      // Process in batches to avoid RPC limits
-      const BATCH_SIZE = 10000;
+      // Process in batches with fixed batch size to avoid RPC limits
       let fromBlock = this.lastProcessedBlock + 1;
+
+      console.log(`🔧 Processing with fixed batch size: ${BATCH_SIZE} blocks`);
 
       while (fromBlock <= currentBlock) {
         const toBlock = Math.min(fromBlock + BATCH_SIZE - 1, currentBlock);
-        
-        console.log(`📦 Processing batch: ${fromBlock} - ${toBlock}`);
-        
+
+        console.log(`📦 Processing batch: ${fromBlock} - ${toBlock} (${toBlock - fromBlock + 1} blocks)`);
+
         try {
           await this.processBlockRange(fromBlock, toBlock);
           this.lastProcessedBlock = toBlock;
-        } catch (error) {
+        } catch (error: any) {
           console.error(`❌ Error processing batch ${fromBlock}-${toBlock}:`, error);
-          // Continue with next batch
+
+          // Log the error but continue with next batch to avoid getting stuck
+          console.log(`⏭️ Skipping batch ${fromBlock}-${toBlock} due to error, continuing...`);
         }
 
         fromBlock = toBlock + 1;
-        
+
         // Small delay to avoid overwhelming the RPC
         await new Promise(resolve => setTimeout(resolve, 100));
       }
@@ -145,64 +150,78 @@ class PolyswapBlockchainListener {
    */
   private async processBlockRange(fromBlock: number, toBlock: number): Promise<void> {
     try {
+      console.log(`🔍 Querying events for blocks ${fromBlock}-${toBlock}...`);
       const filter = this.contract.filters.ConditionalOrderCreated();
       const events = await this.contract.queryFilter(filter, fromBlock, toBlock);
 
       console.log(`📋 Found ${events.length} ConditionalOrderCreated events in blocks ${fromBlock}-${toBlock}`);
 
+      // Process events individually with error handling
       for (let i = 0; i < events.length; i++) {
         const event = events[i];
         console.log(`📦 Processing event ${i + 1}/${events.length}`);
-        
-        // Type guard to check if it's an EventLog
-        const isEventLog = 'args' in event;
-        const logIndex = 'index' in event ? event.index : ('logIndex' in event ? (event as any).logIndex : 0);
-        
-        console.log(`   Event structure:`, {
-          blockNumber: event.blockNumber,
-          transactionHash: event.transactionHash,
-          logIndex: logIndex,
-          hasArgs: isEventLog,
-          eventType: typeof event
-        });
-        
-        await this.processEvent(event);
+
+        try {
+          // Type guard to check if it's an EventLog
+          const isEventLog = 'args' in event;
+          const logIndex = 'index' in event ? event.index : ('logIndex' in event ? (event as any).logIndex : 0);
+
+          console.log(`   Event structure:`, {
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash,
+            logIndex: logIndex,
+            hasArgs: isEventLog,
+            eventType: typeof event
+          });
+
+          await this.processEvent(event);
+        } catch (eventError) {
+          console.error(`❌ Error processing individual event ${i + 1}:`, eventError);
+          // Continue processing other events even if one fails
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(`❌ Error querying events for blocks ${fromBlock}-${toBlock}:`, error);
       throw error;
     }
   }
 
   /**
-   * Start real-time event listener
+   * Start polling-based event listener (replaces filter-based listener)
    */
   private startRealTimeListener(): void {
-    console.log('🎧 Starting real-time event listener...');
+    console.log('🎧 Starting polling-based event listener...');
     this.isRunning = true;
 
-    // Listen for new ConditionalOrderCreated events
-    this.contract.on('ConditionalOrderCreated', async (owner, params, eventLog) => {
+    // Start polling for new blocks every 30 seconds
+    this.pollingInterval = setInterval(async () => {
       if (!this.isRunning) return;
 
-      console.log(`🔔 New ConditionalOrderCreated event detected in block ${eventLog.blockNumber}`);
-      
-      // Create a synthetic event object that matches our processEvent expectations
-      const syntheticEvent = {
-        ...eventLog,
-        args: { owner, params }
-      };
-      
-      await this.processEvent(syntheticEvent as ethers.EventLog);
-    });
+      try {
+        const currentBlock = await this.provider.getBlockNumber();
 
-    // Handle provider connection issues
-    this.provider.on('error', (error) => {
-      console.error('🔌 Provider error:', error);
-      this.reconnect();
-    });
+        if (currentBlock > this.lastProcessedBlock) {
+          console.log(`🔔 New block detected: ${currentBlock} (last processed: ${this.lastProcessedBlock})`);
 
-    console.log('✅ Real-time listener started successfully');
+          // Process new blocks using the existing batch processing logic
+          const fromBlock = this.lastProcessedBlock + 1;
+          const toBlock = Math.min(fromBlock + BATCH_SIZE - 1, currentBlock);
+
+          await this.processBlockRange(fromBlock, toBlock);
+          this.lastProcessedBlock = toBlock;
+
+          // If there are more blocks to process, continue in next polling cycle
+          if (toBlock < currentBlock) {
+            console.log(`📦 More blocks to process: ${toBlock + 1} to ${currentBlock}`);
+          }
+        }
+      } catch (error) {
+        console.error('🔌 Polling error:', error);
+        // Continue polling - don't reconnect for minor errors
+      }
+    }, 3000); // Poll every 3 seconds
+
+    console.log('✅ Polling-based listener started successfully (30s intervals)');
   }
 
   /**
@@ -429,12 +448,9 @@ class PolyswapBlockchainListener {
    */
   private async reconnect(): Promise<void> {
     console.log('🔄 Attempting to reconnect...');
-    this.isRunning = false;
-    
+    this.stop(); // Stop current polling
+
     try {
-      // Remove all listeners
-      this.contract.removeAllListeners();
-      
       // Recreate provider and contract
       this.provider = new ethers.JsonRpcProvider(RPC_URL);
       this.contract = new ethers.Contract(
@@ -445,10 +461,10 @@ class PolyswapBlockchainListener {
 
       // Wait a bit before restarting
       await new Promise(resolve => setTimeout(resolve, 5000));
-      
+
       // Restart the listener
       this.startRealTimeListener();
-      
+
       console.log('✅ Reconnected successfully');
     } catch (error) {
       console.error('❌ Reconnection failed:', error);
@@ -463,7 +479,13 @@ class PolyswapBlockchainListener {
   stop(): void {
     console.log('🛑 Stopping listener...');
     this.isRunning = false;
-    this.contract.removeAllListeners();
+
+    // Clear the polling interval
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
+
     console.log('✅ Listener stopped');
   }
 }

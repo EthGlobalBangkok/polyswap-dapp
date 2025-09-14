@@ -13,6 +13,11 @@ interface TransactionSignStepProps {
   isWaiting: boolean;
   transactionHash?: string;
   onError: (errorMessage: string) => void;
+  transactionProgress?: {
+    current: number;
+    total: number;
+    currentTxType?: string;
+  };
 }
 
 interface BatchTransactionData {
@@ -34,7 +39,7 @@ interface BatchTransactionData {
   };
 }
 
-export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({ 
+export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
   orderId, // Changed from orderHash to orderId
   polymarketOrderHash,
   onGetTransactionData,
@@ -42,7 +47,8 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
   isSending,
   isWaiting,
   transactionHash,
-  onError
+  onError,
+  transactionProgress
 }) => {
   const { address } = useAccount();
   const publicClient = usePublicClient();
@@ -154,14 +160,38 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
   if (isSending) {
     return (
       <div className={styles.stepContent}>
-        <h2 className={styles.stepTitle}>Sign Transaction</h2>
+        <h2 className={styles.stepTitle}>
+          {transactionProgress && transactionProgress.total > 1
+            ? `Sign Transactions (${transactionProgress.current}/${transactionProgress.total})`
+            : 'Sign Transaction'
+          }
+        </h2>
         <p className={styles.stepDescription}>
-          Please sign the transaction in your wallet.
+          {transactionProgress && transactionProgress.total > 1
+            ? `Please sign the ${transactionProgress.currentTxType || 'transaction'} in your wallet.`
+            : 'Please sign the transaction in your wallet.'
+          }
         </p>
         <div className={styles.loadingSpinner}>
           <div className={styles.spinner}></div>
-          <p>Waiting for signature...</p>
+          <p>
+            {transactionProgress && transactionProgress.total > 1
+              ? `Waiting for signature... (${transactionProgress.currentTxType || 'Transaction'})`
+              : 'Waiting for signature...'
+            }
+          </p>
         </div>
+
+        {transactionProgress && transactionProgress.total > 1 && (
+          <div className={styles.progressBar} style={{ marginTop: '20px' }}>
+            <div className={styles.progressBarFill} style={{
+              width: `${(transactionProgress.current / transactionProgress.total) * 100}%`
+            }}></div>
+            <span className={styles.progressText}>
+              {transactionProgress.current}/{transactionProgress.total} transactions completed
+            </span>
+          </div>
+        )}
       </div>
     );
   }
@@ -169,19 +199,43 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
   if (isWaiting) {
     return (
       <div className={styles.stepContent}>
-        <h2 className={styles.stepTitle}>Transaction Broadcasting</h2>
+        <h2 className={styles.stepTitle}>
+          {transactionProgress && transactionProgress.total > 1
+            ? `Processing Transactions (${transactionProgress.current}/${transactionProgress.total})`
+            : 'Transaction Broadcasting'
+          }
+        </h2>
         <p className={styles.stepDescription}>
-          Your transaction is being processed on the blockchain.
+          {transactionProgress && transactionProgress.total > 1
+            ? `Your ${transactionProgress.currentTxType || 'transaction'} is being processed on the blockchain.`
+            : 'Your transaction is being processed on the blockchain.'
+          }
         </p>
         <div className={styles.loadingSpinner}>
           <div className={styles.spinner}></div>
-          <p>Waiting for confirmation...</p>
+          <p>
+            {transactionProgress && transactionProgress.total > 1
+              ? `Processing ${transactionProgress.currentTxType || 'transaction'}...`
+              : 'Waiting for confirmation...'
+            }
+          </p>
           {transactionHash && (
             <p className={styles.transactionHash}>
               Transaction Hash: {transactionHash.substring(0, 10)}...{transactionHash.substring(transactionHash.length - 8)}
             </p>
           )}
         </div>
+
+        {transactionProgress && transactionProgress.total > 1 && (
+          <div className={styles.progressBar} style={{ marginTop: '20px' }}>
+            <div className={styles.progressBarFill} style={{
+              width: `${(transactionProgress.current / transactionProgress.total) * 100}%`
+            }}></div>
+            <span className={styles.progressText}>
+              {transactionProgress.current}/{transactionProgress.total} transactions completed
+            </span>
+          </div>
+        )}
       </div>
     );
   }

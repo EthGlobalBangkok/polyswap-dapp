@@ -12,29 +12,107 @@ const truncateAddress = (address: string) => {
 // Hook to check if component is mounted (prevents hydration issues)
 function useMounted() {
   const [mounted, setMounted] = React.useState(false);
-  
+
   React.useEffect(() => {
     setMounted(true);
   }, []);
-  
+
   return mounted;
 }
 
-// Wallet options list component
+// Enhanced Safe App environment detection
+function useSafeAppDetection() {
+  const [isSafeApp, setIsSafeApp] = React.useState<boolean | null>(null);
+  const [isDetecting, setIsDetecting] = React.useState(true);
+
+  React.useEffect(() => {
+    const detectSafeApp = async () => {
+      try {
+        // Method 1: Check if we're in an iframe
+        const inIframe = window.parent !== window && window.parent !== undefined;
+
+        // Method 2: Check for Safe-specific properties
+        const hasSafeGlobal = typeof window !== 'undefined' &&
+                             'safe' in window &&
+                             window.safe !== undefined;
+
+        // Method 3: Check referrer for Safe domains
+        const referrer = document.referrer.toLowerCase();
+        const isSafeDomain = referrer.includes('safe.global') ||
+                            referrer.includes('app.safe.global') ||
+                            referrer.includes('gnosis-safe.io');
+
+        // Method 4: Check for Safe Apps SDK initialization
+        let hasSafeAppsSDK = false;
+        try {
+          // Check if Safe Apps SDK is available
+          hasSafeAppsSDK = typeof window !== 'undefined' &&
+                          window.parent !== window &&
+                          window.parent.postMessage !== undefined;
+
+          // Try to detect Safe-specific postMessage API
+          if (hasSafeAppsSDK && inIframe) {
+            // Send a test message to check if we get a Safe-specific response
+            const testMessage = { method: 'getSafeInfo' };
+            window.parent.postMessage(testMessage, '*');
+          }
+        } catch {
+          // If we can't access parent, we're likely in a cross-origin iframe (which is expected for Safe Apps)
+          hasSafeAppsSDK = inIframe;
+        }
+
+        // Determine if we're in a Safe App environment
+        const isSafe = hasSafeGlobal || isSafeDomain || (inIframe && hasSafeAppsSDK);
+
+        console.log('Safe App Detection:', {
+          inIframe,
+          hasSafeGlobal,
+          isSafeDomain,
+          hasSafeAppsSDK,
+          referrer,
+          isSafe
+        });
+
+        setIsSafeApp(isSafe);
+      } catch (error) {
+        console.warn('Safe App detection failed:', error);
+        // If detection fails, assume not in Safe App for safety
+        setIsSafeApp(false);
+      } finally {
+        setIsDetecting(false);
+      }
+    };
+
+    detectSafeApp();
+  }, []);
+
+  return { isSafeApp, isDetecting };
+}
+
+// Smart wallet connect component - detects environment and connects on click
 export function WalletOptions() {
   const mounted = useMounted();
-  const { connectors, connect, isPending } = useConnect();
+  const { isSafeApp, isDetecting } = useSafeAppDetection();
+  const { connectors, connect, isPending, error } = useConnect();
 
-  // Check if we're in Safe Apps environment
-  const isSafeApp = typeof window !== 'undefined' && window.parent !== window;
-  
-  // Debug: log available connectors
-  React.useEffect(() => {
-    if (mounted) {
-      console.log('Available connectors:', connectors.map(c => ({ name: c.name, id: c.id })));
-      console.log('Is Safe App environment:', isSafeApp);
+  // Find the appropriate connector based on environment
+  const safeConnector = connectors.find(connector => connector.name === 'Safe');
+  const walletConnectConnector = connectors.find(connector => connector.name === 'WalletConnect');
+
+  // Handle connect button click
+  const handleConnect = () => {
+    try {
+      if (isSafeApp && safeConnector) {
+        console.log('Connecting to Safe App...');
+        connect({ connector: safeConnector });
+      } else if (!isSafeApp && walletConnectConnector) {
+        console.log('Connecting to WalletConnect...');
+        connect({ connector: walletConnectConnector });
+      }
+    } catch (error) {
+      console.error('Connection failed:', error);
     }
-  }, [connectors, isSafeApp, mounted]);
+  };
 
   // Don't render until mounted to prevent hydration mismatch
   if (!mounted) {
@@ -44,64 +122,56 @@ export function WalletOptions() {
       </button>
     );
   }
-  
-  // Use Safe connector if in Safe Apps environment, otherwise use WalletConnect
-  const primaryConnector = isSafeApp 
-    ? connectors.find(connector => connector.name === 'Safe') 
-    : connectors.find(connector => connector.name === 'WalletConnect') || connectors[0];
 
-  if (!primaryConnector) {
+  // Show error state with retry button
+  if (error) {
+    return (
+      <button
+        className={styles.connectButton}
+        onClick={handleConnect}
+        disabled={!safeConnector && !walletConnectConnector}
+      >
+        <span>
+          {error.message.includes('rejected') || error.message.includes('denied')
+            ? 'Connection rejected - Click to retry'
+            : 'Connection failed - Click to retry'
+          }
+        </span>
+      </button>
+    );
+  }
+
+  // Show loading state while detecting environment or no connector available
+  if (isDetecting || (!safeConnector && !walletConnectConnector)) {
     return (
       <button className={styles.connectButton} disabled>
         <div className={styles.loading}>
           <div className={styles.spinner}></div>
-          <span>Loading...</span>
+          <span>
+            {isDetecting ? 'Detecting wallet environment...' : 'Loading wallet connector...'}
+          </span>
         </div>
       </button>
     );
   }
 
-  // Show connector selection if we have multiple options
-  if (connectors.length > 1 && !isSafeApp) {
-    return (
-      <div className={styles.walletOptions}>
-        {connectors.map((connector) => (
-          <button
-            key={connector.id}
-            className={styles.connectButton}
-            onClick={() => connect({ connector })}
-            disabled={isPending}
-          >
-            {isPending ? (
-              <>
-                <div className={styles.spinner}></div>
-                <span>Connecting...</span>
-              </>
-            ) : (
-              <span>
-                {connector.name === 'WalletConnect' ? 'Connect with Safe Mobile' : connector.name}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-    );
-  }
-
+  // Show the main connect button
   return (
-    <button 
+    <button
       className={styles.connectButton}
-      onClick={() => connect({ connector: primaryConnector })}
+      onClick={handleConnect}
       disabled={isPending}
     >
       {isPending ? (
-        <>
+        <div className={styles.loading}>
           <div className={styles.spinner}></div>
-          <span>Connecting...</span>
-        </>
+          <span>
+            {isSafeApp ? 'Connecting to Safe...' : 'Connecting to Safe Wallet...'}
+          </span>
+        </div>
       ) : (
         <span>
-          {isSafeApp ? 'Connect Safe Wallet' : 'Connect Wallet'}
+          {isSafeApp ? 'Connect Safe Wallet' : 'Connect Safe Wallet'}
         </span>
       )}
     </button>

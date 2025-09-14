@@ -189,6 +189,31 @@
   margin-top: 8px;
 }
 
+/* Progress Bar */
+.progressBar {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progressBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #2196F3, #1976D2);
+  border-radius: 4px;
+  transition: width 0.3s ease-in-out;
+}
+
+.progressText {
+  font-size: 12px;
+  color: #666;
+  text-align: center;
+  display: block;
+}
+
 /* Buttons */
 .primaryButton {
   background-color: #2196F3;

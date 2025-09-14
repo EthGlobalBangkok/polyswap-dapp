@@ -53,13 +53,22 @@ export async function POST(
       }, { status: 400 });
     }
 
+    // if order.app_data is null and process.env.app_data is also null, return error
+    if (!order.app_data && !process.env.APP_DATA) {
+      return NextResponse.json({
+        success: false,
+        error: 'Missing app data',
+        message: 'App data must be provided in order or environment variable'
+      }, { status: 500 });
+    }
+
     // Validate required fields and provide defaults
     const sellToken = order.sell_token;
     const buyToken = order.buy_token;
     const sellAmount = order.sell_amount;
     const minBuyAmount = order.min_buy_amount || '0';
     const polymarketOrderHash = order.polymarket_order_hash;
-    const appData = order.app_data || '0x0000000000000000000000000000000000000000000000000000000000000000';
+    const appData = order.app_data || process.env.APP_DATA;
 
     if (!sellToken || !buyToken || !sellAmount || !polymarketOrderHash) {
       return NextResponse.json({
@@ -82,7 +91,7 @@ export async function POST(
       t0: Math.floor(order.start_time.getTime() / 1000).toString(),
       t: Math.floor(order.end_time.getTime() / 1000).toString(),
       polymarketOrderHash: polymarketOrderHash,
-      appData: appData
+      appData: appData as string
     };
 
     // Generate main transaction data

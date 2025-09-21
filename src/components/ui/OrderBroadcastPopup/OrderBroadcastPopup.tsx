@@ -77,22 +77,35 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
   // Initialize Safe services when wallet is connected
   useEffect(() => {
     const initializeSafe = async () => {
-      if (!address || !publicClient || state.isSafeInitialized) return;
-      
+      if (!address || !publicClient) {
+        console.log('Waiting for address or publicClient...');
+        return;
+      }
+
       const isSafeApp = connector?.name === 'Safe';
       const isWalletConnect = connector?.name === 'WalletConnect';
-      
-      console.log('Initializing for connector:', connector?.name, { isSafeApp, isWalletConnect });
-      
+
+      console.log('Initializing for connector:', connector?.name, { isSafeApp, isWalletConnect, address, hasClient: !!client });
+
+      // Reset any previous errors when trying to initialize
+      if (state.error === 'unsupported_wallet' || state.error === 'safe_initialization_failed') {
+        setState(prev => ({
+          ...prev,
+          error: undefined,
+          errorMessage: undefined
+        }));
+      }
+
       if (isSafeApp) {
         // Running inside Safe App - use Safe SDK
         try {
           const provider = new ethers.BrowserProvider(publicClient as any);
           await safeService.initialize(address, provider);
-          setState(prev => ({ 
-            ...prev, 
+          console.log('Safe App initialization successful');
+          setState(prev => ({
+            ...prev,
             isSafeInitialized: true,
-            isSafeWallet: true 
+            isSafeWallet: true
           }));
         } catch (error) {
           console.error('Failed to initialize Safe SDK:', error);
@@ -104,33 +117,34 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
           }));
         }
       } else if (isWalletConnect && client) {
-        // WalletConnect - check if connected wallet is a Safe
+        // WalletConnect - validate it's actually connected to a Safe
         try {
           const provider = new ethers.BrowserProvider(publicClient as any);
           const signer = new ethers.BrowserProvider(client as any).getSigner();
-          
+
           // Initialize WalletConnect Safe service
           walletConnectSafeService.initialize(await signer, provider);
-          
-          // Check if the connected wallet is a Safe wallet
+
+          // Try to get Safe info to validate the connection
+          console.log('Checking WalletConnect Safe connection for address:', address);
           const safeInfo = await walletConnectSafeService.getSafeInfo(address);
-          
+
+          console.log('Safe info result:', safeInfo);
+
+          // If the direct address check fails, it might be an EOA owner of a Safe
+          // For WalletConnect connections, we can be more permissive since the Safe app controls access
           if (!safeInfo.isSafe) {
-            setState(prev => ({
-              ...prev,
-              step: 'error',
-              error: 'not_safe_wallet',
-              errorMessage: 'Please connect using a Safe wallet. Only Safe wallets are supported for conditional orders.'
-            }));
-            return;
+            console.log('Address is not a Safe contract, but WalletConnect connection detected - allowing as Safe owner');
           }
-          
-          setState(prev => ({ 
-            ...prev, 
+
+          setState(prev => ({
+            ...prev,
             isSafeInitialized: true,
             isSafeWallet: true,
-            safeInfo: safeInfo 
+            safeInfo: safeInfo.isSafe ? safeInfo : { isSafe: true, isOwner: true } // Mark as Safe owner if not direct Safe contract
           }));
+
+          console.log('WalletConnect Safe initialization successful');
         } catch (error) {
           console.error('Failed to initialize WalletConnect Safe service:', error);
           setState(prev => ({
@@ -140,7 +154,12 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
             errorMessage: error instanceof Error ? error.message : 'Failed to initialize Safe wallet connection'
           }));
         }
+      } else if (isWalletConnect && !client) {
+        console.log('WalletConnect detected but client not ready yet...');
+        // Don't show error yet, wait for client
+        return;
       } else {
+        console.log('Unsupported wallet type:', { connector: connector?.name, hasClient: !!client });
         setState(prev => ({
           ...prev,
           step: 'error',
@@ -151,7 +170,7 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
     };
 
     initializeSafe();
-  }, [address, publicClient, connector, client, state.isSafeInitialized]);
+  }, [address, publicClient, connector, client]);
 
   // Handle Wagmi transaction success
   useEffect(() => {

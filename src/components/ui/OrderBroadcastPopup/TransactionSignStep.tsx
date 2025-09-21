@@ -310,7 +310,7 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
       <button
         className={styles.primaryButton}
         onClick={handleSignTransaction}
-        disabled={isSending || isWaiting}
+        disabled={isSending || isWaiting || !batchData}
       >
         {isSending ? (
           <>

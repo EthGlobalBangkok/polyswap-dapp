@@ -48,7 +48,15 @@ export class SafeBatchService {
           provider
         );
 
+        console.log('🔍 AFTER FALLBACK CHECK:', {
+          ownerAddress,
+          fallbackTx: fallbackTx,
+          fallbackTxTruthy: !!fallbackTx,
+          fallbackTxNull: fallbackTx === null
+        });
+
         if (fallbackTx) {
+          console.log('🚨 ADDING FALLBACK HANDLER TO BATCH - THIS SHOULD NOT HAPPEN!');
           needsFallbackHandler = true;
           fallbackHandlerTransaction = {
             to: fallbackTx.to,

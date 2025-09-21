@@ -107,6 +107,7 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
             isSafeInitialized: true,
             isSafeWallet: true
           }));
+          console.log('✅ Safe App initialization completed');
         } catch (error) {
           console.error('Failed to initialize Safe SDK:', error);
           setState(prev => ({
@@ -207,20 +208,34 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
     const primeFromDb = async () => {
       if (!isOpen || !orderId) return;
       try {
+        console.log('🔍 primeFromDb called:', { isOpen, orderId });
         const res = await fetch(`/api/polyswap/orders/id/${orderId}`);
         const json = await res.json();
         if (!res.ok || !json.success) return;
         if (abort) return;
         const order = json.data as { status: string; polymarket_order_hash?: string | null; transaction_hash?: string | null };
+
+        console.log('🔍 primeFromDb order data:', {
+          status: order.status,
+          hasPolymarketHash: !!order.polymarket_order_hash,
+          polymarketHash: order.polymarket_order_hash,
+          hasTransactionHash: !!order.transaction_hash
+        });
+
         // If Polymarket order already created, skip to transaction step
         if (order.polymarket_order_hash) {
+          console.log('📋 primeFromDb: Skipping to transaction step');
           setState(prev => ({
             ...prev,
             step: 'transaction',
             polymarketOrderHash: order.polymarket_order_hash || undefined
           }));
+        } else {
+          console.log('📋 primeFromDb: Starting from polymarket step');
         }
-      } catch {}
+      } catch (error) {
+        console.error('❌ primeFromDb error:', error);
+      }
     };
     primeFromDb();
     return () => { abort = true; };
@@ -233,18 +248,27 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
   }
 
   const handleCreatePolymarketOrder = async (polymarketOrderHash: string) => {
-    setState({
+    console.log('✅ Polymarket order created, moving to transaction step:', polymarketOrderHash);
+    setState(prev => ({
+      ...prev,
       step: 'transaction',
       polymarketOrderHash,
       error: undefined,
       errorMessage: undefined
-    });
+    }));
   };
 
   const handleGetTransactionData = async (transactionData: any) => {
     // Initialize transaction progress for batch transactions
     const isBatch = transactionData.isBatch && Array.isArray(transactionData.transactions);
     const totalTxs = isBatch ? transactionData.transactions.length : 1;
+
+    console.log('✅ Transaction data received:', {
+      isBatch,
+      totalTxs,
+      hasTransactions: Array.isArray(transactionData.transactions),
+      transactionCount: transactionData.transactions?.length
+    });
 
     setState(prev => ({
       ...prev,
@@ -260,7 +284,21 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
   };
 
   const handleSendTransaction = async () => {
-    if (!state.transactionData || !state.isSafeInitialized) return;
+    console.log('🔍 handleSendTransaction called - State check:', {
+      hasTransactionData: !!state.transactionData,
+      isSafeInitialized: state.isSafeInitialized,
+      step: state.step,
+      orderId: orderId,
+      canProceed: !!(state.transactionData && state.isSafeInitialized)
+    });
+
+    if (!state.transactionData || !state.isSafeInitialized) {
+      console.log('❌ handleSendTransaction blocked - Missing requirements:', {
+        transactionData: !!state.transactionData,
+        isSafeInitialized: state.isSafeInitialized
+      });
+      return;
+    }
     
     setIsSending(true);
     
@@ -594,18 +632,17 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
   const handleClose = () => {
     onClose();
     // Reset state when closing
-    setState({
+    setState(prev => ({
+      ...prev,
       step: 'polymarket',
       polymarketOrderHash: undefined,
       transactionData: undefined,
       transactionHash: undefined,
       safeTxHash: undefined,
       error: undefined,
-      errorMessage: undefined,
-      isSafeInitialized: false,
-      isSafeWallet: undefined,
-      safeInfo: undefined
-    });
+      errorMessage: undefined
+      // Keep isSafeInitialized, isSafeWallet, and safeInfo to avoid re-initialization
+    }));
   };
 
   const renderStep = () => {

@@ -143,9 +143,18 @@ export class SafeFallbackHandlerService {
     try {
       const check = await this.checkFallbackHandler(safeAddress, provider, expectedHandler);
 
+      console.log('🔍 BEFORE RETURN - checkAndCreateFallbackHandlerTransaction:', {
+        safeAddress,
+        needsUpdate: check.needsUpdate,
+        willCreateTransaction: check.needsUpdate
+      });
+
       if (check.needsUpdate) {
-        return this.createSetFallbackHandlerTransaction(safeAddress, check.expectedHandler);
+        const transaction = this.createSetFallbackHandlerTransaction(safeAddress, check.expectedHandler);
+        console.log('🚨 CREATING FALLBACK HANDLER TRANSACTION:', transaction);
+        return transaction;
       } else {
+        console.log('✅ NO FALLBACK HANDLER TRANSACTION NEEDED');
         return null;
       }
     } catch (error) {

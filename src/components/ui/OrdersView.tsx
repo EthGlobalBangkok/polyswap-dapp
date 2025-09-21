@@ -333,7 +333,7 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
                   <div className={styles.cell}>
                     <div className={styles.marketInfo}>
                       <div className={styles.orderHash}>
-                        Order #{order.order_hash ? order.order_hash.slice(0, 8) : 'N/A'}...
+                        Order #{order.id}
                       </div>
                       <div className={styles.orderCondition}>
                         Condition-based swap

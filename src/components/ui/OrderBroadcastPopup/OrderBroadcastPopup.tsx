@@ -490,18 +490,25 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
 
       try {
         console.log('Updating order in database with transaction hash:', transactionHash);
-        const updateResult = await apiService.updateOrderTransactionHashById(orderId, transactionHash);
+        let updateResult = await apiService.updateOrderTransactionHashById(orderId, transactionHash);
+
+        // Retry once after 2 seconds if the first attempt fails (node latency issue)
+        if (!updateResult.success) {
+          console.log('First database update attempt failed, retrying in 2 seconds due to potential node latency...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          updateResult = await apiService.updateOrderTransactionHashById(orderId, transactionHash);
+        }
 
         if (updateResult.success) {
           console.log('Order successfully updated in database, setting status to live');
           setState(prev => ({ ...prev, step: 'success' }));
         } else {
-          console.error('Database update failed:', updateResult);
+          console.error('Database update failed after retry:', updateResult);
           // Still mark as success since the transaction was executed
           setState(prev => ({
             ...prev,
             step: 'success',
-            errorMessage: 'Transaction successful but database update failed. Order may not show as live immediately.'
+            errorMessage: 'Transaction successful but database update failed after retry. Order may not show as live immediately.'
           }));
         }
       } catch (dbError) {

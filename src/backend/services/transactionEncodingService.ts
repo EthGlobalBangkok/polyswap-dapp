@@ -11,7 +11,7 @@ export interface TransactionData {
 
 export class TransactionEncodingService {
   private static readonly COMPOSABLE_COW_ADDRESS = process.env.COMPOSABLE_COW || '';
-  private static readonly POLYSWAP_HANDLER_ADDRESS = process.env.POLYSWAP_HANDLER || '';
+  private static readonly POLYSWAP_HANDLER_ADDRESS = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER || '';
   private static readonly VALUE_FACTORY_ADDRESS = process.env.VALUE_FACTORY || '0x52eD56Da04309Aca4c3FECC595298d80C2f16BAc';
   private static readonly CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 

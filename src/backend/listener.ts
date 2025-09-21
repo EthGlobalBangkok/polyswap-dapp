@@ -16,7 +16,7 @@ dotenv.config();
 const RPC_URL = process.env.RPC_URL!;
 const STARTING_BLOCK = parseInt(process.env.STARTING_BLOCK!);
 const COMPOSABLE_COW_ADDRESS = process.env.COMPOSABLE_COW!;
-const POLYSWAP_HANDLER_ADDRESS = process.env.POLYSWAP_HANDLER!;
+const POLYSWAP_HANDLER_ADDRESS = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER!;
 const MARKET_UPDATE_INTERVAL = parseInt(process.env.MARKET_UPDATE_INTERVAL_MINUTES!) || 60;
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE!) || 100;
 

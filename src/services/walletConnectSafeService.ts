@@ -163,54 +163,64 @@ export class WalletConnectSafeService {
       const tx = await Promise.race([
         this.signer.sendTransaction(txRequest),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Transaction signing timeout - user may have rejected or closed the Safe app')), 120000)
+          setTimeout(() => reject(new Error('Transaction signing timeout - user may have rejected or closed the Safe app')), 300000) // 5 minutes
         )
       ]) as any;
 
       console.log('Transaction sent, hash:', tx.hash);
 
-      // For Safe wallets, the transaction might be queued and not immediately executed
-      // We'll wait for it but with a timeout
+      // For Safe wallets, we don't rely on tx.wait() as it's unreliable
+      // Safe transactions are often queued and may not immediately execute
+      // If we got a transaction hash, the transaction was successfully submitted
+
+      console.log('Safe transaction submitted successfully');
+
+      // Try to get confirmation with a short timeout, but don't fail if it times out
       try {
+        console.log('Attempting to get transaction confirmation (optional)...');
         const receipt = await Promise.race([
           tx.wait(),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Transaction timeout')), 60000)
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Quick confirmation timeout')), 30000) // Short 30-second timeout
           )
         ]) as any;
-        
+
+        console.log('Received receipt:', receipt);
+
         if (receipt && receipt.status === 1) {
-          console.log('Transaction confirmed:', receipt.hash);
+          console.log('Transaction confirmed quickly:', receipt.hash);
           return {
             transactionHash: receipt.hash,
             success: true
           };
-        } else {
-          console.log('Transaction was sent but may be pending additional signatures');
-          return {
-            transactionHash: tx.hash,
-            success: true
-          };
         }
       } catch (waitError) {
-        console.log('Transaction sent but confirmation timeout - this is normal for Safe multi-sig');
-        // For Safe wallets, this is often normal - the transaction is queued
-        return {
-          transactionHash: tx.hash,
-          success: true
-        };
+        console.log('Quick confirmation timeout - this is normal for Safe transactions');
       }
+
+      // Always return success if we have a transaction hash from Safe
+      // The transaction was successfully submitted to the Safe
+      console.log('Returning success with Safe transaction hash');
+      return {
+        transactionHash: tx.hash,
+        success: true
+      };
 
     } catch (error) {
       console.error('Error sending Safe transaction via WalletConnect:', error);
       
       // Enhanced error handling for user rejection and common Safe errors
       if (error instanceof Error) {
-        // User rejection patterns
+        // Check for timeout errors first - these should not be treated as user rejection
+        if (error.message.includes('Transaction signing timeout') ||
+            error.message.includes('Transaction confirmation timeout')) {
+          throw error; // Re-throw timeout errors as-is
+        }
+
+        // User rejection patterns (only for actual rejections, not timeouts)
         if (error.message.includes('User rejected') ||
             error.message.includes('denied') ||
             error.message.includes('User denied') ||
-            error.message.includes('rejected') ||
             error.message.includes('User cancelled') ||
             error.message.includes('Transaction was cancelled') ||
             error.message.includes('ACTION_REJECTED') ||

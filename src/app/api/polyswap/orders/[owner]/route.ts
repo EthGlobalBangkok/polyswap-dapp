@@ -3,7 +3,7 @@ import { DatabaseService } from '../../../../../backend/services/databaseService
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { owner: string } }
+  { params }: { params: Promise<{ owner: string }> }
 ) {
   try {
     const { owner } = await params;

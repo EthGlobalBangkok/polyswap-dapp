@@ -3,7 +3,7 @@ import { DatabaseService } from '../../../../../../backend/services/databaseServ
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { orderHash: string } }
+  { params }: { params: Promise<{ orderHash: string }> }
 ) {
   try {
     const { orderHash } = await params;

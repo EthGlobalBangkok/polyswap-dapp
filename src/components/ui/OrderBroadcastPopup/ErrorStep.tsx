@@ -68,6 +68,14 @@ export const ErrorStep: React.FC<ErrorStepProps> = ({
           showRetry: true
         };
 
+      case 'transaction_timeout':
+        return {
+          icon: '⏱️',
+          title: 'Transaction Timeout',
+          description: 'The transaction took longer than expected to process. It may still be pending in your Safe wallet. Please check your Safe app or try again.',
+          showRetry: true
+        };
+
       default:
         return {
           icon: '⚠️',

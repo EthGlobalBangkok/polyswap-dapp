@@ -3,7 +3,7 @@ import { DatabaseService } from '../../../../../../backend/services/databaseServ
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { polymarketHash: string } }
+  { params }: { params: Promise<{ polymarketHash: string }> }
 ) {
   try {
     const { polymarketHash } = await params;

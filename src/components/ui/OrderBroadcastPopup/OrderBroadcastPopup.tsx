@@ -232,8 +232,6 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
     return null;
   }
 
-  console.log('Rendering popup content');
-
   const handleCreatePolymarketOrder = async (polymarketOrderHash: string) => {
     setState({
       step: 'transaction',
@@ -540,6 +538,14 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
                  errorMsg.includes('refused in safe wallet')) {
           errorType = 'safe_transaction_refused';
           errorMessage = 'Transaction signing was refused in Safe wallet';
+        }
+
+        // Timeout error patterns - these are different from user rejection
+        else if (errorMsg.includes('transaction signing timeout') ||
+                 errorMsg.includes('transaction confirmation timeout') ||
+                 errorMsg.includes('timeout') && (errorMsg.includes('safe') || errorMsg.includes('walletconnect'))) {
+          errorType = 'transaction_timeout';
+          errorMessage = 'Transaction took too long to process. It may still be pending in your Safe wallet.';
         }
 
         // Safe SDK specific error patterns

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../../../../backend/services/databaseService';
 import { TransactionEncodingService } from '../../../../../../../backend/services/transactionEncodingService';
+import { TransactionEventService } from '../../../../../../../backend/services/transactionEventService';
 import { PolyswapOrderData } from '../../../../../../../backend/interfaces/PolyswapOrder';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
@@ -108,7 +109,7 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
@@ -172,14 +173,52 @@ export async function PUT(
       }, { status: 400 });
     }
 
-    // Update the order with the transaction hash
-    const updated = await DatabaseService.updateOrderTransactionHashById(orderId, transactionHash);
-    
+    // Fetch transaction event details from the blockchain
+    let eventDetails;
+    try {
+      console.log(`🔍 Fetching transaction event details for hash: ${transactionHash}`);
+      eventDetails = await TransactionEventService.getTransactionEventDetails(transactionHash);
+
+      if (!eventDetails) {
+        return NextResponse.json({
+          success: false,
+          error: 'Transaction event not found',
+          message: 'Could not find ConditionalOrderCreated event in the transaction. Please ensure the transaction was successful and contains the expected event.'
+        }, { status: 400 });
+      }
+
+      console.log(`✅ Retrieved event details:`, {
+        blockNumber: eventDetails.blockNumber,
+        logIndex: eventDetails.logIndex,
+        handler: eventDetails.handler,
+        orderHash: eventDetails.orderHash
+      });
+
+    } catch (eventError) {
+      console.error('❌ Error fetching transaction event details:', eventError);
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to fetch transaction details',
+        message: `Could not retrieve transaction event details: ${eventError instanceof Error ? eventError.message : 'Unknown error'}`
+      }, { status: 500 });
+    }
+
+    // Update the order with complete transaction details
+    const updated = await DatabaseService.updateOrderTransactionDetails(
+      orderId,
+      transactionHash,
+      eventDetails.blockNumber,
+      eventDetails.logIndex,
+      eventDetails.handler,
+      eventDetails.appData,
+      eventDetails.orderHash
+    );
+
     if (!updated) {
       return NextResponse.json({
         success: false,
         error: 'Failed to update order',
-        message: 'Failed to update transaction hash for order'
+        message: 'Failed to update transaction details for order'
       }, { status: 500 });
     }
 
@@ -188,7 +227,12 @@ export async function PUT(
       data: {
         orderId,
         transactionHash,
-        message: 'Transaction hash updated successfully'
+        blockNumber: eventDetails.blockNumber,
+        logIndex: eventDetails.logIndex,
+        handler: eventDetails.handler,
+        appData: eventDetails.appData,
+        orderHash: eventDetails.orderHash,
+        message: 'Transaction details updated successfully'
       }
     });
 

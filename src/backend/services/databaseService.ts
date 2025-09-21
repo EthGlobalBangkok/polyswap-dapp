@@ -709,12 +709,56 @@ export class DatabaseService {
    */
   static async getOrdersByStatus(status: 'draft' | 'live' | 'filled' | 'canceled', limit: number = 100, offset: number = 0): Promise<DatabasePolyswapOrder[]> {
     const sql = `
-      SELECT * FROM polyswap_orders 
-      WHERE status = $1 
-      ORDER BY created_at DESC 
+      SELECT * FROM polyswap_orders
+      WHERE status = $1
+      ORDER BY created_at DESC
       LIMIT $2 OFFSET $3
     `;
     const result = await query(sql, [status, limit, offset]);
     return result.rows;
+  }
+
+  /**
+   * Update order with transaction details including block number, log index, app_data, and handler
+   */
+  static async updateOrderTransactionDetails(
+    orderId: number,
+    transactionHash: string,
+    blockNumber: number,
+    logIndex: number,
+    handler: string,
+    appData: string,
+    orderHash: string
+  ): Promise<boolean> {
+    const sql = `
+      UPDATE polyswap_orders
+      SET
+        transaction_hash = $1,
+        block_number = $2,
+        log_index = $3,
+        handler = $4,
+        app_data = $5,
+        order_hash = $6,
+        status = 'live',
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $7
+      RETURNING id
+    `;
+    try {
+      const result = await query(sql, [
+        transactionHash,
+        blockNumber,
+        logIndex,
+        handler.toLowerCase(),
+        appData,
+        orderHash,
+        orderId
+      ]);
+      console.log(`✅ Order ID ${orderId} updated with complete transaction details and set to live status`);
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error(`❌ Error updating transaction details for order ID ${orderId}:`, error);
+      return false;
+    }
   }
 }

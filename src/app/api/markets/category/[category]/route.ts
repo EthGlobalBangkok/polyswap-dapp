@@ -4,7 +4,7 @@ import { transformDatabaseMarkets } from '../../../../../backend/utils/transform
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { category: string } }
+  { params }: { params: Promise<{ category: string }> }
 ) {
   try {
     const { category } = await params;

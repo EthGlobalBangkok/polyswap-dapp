@@ -23,8 +23,8 @@ export class SafeFallbackHandlerService {
   // Storage slot for fallback handler in Safe contracts
   private static readonly FALLBACK_HANDLER_STORAGE_SLOT = '0x6c9a6c4a39284e37ed1cf53d337577d14212a4870fb976a4366c693b939918d5';
 
-  // Expected PolySwap handler address from environment
-  private static readonly EXPECTED_POLYSWAP_HANDLER = process.env.POLYSWAP_HANDLER || '0x2F1EA76972a3A62571f595340D12b967eB0fB5BC';
+  // Expected PolySwap handler address
+  private static readonly EXPECTED_POLYSWAP_HANDLER = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER || '0x2F1EA76972a3A62571f595340D12b967eB0fB5BC';
 
   /**
    * Get the current fallback handler for a Safe address
@@ -43,6 +43,12 @@ export class SafeFallbackHandlerService {
       // Parse the bytes32 value to get the address
       // Remove leading zeros and format as address
       const fallbackHandler = ethers.getAddress('0x' + storageValue.slice(-40));
+
+      console.log('getCurrentFallbackHandler result:', {
+        safeAddress,
+        storageValue,
+        parsedHandler: fallbackHandler
+      });
 
       return fallbackHandler;
     } catch (error) {
@@ -69,6 +75,17 @@ export class SafeFallbackHandlerService {
 
       const isCorrect = currentNormalized === expectedNormalized;
       const needsUpdate = !isCorrect;
+
+      // Debug logging
+      console.log('Fallback handler check:', {
+        safeAddress,
+        current,
+        expected,
+        currentNormalized,
+        expectedNormalized,
+        isCorrect,
+        needsUpdate
+      });
 
       return {
         currentHandler: current,

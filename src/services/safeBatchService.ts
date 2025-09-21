@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
-import { ERC20ApprovalService, ApprovalCheck } from './erc20ApprovalService';
+import { ERC20ApprovalService } from './erc20ApprovalService';
+import { SafeFallbackHandlerService } from './safeFallbackHandlerService';
 
 export interface BatchTransactionRequest {
   to: string;
@@ -11,13 +12,15 @@ export interface BatchTransactionResult {
   transactions: BatchTransactionRequest[];
   needsApproval: boolean;
   approvalTransaction?: BatchTransactionRequest;
+  needsFallbackHandler: boolean;
+  fallbackHandlerTransaction?: BatchTransactionRequest;
   mainTransaction: BatchTransactionRequest;
 }
 
 export class SafeBatchService {
   
   /**
-   * Prepare a batch of transactions including approval if needed
+   * Prepare a batch of transactions including fallback handler, approval, and main transaction
    */
   static async prepareBatchTransaction(
     tokenAddress: string,
@@ -27,14 +30,39 @@ export class SafeBatchService {
     provider: ethers.Provider
   ): Promise<BatchTransactionResult> {
     try {
-      console.log('Preparing batch transaction with approval check:', {
+      console.log('Preparing batch transaction with fallback handler and approval checks:', {
         tokenAddress,
         ownerAddress,
         sellAmount,
         mainTransaction
       });
 
-      // Check if approval is needed
+      const transactions: BatchTransactionRequest[] = [];
+      let needsFallbackHandler = false;
+      let fallbackHandlerTransaction: BatchTransactionRequest | undefined;
+
+      // Step 1: Check if Safe fallback handler needs to be set
+      try {
+        const fallbackTx = await SafeFallbackHandlerService.checkAndCreateFallbackHandlerTransaction(
+          ownerAddress,
+          provider
+        );
+
+        if (fallbackTx) {
+          needsFallbackHandler = true;
+          fallbackHandlerTransaction = {
+            to: fallbackTx.to,
+            data: fallbackTx.data,
+            value: fallbackTx.value
+          };
+          transactions.push(fallbackHandlerTransaction);
+        }
+      } catch (error) {
+        console.warn('Could not check fallback handler (may not be a Safe wallet):', error);
+        // Continue without fallback handler check - this is normal for EOA wallets
+      }
+
+      // Step 2: Check if approval is needed
       const approvalCheck = await ERC20ApprovalService.checkApproval(
         tokenAddress,
         ownerAddress,
@@ -44,38 +72,32 @@ export class SafeBatchService {
 
       console.log('Approval check result:', approvalCheck);
 
-      const transactions: BatchTransactionRequest[] = [];
+      let needsApproval = false;
+      let approvalTransaction: BatchTransactionRequest | undefined;
 
       // Add approval transaction if needed
       if (approvalCheck.needsApproval && approvalCheck.approvalData) {
-        const approvalTransaction: BatchTransactionRequest = {
+        needsApproval = true;
+        approvalTransaction = {
           to: tokenAddress,
           data: approvalCheck.approvalData,
           value: '0'
         };
-        
-        transactions.push(approvalTransaction);
-        console.log('Added approval transaction to batch');
 
-        // Return batch with approval + main transaction
-        transactions.push(mainTransaction);
-        
-        return {
-          transactions,
-          needsApproval: true,
-          approvalTransaction,
-          mainTransaction
-        };
-      } else {
-        // Only main transaction needed
-        transactions.push(mainTransaction);
-        
-        return {
-          transactions,
-          needsApproval: false,
-          mainTransaction
-        };
+        transactions.push(approvalTransaction);
       }
+
+      // Step 3: Add the main transaction
+      transactions.push(mainTransaction);
+
+      return {
+        transactions,
+        needsApproval,
+        approvalTransaction,
+        needsFallbackHandler,
+        fallbackHandlerTransaction,
+        mainTransaction
+      };
 
     } catch (error) {
       console.error('Error preparing batch transaction:', error);
@@ -136,20 +158,28 @@ export class SafeBatchService {
   static createTransactionSummary(batchResult: BatchTransactionResult): {
     transactionCount: number;
     hasApproval: boolean;
+    hasFallbackHandler: boolean;
     summary: string[];
   } {
     const summary: string[] = [];
-    
-    if (batchResult.needsApproval) {
-      summary.push('1. Approve ERC20 token spending (unlimited approval)');
-      summary.push('2. Execute conditional order transaction');
-    } else {
-      summary.push('1. Execute conditional order transaction');
+    let step = 1;
+
+    if (batchResult.needsFallbackHandler) {
+      summary.push(`${step}. Set Safe fallback handler to PolySwap handler`);
+      step++;
     }
+
+    if (batchResult.needsApproval) {
+      summary.push(`${step}. Approve ERC20 token spending (unlimited approval)`);
+      step++;
+    }
+
+    summary.push(`${step}. Execute conditional order transaction`);
 
     return {
       transactionCount: batchResult.transactions.length,
       hasApproval: batchResult.needsApproval,
+      hasFallbackHandler: batchResult.needsFallbackHandler,
       summary
     };
   }
@@ -209,6 +239,58 @@ export class SafeBatchService {
         individualEstimates: batchResult.transactions.map(() => BigInt(200000)),
         estimatedCost: '0.01' // Conservative estimate
       };
+    }
+  }
+
+  /**
+   * Get comprehensive Safe wallet information including fallback handler status
+   */
+  static async getSafeWalletInfo(
+    walletAddress: string,
+    provider: ethers.Provider
+  ): Promise<{
+    isValidSafe: boolean;
+    threshold?: number;
+    owners?: string[];
+    fallbackHandler: string;
+    fallbackHandlerCheck: {
+      currentHandler: string;
+      expectedHandler: string;
+      isCorrect: boolean;
+      needsUpdate: boolean;
+    };
+    needsFallbackHandlerUpdate: boolean;
+  }> {
+    try {
+      const safeInfo = await SafeFallbackHandlerService.getSafeInfo(walletAddress, provider);
+
+      return {
+        isValidSafe: safeInfo.isValidSafe,
+        threshold: safeInfo.threshold,
+        owners: safeInfo.owners,
+        fallbackHandler: safeInfo.fallbackHandler,
+        fallbackHandlerCheck: safeInfo.fallbackHandlerCheck,
+        needsFallbackHandlerUpdate: safeInfo.fallbackHandlerCheck.needsUpdate
+      };
+    } catch (error) {
+      console.error('Error getting Safe wallet info:', error);
+      throw new Error(`Failed to get Safe wallet info: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Check if the given address is a Safe wallet that needs fallback handler setup
+   */
+  static async requiresFallbackHandlerSetup(
+    walletAddress: string,
+    provider: ethers.Provider
+  ): Promise<boolean> {
+    try {
+      const safeInfo = await this.getSafeWalletInfo(walletAddress, provider);
+      return safeInfo.isValidSafe && safeInfo.needsFallbackHandlerUpdate;
+    } catch (error) {
+      console.warn('Could not check fallback handler requirements:', error);
+      return false; // Assume no setup needed if we can't check
     }
   }
 }

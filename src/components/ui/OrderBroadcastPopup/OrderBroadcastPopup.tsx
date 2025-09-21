@@ -419,6 +419,7 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
           try {
             if (isBatchTransaction) {
               // For batch, fall back to sequential
+              // Note: sendTransactionsSequentially now throws an error if any transaction fails
               const sequentialResults = await walletConnectSafeService.sendTransactionsSequentially({
                 transactions: state.transactionData.transactions
               }, (current, total, txType) => {
@@ -433,12 +434,9 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
                 }));
               });
 
-              const successfulResult = sequentialResults.find(r => r.success);
-              if (successfulResult) {
-                result = successfulResult;
-              } else {
-                throw new Error('All sequential transactions failed');
-              }
+              // If we get here, all transactions succeeded
+              const lastResult = sequentialResults[sequentialResults.length - 1];
+              result = lastResult;
             } else {
               // For single transaction, try WalletConnect service
               result = await walletConnectSafeService.sendTransaction({
@@ -449,7 +447,9 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
             }
           } catch (fallbackError) {
             console.error('Both Safe Protocol Kit and WalletConnect service failed:', fallbackError);
-            throw new Error(`Safe transaction failed: ${protocolKitError instanceof Error ? protocolKitError.message : 'Unknown error'}`);
+            // Prioritize the WalletConnect error (fallbackError) over the Safe SDK error (protocolKitError)
+            // because the WalletConnect error is more likely to be user-actionable (e.g., user rejection)
+            throw fallbackError;
           }
         }
 
@@ -528,7 +528,8 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
             errorMsg.includes('transaction was cancelled') ||
             errorMsg.includes('action_rejected') ||
             errorMsg.includes('user cancelled') ||
-            errorMsg.includes('transaction signing was refused')) {
+            errorMsg.includes('transaction signing was refused') ||
+            errorMsg.includes('failed: transaction signing was refused')) {
           errorType = 'transaction_refused';
           errorMessage = 'Transaction signing was refused by user';
         }

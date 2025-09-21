@@ -357,14 +357,12 @@ export class WalletConnectSafeService {
       console.log('Multiple transactions detected - Safe WalletConnect requires sequential execution');
 
       // Use sequential transactions as the primary method for Safe WalletConnect
+      // This will now throw an error if any transaction fails, stopping the process
       const results = await this.sendTransactionsSequentially(batchRequest);
-      const successfulResult = results.find(r => r.success);
 
-      if (successfulResult) {
-        return successfulResult;
-      } else {
-        throw new Error('All transactions failed in sequential execution');
-      }
+      // If we get here, all transactions succeeded
+      const lastSuccessfulResult = results[results.length - 1];
+      return lastSuccessfulResult;
 
     } catch (error) {
       console.error('Error sending Safe transactions via WalletConnect:', error);
@@ -394,12 +392,12 @@ export class WalletConnectSafeService {
       // Determine transaction type for better UX
       let txType = 'Transaction';
       if (totalTxs > 1) {
-        if (i === 0 && tx.data.startsWith('0x095ea7b3')) {
+        if (tx.data.startsWith('0xf08a0323')) {
+          txType = 'Set Fallback Handler';
+        } else if (tx.data.startsWith('0x095ea7b3')) {
           txType = 'Token Approval';
-        } else if (i === 1 || totalTxs === 1) {
-          txType = 'Conditional Order';
         } else {
-          txType = `Transaction ${currentTx}`;
+          txType = 'Conditional Order';
         }
       }
 
@@ -420,11 +418,9 @@ export class WalletConnectSafeService {
         }
       } catch (error) {
         console.error(`Transaction ${currentTx} (${txType}) failed:`, error);
-        // Continue with remaining transactions
-        results.push({
-          transactionHash: '',
-          success: false
-        });
+
+        // Stop the process and throw the error - don't continue with remaining transactions
+        throw new Error(`Transaction ${currentTx} (${txType}) failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     }
 

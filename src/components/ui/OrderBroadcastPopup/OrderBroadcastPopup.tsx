@@ -243,7 +243,7 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
 
   const handleGetTransactionData = async (transactionData: any) => {
     // Initialize transaction progress for batch transactions
-    const isBatch = transactionData.isBatch || (Array.isArray(transactionData.transactions) && transactionData.transactions.length > 1);
+    const isBatch = transactionData.isBatch && Array.isArray(transactionData.transactions);
     const totalTxs = isBatch ? transactionData.transactions.length : 1;
 
     setState(prev => ({
@@ -270,9 +270,17 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
       
       let transactionHash: string;
       
-      // Check if this is a batch transaction
-      const isBatchTransaction = state.transactionData.isBatch && state.transactionData.transactions;
-      
+      // Check if this is a batch transaction (all Safe transactions are now batch format)
+      const isBatchTransaction = state.transactionData.isBatch && Array.isArray(state.transactionData.transactions);
+
+      console.log('🔍 Transaction data structure:', {
+        isBatch: state.transactionData.isBatch,
+        hasTransactions: Array.isArray(state.transactionData.transactions),
+        transactionCount: state.transactionData.transactions?.length,
+        isBatchTransaction,
+        connectorName: connector?.name
+      });
+
       if (isSafeApp) {
         let result;
         

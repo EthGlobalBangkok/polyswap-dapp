@@ -105,11 +105,15 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
           setBatchData(batch);
           setTransactionSummary(result.data.summary);
           
-          // For backwards compatibility, pass the main transaction or first transaction
-          const transactionToPass = batch.transactions.length === 1 
-            ? batch.transactions[0]
-            : { transactions: batch.transactions, isBatch: true };
-          
+          // Always pass as batch structure to ensure proper Safe handling
+          // This maintains consistency for both single and multi-transaction flows
+          const transactionToPass = {
+            transactions: batch.transactions,
+            isBatch: true,
+            needsApproval: batch.needsApproval,
+            needsFallbackHandler: batch.needsFallbackHandler
+          };
+
           onGetTransactionData(transactionToPass);
           
           console.log('Batch transaction prepared:', {

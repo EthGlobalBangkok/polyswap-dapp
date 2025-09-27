@@ -2,6 +2,7 @@ import { ethers } from 'ethers';
 import dotenv from 'dotenv';
 import { DatabaseService } from './services/databaseService';
 import { MarketUpdateService } from './services/marketUpdateService';
+import { OrderUidCalculationService } from './services/orderUidCalculationService';
 import {
   ConditionalOrderCreatedEvent,
   ConditionalOrderParams,
@@ -57,6 +58,59 @@ class PolyswapBlockchainListener {
       GPV2_SETTLEMENT_ABI,
       this.provider
     );
+
+    // Initialize OrderUidCalculationService
+    OrderUidCalculationService.initialize(this.provider);
+  }
+
+  /**
+   * Calculate and update order UIDs for existing live orders
+   */
+  private async updateOrderUids(): Promise<void> {
+    try {
+      console.log('🔍 Checking for orders without UIDs...');
+      const ordersWithoutUid = await DatabaseService.getLiveOrdersWithoutUid();
+
+      if (ordersWithoutUid.length === 0) {
+        console.log('✅ All live orders already have UIDs');
+        return;
+      }
+
+      console.log(`📋 Found ${ordersWithoutUid.length} orders without UIDs, calculating...`);
+
+      const network = await this.provider.getNetwork();
+      const chainId = Number(network.chainId);
+
+      for (const order of ordersWithoutUid) {
+        try {
+          console.log(`🔄 Calculating UID for order ${order.order_hash}`);
+
+          // Create PolyswapOrder data from database record
+          const polyswapOrderData = OrderUidCalculationService.createPolyswapOrderDataFromDbOrder(order);
+
+          // Calculate order UID using on-chain contract
+          const orderUid = await OrderUidCalculationService.calculateCompleteOrderUidOnChain(
+            polyswapOrderData,
+            order.owner
+          );
+
+          // Update the database with the calculated UID
+          const updated = await DatabaseService.updateOrderUid(order.order_hash, orderUid);
+
+          if (updated) {
+            console.log(`✅ Updated order ${order.order_hash} with UID ${orderUid}`);
+          } else {
+            console.error(`❌ Failed to update order ${order.order_hash} with UID`);
+          }
+        } catch (error) {
+          console.error(`❌ Error calculating UID for order ${order.order_hash}:`, error);
+        }
+      }
+
+      console.log(`✅ Finished updating order UIDs for ${ordersWithoutUid.length} orders`);
+    } catch (error) {
+      console.error('❌ Error updating order UIDs:', error);
+    }
   }
 
   /**
@@ -73,6 +127,9 @@ class PolyswapBlockchainListener {
       this.lastProcessedBlock = Math.max(STARTING_BLOCK, dbLatestBlock);
       
       console.log(`📍 Starting from block: ${this.lastProcessedBlock}`);
+
+      // Calculate order UIDs for existing orders
+      await this.updateOrderUids();
 
       // Process historical events first
       await this.processHistoricalEvents();
@@ -378,18 +435,15 @@ class PolyswapBlockchainListener {
         return;
       }
 
-      // Look up the order in the database by owner and order hash
-      // The orderUid contains the order hash in the first 32 bytes
-      const orderHash = orderUid.slice(0, 66); // 0x + 64 hex chars = 66 total chars
-
-      console.log(`🔍 Looking up order with hash: ${orderHash} and owner: ${owner.toLowerCase()}`);
+      // Look up the order in the database by order UID
+      console.log(`🔍 Looking up order with UID: ${orderUid}`);
 
       try {
-        // Check if this is a Polyswap order
-        const polyswapOrder = await DatabaseService.getPolyswapOrderByHashAndOwner(orderHash, owner.toLowerCase());
+        // Check if this is a Polyswap order by order UID
+        const polyswapOrder = await DatabaseService.getPolyswapOrderByUid(orderUid);
 
         if (!polyswapOrder) {
-          console.log(`⏭️  No matching Polyswap order found for hash ${orderHash} and owner ${owner.toLowerCase()}`);
+          console.log(`⏭️  No matching Polyswap order found for UID ${orderUid}`);
           return;
         }
 
@@ -467,18 +521,15 @@ class PolyswapBlockchainListener {
         return;
       }
 
-      // Look up the order in the database by owner and order hash
-      // The orderUid contains the order hash in the first 32 bytes
-      const orderHash = orderUid.slice(0, 66); // 0x + 64 hex chars = 66 total chars
-
-      console.log(`🔍 Looking up order with hash: ${orderHash} and owner: ${owner.toLowerCase()}`);
+      // Look up the order in the database by order UID
+      console.log(`🔍 Looking up order with UID: ${orderUid}`);
 
       try {
-        // Check if this is a Polyswap order
-        const polyswapOrder = await DatabaseService.getPolyswapOrderByHashAndOwner(orderHash, owner.toLowerCase());
+        // Check if this is a Polyswap order by order UID
+        const polyswapOrder = await DatabaseService.getPolyswapOrderByUid(orderUid);
 
         if (!polyswapOrder) {
-          console.log(`⏭️  No matching Polyswap order found for hash ${orderHash} and owner ${owner.toLowerCase()}`);
+          console.log(`⏭️  No matching Polyswap order found for UID ${orderUid}`);
           return;
         }
 

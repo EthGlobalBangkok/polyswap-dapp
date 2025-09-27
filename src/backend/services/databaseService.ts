@@ -839,4 +839,76 @@ export class DatabaseService {
       return false;
     }
   }
+
+  /**
+   * Update order UID for an existing order
+   */
+  static async updateOrderUid(orderHash: string, orderUid: string): Promise<boolean> {
+    const sql = `
+      UPDATE polyswap_orders
+      SET order_uid = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE order_hash = $2
+      RETURNING order_hash
+    `;
+    try {
+      const result = await query(sql, [orderUid, orderHash]);
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error(`❌ Error updating order UID for ${orderHash}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Get polyswap order by order UID
+   */
+  static async getPolyswapOrderByUid(orderUid: string): Promise<DatabasePolyswapOrder | null> {
+    const sql = `
+      SELECT * FROM polyswap_orders
+      WHERE order_uid = $1
+    `;
+    try {
+      const result = await query(sql, [orderUid]);
+      return result.rows.length > 0 ? result.rows[0] : null;
+    } catch (error) {
+      console.error(`❌ Error fetching order by UID ${orderUid}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get all live orders without order UID (need calculation)
+   */
+  static async getLiveOrdersWithoutUid(): Promise<DatabasePolyswapOrder[]> {
+    const sql = `
+      SELECT * FROM polyswap_orders
+      WHERE status = 'live' AND (order_uid IS NULL OR order_uid = '')
+      ORDER BY created_at ASC
+    `;
+    try {
+      const result = await query(sql);
+      return result.rows;
+    } catch (error) {
+      console.error('❌ Error fetching live orders without UID:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get all live orders
+   */
+  static async getLiveOrders(): Promise<DatabasePolyswapOrder[]> {
+    const sql = `
+      SELECT * FROM polyswap_orders
+      WHERE status = 'live'
+      ORDER BY created_at ASC
+    `;
+    try {
+      const result = await query(sql);
+      return result.rows;
+    } catch (error) {
+      console.error('❌ Error fetching live orders:', error);
+      return [];
+    }
+  }
 }

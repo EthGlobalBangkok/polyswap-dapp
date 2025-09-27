@@ -13,29 +13,35 @@ PolySwap allows you to:
 - **⚡ Automatic Execution**: Orders execute automatically when market conditions resolve in your favor
 - **🔒 Trustless**: Built on CoW Swap's proven conditional order infrastructure
 - **💸 Gas Efficient**: Leverages batch auctions and off-chain order matching
+- **🔐 Safe Wallet Integration**: Secure multi-signature wallet support for institutional users
 
 ### Example Use Case
 
-> *"I believe if Trump win the 2024 election, crypto market will go up. If 70% of people think he will wins, I want to automatically swap 1000 USDC for ETH at current market rates."*
+> *"I believe if Trump wins the 2024 election, crypto market will go up. If my Polymarket bet gets filled, I want to automatically swap 1000 USDC for ETH at current market rates."*
 
-With PolySwap, you can create this conditional order that will only execute if the condition is met, eliminating the need to manually monitor the election outcome and execute the trade yourself.
+With PolySwap, you can create this conditional order that will only execute if the condition is met, eliminating the need to manually monitor the prediction market outcome and execute the trade yourself.
+
+> 🎥 **[Watch the PolySwap demo video](./public/polyswap_demo.mp4)**
+
 
 ## 🏗️ Architecture Overview
 
-PolySwap consists of two main components:
+PolySwap consists of integrated frontend and backend components:
 
 ### 🖥️ Frontend (Next.js)
 - **Modern React Interface**: Built with Next.js 15 and React 19
 - **Market Browser**: Search and explore Polymarket prediction markets
-- **Order Creation**: Intuitive interface for setting up conditional swaps
+- **Order Creation Flow**: Intuitive interface for setting up conditional swaps with Polymarket integration
 - **Order Management**: Track and manage your active conditional orders
-- **Wallet Integration**: Wallet connection with Wagmi.sh and Privy
+- **Safe Wallet Integration**: Gnosis Safe support with WalletConnect for secure transactions
+- **Real-time Updates**: Live order status and market data synchronization
 
 ### ⚙️ Backend (Node.js + TypeScript)
-- **RESTful API**: Serves market data and order information
-- **Blockchain Listener**: Monitors Polygon for PolySwap order events
-- **PostgreSQL Database**: Stores market data and order history
+- **Next.js API Routes**: Integrated API serving market data and order information
+- **Blockchain Listener**: Monitors Polygon for PolySwap order events and trade executions
+- **PostgreSQL Database**: Stores market data, order history, and order UIDs
 - **Real-time Processing**: Indexes and processes orders as they're created
+- **Order UID Calculation**: Automatic calculation and storage of CoW Protocol order UIDs
 
 📚 **[View Detailed Backend Documentation with API endpoints →](./Backend.md)**
 
@@ -43,17 +49,17 @@ PolySwap consists of two main components:
 
 ### Prerequisites
 
-- Node.js 18+ and npm
+- Node.js 18+ and pnpm (preferred package manager)
 - Docker and Docker Compose (for the database)
 
 ### Installation
 
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Set up environment variables
-cp .env.example .env
+cp .env.sample .env
 # Edit .env with your configuration
 ```
 
@@ -61,63 +67,59 @@ cp .env.example .env
 
 1. **Start the database**:
    ```bash
-   npm run db:up
+   pnpm db:up
    ```
 
 2. **Start the backend services**:
    ```bash
-   # Terminal 1: API Server
-   npm run start:api
-   
-   # Terminal 2: Blockchain Listener
-   npm run start:listener
+   # Start blockchain listener + market updater
+   pnpm start:listener
    ```
 
 3. **Start the frontend**:
    ```bash
-   npm run dev
+   pnpm dev
    ```
 
 4. **Access the application**:
-   - Frontend: `http://localhost:8080`
-   - API: `http://localhost:3000`
+   - Frontend: `http://localhost:3000`
 
 ## 🔧 Available Scripts
 
 ### Frontend Development
 ```bash
-npm run dev          # Start Next.js development server
-npm run build        # Build production frontend
-npm run start        # Start production frontend
-npm run lint         # Run ESLint
+pnpm dev          # Start Next.js development server (port 3000)
+pnpm build        # Build production frontend
+pnpm start        # Start production frontend
+pnpm lint         # Run ESLint
 ```
 
 ### Backend Services
 ```bash
-npm run start:api                    # Start API server
-npm run start:listener               # Start blockchain listener + market updater
-npm run start:listener-only          # Start only blockchain listener
-npm run start:market-updater         # Start only market updater (via listener)
-npm run start:market-updater-standalone # Start standalone market updater
+pnpm start:listener               # Start blockchain listener + market updater
+pnpm start:listener-only          # Start only blockchain listener
+pnpm start:market-updater         # Start only market updater (via listener)
+pnpm start:market-updater-standalone # Start standalone market updater
 ```
 
 ### Market Data Management
 ```bash
-npm run saveMarkets   # Fetch markets from Polymarket API to data.json
-npm run db:import     # Import markets from data.json to database
+pnpm saveMarkets   # Fetch markets from Polymarket API to data.json
+pnpm db:import     # Import markets from data.json to database
 ```
 
 ### Database Management
 ```bash
-npm run db:up         # Start PostgreSQL container
-npm run db:down       # Stop PostgreSQL container
-npm run db:logs       # View database logs
-npm run db:import     # Import market data
+pnpm db:up         # Start PostgreSQL container
+pnpm db:down       # Stop PostgreSQL container
+pnpm db:logs       # View database logs
 ```
 
-### Data Management
+### Utility Scripts
 ```bash
-npm run saveMarkets   # Fetch latest market data from Polymarket
+pnpm get-polymarket-creds         # Get Polymarket credentials
+pnpm cancel-polymarket-orders     # Cancel all Polymarket orders
+pnpm sell-polymarket-positions    # Sell all Polymarket positions
 ```
 
 ## 🔄 Automatic Market Updates
@@ -128,38 +130,28 @@ PolySwap includes an automatic market update service that keeps your database sy
 
 Set the update interval in your `.env` file:
 ```bash
-MARKET_UPDATE_INTERVAL_MINUTES=60  # Update every 60 minutes (default)
+MARKET_UPDATE_INTERVAL_MINUTES=5  # Update every 5 minutes (default)
+AUTO_REMOVE_CLOSED_MARKETS=true   # Remove closed markets automatically
 ```
 
 ### Running Options
 
 1. **Full Service** (Recommended for production):
    ```bash
-   npm run start:listener  # Runs both blockchain listener and market updater
+   pnpm start:listener  # Runs both blockchain listener and market updater
    ```
 
 2. **Market Updater Only**:
    ```bash
-   npm run start:market-updater  # Market updates via listener with --market-update-only flag
+   pnpm start:market-updater  # Market updates via listener with --market-update-only flag
    # OR
-   npm run start:market-updater-standalone  # Standalone market updater script
+   pnpm start:market-updater-standalone  # Standalone market updater script
    ```
 
 3. **Blockchain Listener Only**:
    ```bash
-   npm run start:listener-only  # Only listens for on-chain events
+   pnpm start:listener-only  # Only listens for on-chain events
    ```
-
-### Manual Updates
-
-You can also trigger manual updates via the API:
-```bash
-# Check update service status
-curl http://localhost:3000/api/markets/update
-
-# Trigger manual update
-curl -X POST http://localhost:3000/api/markets/update
-```
 
 ### How It Works
 
@@ -168,6 +160,40 @@ curl -X POST http://localhost:3000/api/markets/update
 - Uses optimized batching to avoid overwhelming the API/database
 - Automatically handles errors and retries
 - Provides detailed logging for monitoring
+
+## ⚙️ Environment Configuration
+
+Key environment variables (see `.env.sample`):
+
+### Database
+```bash
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=polyswap
+DB_USER=postgres
+DB_PASSWORD=your_password
+```
+
+### Polymarket API
+```bash
+CLOB_API_KEY=your_api_key
+CLOB_SECRET=your_secret
+CLOB_PASS_PHRASE=your_passphrase
+```
+> **ℹ️ Info:** You can generate these Polymarket API credentials with the script:
+> ```
+> pnpm get-polymarket-creds
+> ```
+
+
+### Blockchain Configuration
+```bash
+RPC_URL=https://polygon-rpc.com/
+STARTING_BLOCK=76437998
+COMPOSABLE_COW=0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74
+NEXT_PUBLIC_POLYSWAP_HANDLER=0x65a5B712F34d8219A4c70451353D2F6A80e6703c
+EXTENSIBLE_FALLBACK_HANDLER=0x2f55e8b20D0B9FEFA187AA7d00B6Cbe563605bF5
+```
 
 ## 💰 Fund Flow Architecture
 
@@ -269,14 +295,16 @@ end
     Note over User: Final State: User retains original sellTokens (no loss)
   end
 ```
+> **Note:** If the diagram does not display correctly, here is the diagram as a PNG:  
+> [polyswap_mermaid.png](./public/polyswap_mermaid.png)
 
-### Key Fund Safety Features:
+## 🔐 Safe Wallet Integration
 
-- **🔒 No Escrow**: Funds remain in your Safe wallet throughout the entire process
-- **⚡ Atomic Execution**: Funds only transfer when swap is guaranteed to complete
-- **🎯 Condition-Based**: Transfer only occurs if Polymarket condition is satisfied
-- **⏰ Expiry Protection**: If condition never triggers, funds remain safely in your wallet
-- **💸 Gas Efficient**: Only pay gas when orders actually execute
+PolySwap is designed to work exclusively with Gnosis Safe wallets for enhanced security:
+
+### Supported Connection Methods
+- **Safe Apps (TODO)**: Run PolySwap directly inside the Safe interface
+- **WalletConnect**: Connect external Safe wallets via WalletConnect protocol
 
 ## 🧑‍💻 Authors
 

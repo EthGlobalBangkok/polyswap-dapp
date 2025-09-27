@@ -5,6 +5,7 @@ import { useAccount } from 'wagmi';
 import { apiService } from '../../services/api';
 import { DatabasePolyswapOrder } from '../../backend/interfaces/PolyswapOrder';
 import OrderBroadcastPopup from './OrderBroadcastPopup/OrderBroadcastPopup';
+import OrderCancellationPopup from './OrderCancellationPopup/OrderCancellationPopup';
 import styles from './OrdersView.module.css';
 
 interface Token {
@@ -32,6 +33,10 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
   // OrderBroadcastPopup state
   const [showBroadcastPopup, setShowBroadcastPopup] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+
+  // OrderCancellationPopup state
+  const [showCancellationPopup, setShowCancellationPopup] = useState(false);
+  const [selectedOrderForCancellation, setSelectedOrderForCancellation] = useState<DatabasePolyswapOrder | null>(null);
 
   // Fetch tokens on component mount
   useEffect(() => {
@@ -147,6 +152,23 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
   const handleCloseBroadcastPopup = () => {
     setShowBroadcastPopup(false);
     setSelectedOrderId(null);
+    // Refresh orders to get updated status
+    fetchOrders();
+  };
+
+  const handleRemoveOrder = (order: DatabasePolyswapOrder) => {
+    if (!order.order_hash) {
+      alert('Cannot remove order: Order hash not available');
+      return;
+    }
+
+    setSelectedOrderForCancellation(order);
+    setShowCancellationPopup(true);
+  };
+
+  const handleCloseCancellationPopup = () => {
+    setShowCancellationPopup(false);
+    setSelectedOrderForCancellation(null);
     // Refresh orders to get updated status
     fetchOrders();
   };
@@ -385,6 +407,15 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
                           {getContinueButtonText(order)}
                         </button>
                       )}
+                      {order.status === 'live' && (
+                        <button
+                          className={styles.removeButton}
+                          onClick={() => handleRemoveOrder(order)}
+                          title="Cancel this order on CoW Protocol"
+                        >
+                          Cancel Order
+                        </button>
+                      )}
                       <button
                         className={styles.expandButton}
                         onClick={() => toggleOrderExpansion(String(order.id))}
@@ -566,6 +597,15 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
           isOpen={showBroadcastPopup}
           onClose={handleCloseBroadcastPopup}
           orderId={selectedOrderId}
+        />
+      )}
+
+      {/* Order Cancellation Popup for canceling live orders */}
+      {selectedOrderForCancellation && (
+        <OrderCancellationPopup
+          isOpen={showCancellationPopup}
+          onClose={handleCloseCancellationPopup}
+          order={selectedOrderForCancellation}
         />
       )}
     </div>

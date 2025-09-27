@@ -253,6 +253,19 @@ export class PolymarketOrderService {
     }
   }
 
+  async cancelOrder(orderId: string) {
+    this.checkInitialization();
+    try {
+      const result = await this.clobClient!.cancelOrder({
+        orderID: orderId
+      });
+      return result;
+    } catch (error) {
+      console.error('Failed to cancel order:', error);
+      throw new Error(`Failed to cancel order ${orderId}: ${error}`);
+    }
+  }
+
   async getOrder(id: string) {
     this.checkInitialization();
     try {

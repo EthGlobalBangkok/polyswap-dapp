@@ -1,0 +1,572 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { useAccount, usePublicClient, useConnectorClient } from 'wagmi';
+import { safeService } from '../../../services/safeService';
+import { walletConnectSafeService } from '../../../services/walletConnectSafeService';
+import { ethers } from 'ethers';
+import { DatabasePolyswapOrder } from '../../../backend/interfaces/PolyswapOrder';
+import styles from './OrderCancellationPopup.module.css';
+
+interface OrderCancellationPopupProps {
+  isOpen: boolean;
+  onClose: () => void;
+  order: DatabasePolyswapOrder;
+}
+
+type CancellationStep = 'confirm' | 'polymarket' | 'transaction' | 'waiting' | 'success' | 'error';
+
+interface PopupState {
+  step: CancellationStep;
+  polymarketCanceled: boolean;
+  transactionData: any;
+  transactionHash?: string;
+  safeTxHash?: string;
+  error?: string;
+  errorMessage?: string;
+  isSafeInitialized: boolean;
+}
+
+export default function OrderCancellationPopup({
+  isOpen,
+  onClose,
+  order
+}: OrderCancellationPopupProps) {
+  const { address, connector } = useAccount();
+  const publicClient = usePublicClient();
+  const { data: client } = useConnectorClient();
+
+  const [state, setState] = useState<PopupState>({
+    step: 'confirm',
+    polymarketCanceled: false,
+    transactionData: null,
+    isSafeInitialized: false
+  });
+
+  const [isSending, setIsSending] = useState(false);
+  const [isWaiting, setIsWaiting] = useState(false);
+
+  // Reset state when popup opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      setState({
+        step: 'confirm',
+        polymarketCanceled: false,
+        transactionData: null,
+        isSafeInitialized: false
+      });
+      setIsSending(false);
+      setIsWaiting(false);
+    }
+  }, [isOpen]);
+
+  // Initialize Safe services when wallet is connected
+  useEffect(() => {
+    const initializeSafeServices = async () => {
+      if (!address || !client || !publicClient) {
+        setState(prev => ({ ...prev, isSafeInitialized: false }));
+        return;
+      }
+
+      try {
+        const provider = new ethers.BrowserProvider(publicClient as any);
+        const signer = new ethers.BrowserProvider(client as any).getSigner();
+
+        // Initialize WalletConnect Safe service
+        walletConnectSafeService.initialize(await signer, provider);
+
+        setState(prev => ({ ...prev, isSafeInitialized: true }));
+        console.log('✅ Safe services initialized successfully');
+      } catch (error) {
+        console.error('❌ Failed to initialize Safe services:', error);
+        setState(prev => ({ ...prev, isSafeInitialized: false }));
+      }
+    };
+
+    if (isOpen) {
+      initializeSafeServices();
+    }
+  }, [address, client, publicClient, isOpen]);
+
+  const handleConfirmCancellation = async () => {
+    setState(prev => ({ ...prev, step: 'polymarket' }));
+
+    try {
+      // Step 1: Cancel Polymarket order and get transaction data
+      const response = await fetch('/api/polyswap/orders/remove', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          orderHash: order.order_hash,
+          ownerAddress: address
+        })
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        setState(prev => ({
+          ...prev,
+          step: 'error',
+          error: 'api_error',
+          errorMessage: result.message || 'Failed to prepare order cancellation'
+        }));
+        return;
+      }
+
+      // Step 2: Move to transaction step
+      setState(prev => ({
+        ...prev,
+        step: 'transaction',
+        polymarketCanceled: result.data.polymarketCanceled,
+        transactionData: result.data.transaction
+      }));
+
+    } catch (error) {
+      console.error('Error preparing cancellation:', error);
+      setState(prev => ({
+        ...prev,
+        step: 'error',
+        error: 'preparation_error',
+        errorMessage: 'Failed to prepare order cancellation'
+      }));
+    }
+  };
+
+  const handleSendTransaction = async () => {
+    console.log('🚀 [CANCEL] handleSendTransaction START');
+    console.log('🔍 [CANCEL] Initial state check:', {
+      hasTransactionData: !!state.transactionData,
+      isSafeInitialized: state.isSafeInitialized,
+      step: state.step,
+      orderHash: order.order_hash,
+      connectorName: connector?.name
+    });
+    console.log('🔍 [CANCEL] Transaction data:', JSON.stringify(state.transactionData, null, 2));
+
+    if (!state.transactionData || !state.isSafeInitialized) {
+      console.error('❌ [CANCEL] handleSendTransaction BLOCKED - Missing requirements:', {
+        transactionData: !!state.transactionData,
+        isSafeInitialized: state.isSafeInitialized
+      });
+      return;
+    }
+
+    console.log('🔄 [CANCEL] Setting isSending = true');
+    setIsSending(true);
+
+    try {
+      const isSafeApp = connector?.name === 'Safe';
+      const isWalletConnect = connector?.name === 'WalletConnect';
+
+      console.log('🔍 [CANCEL] Connector analysis:', {
+        connectorName: connector?.name,
+        isSafeApp,
+        isWalletConnect
+      });
+
+      let transactionHash: string;
+
+      console.log('🔍 [CANCEL] Transaction structure analysis:', {
+        connectorName: connector?.name,
+        transactionDataKeys: Object.keys(state.transactionData),
+        transactionData: state.transactionData
+      });
+
+      if (isSafeApp) {
+        // Use Safe SDK for Safe app connections
+        console.log('Using Safe SDK for Safe app connection');
+        const result = await safeService.createSafeTransaction({
+          to: state.transactionData.to,
+          data: state.transactionData.data,
+          value: state.transactionData.value
+        });
+
+        setState(prev => ({
+          ...prev,
+          safeTxHash: result.safeTxHash,
+          transactionHash: result.transactionHash
+        }));
+
+        if (result.executed && result.transactionHash) {
+          transactionHash = result.transactionHash;
+        } else {
+          // Transaction created but not executed (needs more signatures)
+          setState(prev => ({
+            ...prev,
+            step: 'error',
+            error: 'transaction_needs_signatures',
+            errorMessage: 'Transaction created but requires additional signatures from other Safe owners'
+          }));
+          return;
+        }
+      } else if (isWalletConnect) {
+        // Use WalletConnect Safe service directly - optimized for Safe + WalletConnect
+        console.log('🎯 [CANCEL] Using WalletConnect Safe service for cancellation transaction');
+        console.log('🔍 [CANCEL] WalletConnect service initialized:', walletConnectSafeService.isInitialized());
+
+        try {
+          console.log('🔄 [CANCEL] Calling sendTransaction...');
+          console.log('📋 [CANCEL] Transaction params:', {
+            to: state.transactionData.to,
+            data: state.transactionData.data,
+            value: state.transactionData.value
+          });
+
+          const result = await walletConnectSafeService.sendTransaction({
+            to: state.transactionData.to,
+            data: state.transactionData.data,
+            value: state.transactionData.value
+          });
+
+          console.log('✅ [CANCEL] sendTransaction completed');
+          console.log('🔍 [CANCEL] Result received:', JSON.stringify(result, null, 2));
+
+          if (result && result.success) {
+            transactionHash = result.transactionHash;
+            console.log('🎉 [CANCEL] Cancellation transaction signed successfully:', transactionHash);
+
+            console.log('🔄 [CANCEL] Updating state with transaction hash...');
+            setState(prev => ({
+              ...prev,
+              transactionHash: result.transactionHash
+            }));
+            console.log('✅ [CANCEL] State updated with transaction hash');
+          } else {
+            console.error('❌ [CANCEL] Transaction result indicates failure:', result);
+            throw new Error('Transaction signing failed');
+          }
+        } catch (walletConnectError) {
+          console.error('💥 [CANCEL] WalletConnect Safe service failed:', walletConnectError);
+          throw walletConnectError;
+        }
+      } else {
+        throw new Error('Unsupported wallet connection type');
+      }
+
+      // Transaction was executed, mark as success
+      console.log('🔍 [CANCEL] Post-transaction processing...');
+      console.log('🔍 [CANCEL] Transaction hash available:', !!transactionHash);
+      console.log('🔍 [CANCEL] Transaction hash value:', transactionHash);
+
+      if (!transactionHash) {
+        console.error('❌ [CANCEL] No transaction hash available');
+        setState(prev => ({
+          ...prev,
+          step: 'error',
+          error: 'transaction_failed',
+          errorMessage: 'Transaction completed but no transaction hash was returned'
+        }));
+        return;
+      }
+
+      console.log('✅ [CANCEL] Order cancellation transaction successful:', transactionHash);
+      console.log('🔄 [CANCEL] Setting state to success...');
+      setState(prev => ({
+        ...prev,
+        step: 'success',
+        transactionHash
+      }));
+      console.log('✅ [CANCEL] State set to success');
+
+    } catch (error: any) {
+      console.error('💥 [CANCEL] Transaction error occurred in handleSendTransaction');
+      console.error('🔍 [CANCEL] Error type:', typeof error);
+      console.error('🔍 [CANCEL] Error constructor:', error?.constructor?.name);
+      console.error('🔍 [CANCEL] Error message:', error instanceof Error ? error.message : String(error));
+      console.error('🔍 [CANCEL] Error code:', (error as any)?.code);
+      console.error('🔍 [CANCEL] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+
+      // Determine error type based on the error message
+      let errorType = 'send_transaction_failed';
+      let errorMessage = error instanceof Error ? error.message : 'Failed to send transaction';
+
+      console.log('🔍 [CANCEL] Processing error with type:', errorType);
+      console.log('🔍 [CANCEL] Processing error with message:', errorMessage);
+
+      // Enhanced error detection for user rejection and Safe-specific issues
+      if (error instanceof Error) {
+        const errorMsg = error.message.toLowerCase();
+
+        // General user rejection patterns
+        if (errorMsg.includes('user rejected') ||
+            errorMsg.includes('user denied') ||
+            errorMsg.includes('denied') ||
+            errorMsg.includes('rejected') ||
+            errorMsg.includes('cancelled') ||
+            errorMsg.includes('transaction was cancelled') ||
+            errorMsg.includes('action_rejected') ||
+            errorMsg.includes('user cancelled') ||
+            errorMsg.includes('transaction signing was refused') ||
+            errorMsg.includes('failed: transaction signing was refused')) {
+          errorType = 'transaction_refused';
+          errorMessage = 'Transaction signing was refused by user';
+        }
+
+        // Safe-specific rejection patterns
+        else if (errorMsg.includes('safe transaction was rejected') ||
+                 errorMsg.includes('transaction rejected by safe') ||
+                 errorMsg.includes('refused in safe wallet')) {
+          errorType = 'safe_transaction_refused';
+          errorMessage = 'Transaction signing was refused in Safe wallet';
+        }
+
+        // Network/connection issues
+        else if (errorMsg.includes('network connection issue') ||
+                 errorMsg.includes('connection') ||
+                 errorMsg.includes('network error')) {
+          errorType = 'walletconnect_connection_issue';
+          errorMessage = 'Network connection issue. Please check your connection and retry.';
+        }
+
+        // Safe SDK specific error patterns
+        else if (errorMsg.includes('user denied transaction signature') ||
+                 errorMsg.includes('transaction was not signed') ||
+                 errorMsg.includes('signature rejected')) {
+          errorType = 'safe_transaction_refused';
+          errorMessage = 'Transaction signature was rejected in Safe wallet';
+        }
+
+        // Gas or transaction validation errors
+        else if (errorMsg.includes('gas estimation failed') ||
+                 errorMsg.includes('insufficient funds') ||
+                 errorMsg.includes('nonce')) {
+          errorType = 'transaction_validation_failed';
+          errorMessage = error.message; // Use the original technical error message
+        }
+      }
+
+      // Check for error codes that indicate user rejection
+      if ((error as any)?.code === 4001 || (error as any)?.code === 'ACTION_REJECTED') {
+        errorType = 'transaction_refused';
+        errorMessage = 'Transaction signing was refused by user';
+      }
+
+      console.log('🔄 [CANCEL] Setting error state...');
+      setState(prev => ({
+        ...prev,
+        step: 'error',
+        error: errorType,
+        errorMessage
+      }));
+      console.log('❌ [CANCEL] Error state set with type:', errorType);
+
+    } finally {
+      console.log('🏁 [CANCEL] Transaction process complete, clearing loading states');
+      setIsSending(false);
+      setIsWaiting(false);
+      console.log('✅ [CANCEL] Loading states cleared');
+      console.log('🏁 [CANCEL] handleSendTransaction END');
+    }
+  };
+
+  const getStepTitle = (): string => {
+    switch (state.step) {
+      case 'confirm':
+        return 'Confirm Order Cancellation';
+      case 'polymarket':
+        return 'Canceling Polymarket Order';
+      case 'transaction':
+        return 'Sign Cancellation Transaction';
+      case 'waiting':
+        return 'Processing Transaction';
+      case 'success':
+        return 'Order Cancellation Complete';
+      case 'error':
+        return 'Cancellation Error';
+      default:
+        return 'Cancel Order';
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className={styles.overlay} onClick={onClose}>
+      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.header}>
+          <h2 className={styles.title}>{getStepTitle()}</h2>
+          <button className={styles.closeButton} onClick={onClose}>×</button>
+        </div>
+
+        <div className={styles.content}>
+          {state.step === 'confirm' && (
+            <div className={styles.stepContent}>
+              <div className={styles.orderSummary}>
+                <h3>Order Details</h3>
+                <div className={styles.orderInfo}>
+                  <p><strong>Order ID:</strong> #{order.id}</p>
+                  <p><strong>Order Hash:</strong> {order.order_hash?.slice(0, 10)}...{order.order_hash?.slice(-8)}</p>
+                  <p><strong>Status:</strong> {order.status}</p>
+                </div>
+              </div>
+
+              <div className={styles.warningBox}>
+                <h4>⚠️ This will:</h4>
+                <ul>
+                  <li>Cancel the associated Polymarket order (if exists)</li>
+                  <li>Remove the conditional order from CoW Protocol</li>
+                  <li>Mark the order as canceled in the system</li>
+                </ul>
+                <p><strong>This action cannot be undone.</strong></p>
+              </div>
+
+              <div className={styles.buttonGroup}>
+                <button className={styles.cancelButton} onClick={onClose}>
+                  Keep Order
+                </button>
+                <button
+                  className={styles.confirmButton}
+                  onClick={handleConfirmCancellation}
+                >
+                  Confirm Cancellation
+                </button>
+              </div>
+            </div>
+          )}
+
+          {state.step === 'polymarket' && (
+            <div className={styles.stepContent}>
+              <div className={styles.loadingSection}>
+                <div className={styles.spinner}></div>
+                <p>Canceling Polymarket order...</p>
+                <p className={styles.subText}>
+                  Please wait while we process the Polymarket order cancellation.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {state.step === 'transaction' && (
+            <div className={styles.stepContent}>
+              <div className={styles.successMessage}>
+                <p>✅ {state.polymarketCanceled ? 'Polymarket order canceled successfully' : 'Polymarket cancellation completed'}</p>
+              </div>
+
+              <div className={styles.transactionSection}>
+                <h3>Sign Cancellation Transaction</h3>
+                <p>
+                  Now you need to sign the transaction to remove the conditional order from CoW Protocol.
+                </p>
+
+                <div className={styles.infoBox}>
+                  <p><strong>📱 For WalletConnect users:</strong></p>
+                  <p>• Check your Safe mobile/desktop app for the transaction request</p>
+                  <p>• The transaction will be queued if additional signatures are required</p>
+                </div>
+              </div>
+
+              <button
+                className={styles.primaryButton}
+                onClick={handleSendTransaction}
+                disabled={isSending || isWaiting || !state.isSafeInitialized}
+              >
+                {isSending ? (
+                  <>
+                    <span className={styles.spinner}></span>
+                    Signing...
+                  </>
+                ) : isWaiting ? (
+                  <>
+                    <span className={styles.spinner}></span>
+                    Waiting for confirmation...
+                  </>
+                ) : (
+                  'Sign & Execute Transaction'
+                )}
+              </button>
+            </div>
+          )}
+
+          {state.step === 'success' && (
+            <div className={styles.stepContent}>
+              <div className={styles.successIcon}>✅</div>
+              <h3>Order Cancellation Complete!</h3>
+
+              <div className={styles.successDetails}>
+                {state.polymarketCanceled && (
+                  <p>✅ Polymarket order canceled</p>
+                )}
+                {state.transactionHash && (
+                  <p>✅ CoW Protocol transaction executed: {state.transactionHash.slice(0, 10)}...{state.transactionHash.slice(-8)}</p>
+                )}
+              </div>
+
+              <p className={styles.note}>
+                The order has been successfully canceled and will be updated in your order list.
+              </p>
+
+              <button className={styles.primaryButton} onClick={onClose}>
+                Close
+              </button>
+            </div>
+          )}
+
+          {state.step === 'error' && (
+            <div className={styles.stepContent}>
+              {state.error === 'transaction_needs_signatures' ? (
+                <>
+                  <div className={styles.successIcon}>✅</div>
+                  <h3>Transaction Signed Successfully!</h3>
+
+                  <div className={styles.successDetails}>
+                    {state.polymarketCanceled && (
+                      <p>✅ Polymarket order canceled</p>
+                    )}
+                    <p>✅ Safe transaction signed and queued</p>
+                  </div>
+
+                  <div className={styles.waitingNote}>
+                    <p><strong>Additional signatures required</strong></p>
+                    <p>{state.errorMessage}</p>
+                    <p>The order will be canceled once all required signatures are collected and the transaction is executed.</p>
+                  </div>
+
+                  <button className={styles.primaryButton} onClick={onClose}>
+                    Close
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className={styles.errorIcon}>❌</div>
+                  <h3>Cancellation Error</h3>
+
+                  <div className={styles.errorMessage}>
+                    {state.error === 'transaction_refused' || state.error === 'user_rejected' ? (
+                      <p>Transaction was rejected. No changes have been made to your order.</p>
+                    ) : state.error === 'transaction_timeout' ? (
+                      <>
+                        <p>Transaction took too long to process. It may still be pending in your Safe wallet.</p>
+                        <p className={styles.note}>
+                          Check your Safe wallet to see if the transaction is still pending. If it's there, you can complete it from your Safe interface.
+                        </p>
+                      </>
+                    ) : (
+                      <p>{state.errorMessage || 'An unexpected error occurred during cancellation.'}</p>
+                    )}
+                  </div>
+
+                  <div className={styles.buttonGroup}>
+                    <button className={styles.cancelButton} onClick={onClose}>
+                      Close
+                    </button>
+                    {state.error !== 'transaction_refused' && state.error !== 'user_rejected' && state.error !== 'transaction_timeout' && (
+                      <button
+                        className={styles.retryButton}
+                        onClick={() => setState(prev => ({ ...prev, step: 'confirm' }))}
+                      >
+                        Try Again
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -2,12 +2,16 @@ import { ethers } from 'ethers';
 import dotenv from 'dotenv';
 import { DatabaseService } from './services/databaseService';
 import { MarketUpdateService } from './services/marketUpdateService';
-import { 
-  ConditionalOrderCreatedEvent, 
-  ConditionalOrderParams, 
-  PolyswapOrderData, 
-  PolyswapOrderRecord 
+import {
+  ConditionalOrderCreatedEvent,
+  ConditionalOrderParams,
+  PolyswapOrderData,
+  PolyswapOrderRecord
 } from './interfaces/PolyswapOrder';
+
+// Import ABI files
+import composableCowABI from '../abi/composableCoW.json';
+import gpv2SettlementABI from '../abi/GPV2Settlement.json';
 
 // Load environment variables
 dotenv.config();
@@ -17,39 +21,18 @@ const RPC_URL = process.env.RPC_URL!;
 const STARTING_BLOCK = parseInt(process.env.STARTING_BLOCK!);
 const COMPOSABLE_COW_ADDRESS = process.env.COMPOSABLE_COW!;
 const POLYSWAP_HANDLER_ADDRESS = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER!;
+const GPV2_SETTLEMENT_ADDRESS = process.env.GPV2SETTLEMENT!;
 const MARKET_UPDATE_INTERVAL = parseInt(process.env.MARKET_UPDATE_INTERVAL_MINUTES!) || 60;
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE!) || 100;
 
-// Event ABI for ConditionalOrderCreated
-const CONDITIONAL_ORDER_CREATED_ABI = {
-  anonymous: false,
-  inputs: [
-    {
-      indexed: true,
-      name: "owner",
-      type: "address"
-    },
-    {
-      indexed: false,
-      name: "params",
-      type: "tuple",
-      components: [
-        { name: "handler", type: "address" },
-        { name: "salt", type: "bytes32" },
-        { name: "staticInput", type: "bytes" }
-      ]
-    }
-  ],
-  name: "ConditionalOrderCreated",
-  type: "event"
-};
-
-// Contract ABI (minimal interface for the event)
-const COMPOSABLE_COW_ABI = [CONDITIONAL_ORDER_CREATED_ABI];
+// Use imported ABI files
+const COMPOSABLE_COW_ABI = composableCowABI;
+const GPV2_SETTLEMENT_ABI = gpv2SettlementABI;
 
 class PolyswapBlockchainListener {
   private provider: ethers.JsonRpcProvider;
-  private contract: ethers.Contract;
+  private composableCowContract: ethers.Contract;
+  private gpv2SettlementContract: ethers.Contract;
   private isRunning: boolean = false;
   private lastProcessedBlock: number = STARTING_BLOCK;
   private pollingInterval: NodeJS.Timeout | null = null;
@@ -58,14 +41,20 @@ class PolyswapBlockchainListener {
     console.log('🚀 Initializing Polyswap Blockchain Listener...');
     console.log(`📡 RPC URL: ${RPC_URL}`);
     console.log(`🏗️  ComposableCoW: ${COMPOSABLE_COW_ADDRESS}`);
+    console.log(`🎯 GPV2Settlement: ${GPV2_SETTLEMENT_ADDRESS}`);
     console.log(`🎯 Polyswap Handler: ${POLYSWAP_HANDLER_ADDRESS}`);
     console.log(`📦 Starting Block: ${STARTING_BLOCK}`);
 
-    // Initialize provider and contract
+    // Initialize provider and contracts
     this.provider = new ethers.JsonRpcProvider(RPC_URL);
-    this.contract = new ethers.Contract(
+    this.composableCowContract = new ethers.Contract(
       COMPOSABLE_COW_ADDRESS,
       COMPOSABLE_COW_ABI,
+      this.provider
+    );
+    this.gpv2SettlementContract = new ethers.Contract(
+      GPV2_SETTLEMENT_ADDRESS,
+      GPV2_SETTLEMENT_ABI,
       this.provider
     );
   }
@@ -151,33 +140,54 @@ class PolyswapBlockchainListener {
   private async processBlockRange(fromBlock: number, toBlock: number): Promise<void> {
     try {
       console.log(`🔍 Querying events for blocks ${fromBlock}-${toBlock}...`);
-      const filter = this.contract.filters.ConditionalOrderCreated();
-      const events = await this.contract.queryFilter(filter, fromBlock, toBlock);
 
-      console.log(`📋 Found ${events.length} ConditionalOrderCreated events in blocks ${fromBlock}-${toBlock}`);
+      // Query ConditionalOrderCreated events - DEACTIVATED FOR NOW
+      // const conditionalOrderFilter = this.composableCowContract.filters.ConditionalOrderCreated();
+      // const conditionalOrderEvents = await this.composableCowContract.queryFilter(conditionalOrderFilter, fromBlock, toBlock);
 
-      // Process events individually with error handling
-      for (let i = 0; i < events.length; i++) {
-        const event = events[i];
-        console.log(`📦 Processing event ${i + 1}/${events.length}`);
+      // Query Trade events
+      const tradeFilter = this.gpv2SettlementContract.filters.Trade();
+      const tradeEvents = await this.gpv2SettlementContract.queryFilter(tradeFilter, fromBlock, toBlock);
+
+      // Query OrderInvalidated events
+      const orderInvalidatedFilter = this.gpv2SettlementContract.filters.OrderInvalidated();
+      const orderInvalidatedEvents = await this.gpv2SettlementContract.queryFilter(orderInvalidatedFilter, fromBlock, toBlock);
+
+      console.log(`📋 Found ${tradeEvents.length} Trade events and ${orderInvalidatedEvents.length} OrderInvalidated events in blocks ${fromBlock}-${toBlock} (ConditionalOrderCreated processing deactivated)`);
+
+      // Process ConditionalOrderCreated events - DEACTIVATED FOR NOW
+      // for (let i = 0; i < conditionalOrderEvents.length; i++) {
+      //   const event = conditionalOrderEvents[i];
+      //   console.log(`📦 Processing ConditionalOrderCreated event ${i + 1}/${conditionalOrderEvents.length}`);
+      //
+      //   try {
+      //     await this.processConditionalOrderCreatedEvent(event);
+      //   } catch (eventError) {
+      //     console.error(`❌ Error processing ConditionalOrderCreated event ${i + 1}:`, eventError);
+      //   }
+      // }
+
+      // Process Trade events
+      for (let i = 0; i < tradeEvents.length; i++) {
+        const event = tradeEvents[i];
+        console.log(`📦 Processing Trade event ${i + 1}/${tradeEvents.length}`);
 
         try {
-          // Type guard to check if it's an EventLog
-          const isEventLog = 'args' in event;
-          const logIndex = 'index' in event ? event.index : ('logIndex' in event ? (event as any).logIndex : 0);
-
-          console.log(`   Event structure:`, {
-            blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash,
-            logIndex: logIndex,
-            hasArgs: isEventLog,
-            eventType: typeof event
-          });
-
-          await this.processEvent(event);
+          await this.processTradeEvent(event);
         } catch (eventError) {
-          console.error(`❌ Error processing individual event ${i + 1}:`, eventError);
-          // Continue processing other events even if one fails
+          console.error(`❌ Error processing Trade event ${i + 1}:`, eventError);
+        }
+      }
+
+      // Process OrderInvalidated events
+      for (let i = 0; i < orderInvalidatedEvents.length; i++) {
+        const event = orderInvalidatedEvents[i];
+        console.log(`📦 Processing OrderInvalidated event ${i + 1}/${orderInvalidatedEvents.length}`);
+
+        try {
+          await this.processOrderInvalidatedEvent(event);
+        } catch (eventError) {
+          console.error(`❌ Error processing OrderInvalidated event ${i + 1}:`, eventError);
         }
       }
     } catch (error: any) {
@@ -227,7 +237,7 @@ class PolyswapBlockchainListener {
   /**
    * Process a single ConditionalOrderCreated event
    */
-  private async processEvent(event: ethers.EventLog | ethers.Log): Promise<void> {
+  private async processConditionalOrderCreatedEvent(event: ethers.EventLog | ethers.Log): Promise<void> {
     try {
       // Type guard and event data extraction
       let owner: string;
@@ -321,6 +331,183 @@ class PolyswapBlockchainListener {
       const hasArgs = 'args' in event;
       
       console.error('Event details:', {
+        blockNumber: event.blockNumber,
+        transactionHash: event.transactionHash,
+        logIndex: logIndex,
+        hasArgs: hasArgs
+      });
+    }
+  }
+
+  /**
+   * Process a single Trade event to check if it fulfills a Polyswap order
+   */
+  private async processTradeEvent(event: ethers.EventLog | ethers.Log): Promise<void> {
+    try {
+      // Type guard and event data extraction
+      let owner: string;
+      let sellToken: string;
+      let buyToken: string;
+      let sellAmount: string;
+      let buyAmount: string;
+      let feeAmount: string;
+      let orderUid: string;
+
+      if ('args' in event) {
+        // EventLog has args property
+        const eventLog = event as ethers.EventLog;
+        ({ owner, sellToken, buyToken, sellAmount, buyAmount, feeAmount, orderUid } = eventLog.args as any);
+      } else {
+        // For Log type, we need to decode manually
+        console.error('❌ Received Log type instead of EventLog for Trade event, cannot process');
+        return;
+      }
+
+      const blockNumber = event.blockNumber;
+      const transactionHash = event.transactionHash;
+      const logIndex = 'index' in event ? event.index :
+                      'logIndex' in event ? (event as any).logIndex : 0;
+
+      console.log(`🔍 Processing Trade event: Block ${blockNumber}, Tx ${transactionHash}, LogIndex: ${logIndex}`);
+      console.log(`👤 Owner: ${owner}`);
+      console.log(`📦 Order UID: ${orderUid}`);
+
+      // Validate required fields
+      if (!blockNumber || !transactionHash || !owner || !orderUid) {
+        console.error('❌ Missing required Trade event data');
+        return;
+      }
+
+      // Look up the order in the database by owner and order hash
+      // The orderUid contains the order hash in the first 32 bytes
+      const orderHash = orderUid.slice(0, 66); // 0x + 64 hex chars = 66 total chars
+
+      console.log(`🔍 Looking up order with hash: ${orderHash} and owner: ${owner.toLowerCase()}`);
+
+      try {
+        // Check if this is a Polyswap order
+        const polyswapOrder = await DatabaseService.getPolyswapOrderByHashAndOwner(orderHash, owner.toLowerCase());
+
+        if (!polyswapOrder) {
+          console.log(`⏭️  No matching Polyswap order found for hash ${orderHash} and owner ${owner.toLowerCase()}`);
+          return;
+        }
+
+        console.log(`🎯 Found matching Polyswap order! Marking as filled...`);
+        console.log(`   Order ID: ${polyswapOrder.id}`);
+        console.log(`   Sell: ${sellAmount} ${sellToken}`);
+        console.log(`   Buy: ${buyAmount} ${buyToken}`);
+        console.log(`   Fee: ${feeAmount}`);
+
+        // Update the order status to filled
+        await DatabaseService.updateOrderStatusById(polyswapOrder.id, 'filled', {
+          filledAt: new Date(),
+          fillTransactionHash: transactionHash,
+          fillBlockNumber: Number(blockNumber),
+          fillLogIndex: Number(logIndex),
+          actualSellAmount: sellAmount.toString(),
+          actualBuyAmount: buyAmount.toString(),
+          feeAmount: feeAmount.toString()
+        });
+
+        console.log(`✅ Polyswap order ${polyswapOrder.id} marked as filled successfully!`);
+
+      } catch (dbError) {
+        console.error('❌ Database error while processing Trade event:', dbError);
+      }
+
+    } catch (error) {
+      console.error('❌ Error processing Trade event:', error);
+
+      const logIndex = 'index' in event ? event.index :
+                      'logIndex' in event ? (event as any).logIndex :
+                      'Unknown';
+      const hasArgs = 'args' in event;
+
+      console.error('Trade event details:', {
+        blockNumber: event.blockNumber,
+        transactionHash: event.transactionHash,
+        logIndex: logIndex,
+        hasArgs: hasArgs
+      });
+    }
+  }
+
+  /**
+   * Process a single OrderInvalidated event to check if it cancels a Polyswap order
+   */
+  private async processOrderInvalidatedEvent(event: ethers.EventLog | ethers.Log): Promise<void> {
+    try {
+      // Type guard and event data extraction
+      let owner: string;
+      let orderUid: string;
+
+      if ('args' in event) {
+        // EventLog has args property
+        const eventLog = event as ethers.EventLog;
+        ({ owner, orderUid } = eventLog.args as any);
+      } else {
+        // For Log type, we need to decode manually
+        console.error('❌ Received Log type instead of EventLog for OrderInvalidated event, cannot process');
+        return;
+      }
+
+      const blockNumber = event.blockNumber;
+      const transactionHash = event.transactionHash;
+      const logIndex = 'index' in event ? event.index :
+                      'logIndex' in event ? (event as any).logIndex : 0;
+
+      console.log(`🚫 Processing OrderInvalidated event: Block ${blockNumber}, Tx ${transactionHash}, LogIndex: ${logIndex}`);
+      console.log(`👤 Owner: ${owner}`);
+      console.log(`📦 Order UID: ${orderUid}`);
+
+      // Validate required fields
+      if (!blockNumber || !transactionHash || !owner || !orderUid) {
+        console.error('❌ Missing required OrderInvalidated event data');
+        return;
+      }
+
+      // Look up the order in the database by owner and order hash
+      // The orderUid contains the order hash in the first 32 bytes
+      const orderHash = orderUid.slice(0, 66); // 0x + 64 hex chars = 66 total chars
+
+      console.log(`🔍 Looking up order with hash: ${orderHash} and owner: ${owner.toLowerCase()}`);
+
+      try {
+        // Check if this is a Polyswap order
+        const polyswapOrder = await DatabaseService.getPolyswapOrderByHashAndOwner(orderHash, owner.toLowerCase());
+
+        if (!polyswapOrder) {
+          console.log(`⏭️  No matching Polyswap order found for hash ${orderHash} and owner ${owner.toLowerCase()}`);
+          return;
+        }
+
+        console.log(`🚫 Found matching Polyswap order! Marking as canceled...`);
+        console.log(`   Order ID: ${polyswapOrder.id}`);
+
+        // Update the order status to canceled
+        await DatabaseService.updateOrderStatusById(polyswapOrder.id, 'canceled', {
+          filledAt: new Date(), // Use filledAt as canceledAt for now
+          fillTransactionHash: transactionHash,
+          fillBlockNumber: Number(blockNumber),
+          fillLogIndex: Number(logIndex)
+        });
+
+        console.log(`✅ Polyswap order ${polyswapOrder.id} marked as canceled successfully!`);
+
+      } catch (dbError) {
+        console.error('❌ Database error while processing OrderInvalidated event:', dbError);
+      }
+
+    } catch (error) {
+      console.error('❌ Error processing OrderInvalidated event:', error);
+
+      const logIndex = 'index' in event ? event.index :
+                      'logIndex' in event ? (event as any).logIndex :
+                      'Unknown';
+      const hasArgs = 'args' in event;
+
+      console.error('OrderInvalidated event details:', {
         blockNumber: event.blockNumber,
         transactionHash: event.transactionHash,
         logIndex: logIndex,
@@ -451,11 +638,16 @@ class PolyswapBlockchainListener {
     this.stop(); // Stop current polling
 
     try {
-      // Recreate provider and contract
+      // Recreate provider and contracts
       this.provider = new ethers.JsonRpcProvider(RPC_URL);
-      this.contract = new ethers.Contract(
+      this.composableCowContract = new ethers.Contract(
         COMPOSABLE_COW_ADDRESS,
         COMPOSABLE_COW_ABI,
+        this.provider
+      );
+      this.gpv2SettlementContract = new ethers.Contract(
+        GPV2_SETTLEMENT_ADDRESS,
+        GPV2_SETTLEMENT_ABI,
         this.provider
       );
 

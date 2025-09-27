@@ -427,6 +427,35 @@
   transform: translateY(0);
 }
 
+/* Remove Button */
+.removeButton {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  white-space: nowrap;
+}
+
+.removeButton:hover:not(:disabled) {
+  background-color: #c82333;
+  transform: translateY(-1px);
+}
+
+.removeButton:active {
+  transform: translateY(0);
+}
+
+.removeButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
 /* Expand Button */
 .expandButton {
   background-color: var(--background-tertiary);

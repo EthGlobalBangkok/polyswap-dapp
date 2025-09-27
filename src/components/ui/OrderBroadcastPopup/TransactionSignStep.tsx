@@ -205,22 +205,22 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
       <div className={styles.stepContent}>
         <h2 className={styles.stepTitle}>
           {transactionProgress && transactionProgress.total > 1
-            ? `Processing Transactions (${transactionProgress.current}/${transactionProgress.total})`
-            : 'Transaction Broadcasting'
+            ? `Transaction Signed (${transactionProgress.current}/${transactionProgress.total})`
+            : 'Transaction Signed Successfully'
           }
         </h2>
         <p className={styles.stepDescription}>
           {transactionProgress && transactionProgress.total > 1
-            ? `Your ${transactionProgress.currentTxType || 'transaction'} is being processed on the blockchain.`
-            : 'Your transaction is being processed on the blockchain.'
+            ? `Your ${transactionProgress.currentTxType || 'transaction'} has been signed and queued in your Safe.`
+            : 'Your transaction has been signed and queued in your Safe.'
           }
         </p>
         <div className={styles.loadingSpinner}>
           <div className={styles.spinner}></div>
           <p>
             {transactionProgress && transactionProgress.total > 1
-              ? `Processing ${transactionProgress.currentTxType || 'transaction'}...`
-              : 'Waiting for confirmation...'
+              ? `${transactionProgress.currentTxType || 'Transaction'} signed successfully`
+              : 'Finalizing order status...'
             }
           </p>
           {transactionHash && (
@@ -236,7 +236,7 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
               width: `${(transactionProgress.current / transactionProgress.total) * 100}%`
             }}></div>
             <span className={styles.progressText}>
-              {transactionProgress.current}/{transactionProgress.total} transactions completed
+              {transactionProgress.current}/{transactionProgress.total} transactions signed
             </span>
           </div>
         )}
@@ -273,11 +273,11 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
       <div className={styles.infoBox} style={{ marginBottom: '16px', fontSize: '14px', color: '#666' }}>
         <p><strong>📱 For WalletConnect users:</strong></p>
         <p>• Check your Safe mobile/desktop app for the transaction request</p>
-        <p>• The transaction will be queued if additional signatures are required</p>
-        <p>• Multi-signature execution is handled automatically by your Safe</p>
-        <p>• If you see RPC errors, the transaction may still be queued successfully</p>
+        <p>• Sign the transaction to queue it in your Safe</p>
+        <p>• The transaction will execute automatically after signing (if threshold is met)</p>
+        <p>• If additional signatures are needed, the transaction will remain queued</p>
         {batchData?.needsApproval && (
-          <p>• <strong>Batch transactions may take longer to process</strong></p>
+          <p>• <strong>Each transaction in the batch requires individual signing</strong></p>
         )}
       </div>
       

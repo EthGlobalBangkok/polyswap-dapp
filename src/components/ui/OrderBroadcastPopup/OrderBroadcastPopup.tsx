@@ -284,39 +284,50 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
   };
 
   const handleSendTransaction = async () => {
-    console.log('🔍 handleSendTransaction called - State check:', {
+    console.log('🚀 [POPUP] handleSendTransaction START');
+    console.log('🔍 [POPUP] Initial state check:', {
       hasTransactionData: !!state.transactionData,
       isSafeInitialized: state.isSafeInitialized,
       step: state.step,
       orderId: orderId,
-      canProceed: !!(state.transactionData && state.isSafeInitialized)
+      canProceed: !!(state.transactionData && state.isSafeInitialized),
+      connectorName: connector?.name,
+      address: address
     });
+    console.log('🔍 [POPUP] Transaction data structure:', JSON.stringify(state.transactionData, null, 2));
 
     if (!state.transactionData || !state.isSafeInitialized) {
-      console.log('❌ handleSendTransaction blocked - Missing requirements:', {
+      console.error('❌ [POPUP] handleSendTransaction BLOCKED - Missing requirements:', {
         transactionData: !!state.transactionData,
         isSafeInitialized: state.isSafeInitialized
       });
       return;
     }
-    
+
+    console.log('🔄 [POPUP] Setting isSending = true');
     setIsSending(true);
     
     try {
       const isSafeApp = connector?.name === 'Safe';
       const isWalletConnect = connector?.name === 'WalletConnect';
-      
+
+      console.log('🔍 [POPUP] Connector analysis:', {
+        connectorName: connector?.name,
+        isSafeApp,
+        isWalletConnect
+      });
+
       let transactionHash: string;
-      
+
       // Check if this is a batch transaction (all Safe transactions are now batch format)
       const isBatchTransaction = state.transactionData.isBatch && Array.isArray(state.transactionData.transactions);
 
-      console.log('🔍 Transaction data structure:', {
+      console.log('🔍 [POPUP] Transaction structure analysis:', {
         isBatch: state.transactionData.isBatch,
         hasTransactions: Array.isArray(state.transactionData.transactions),
         transactionCount: state.transactionData.transactions?.length,
         isBatchTransaction,
-        connectorName: connector?.name
+        transactionDataKeys: Object.keys(state.transactionData)
       });
 
       if (isSafeApp) {
@@ -360,163 +371,92 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
           return;
         }
       } else if (isWalletConnect) {
-        // Use Safe Protocol Kit for WalletConnect - this supports proper batch transactions
-        setIsWaiting(true);
+        // Use WalletConnect Safe service directly - optimized for Safe + WalletConnect
+        console.log('🎯 [POPUP] Using WalletConnect Safe service for transaction signing');
+        console.log('🔍 [POPUP] WalletConnect service initialized:', walletConnectSafeService.isInitialized());
 
         let result;
         try {
-          // Initialize Safe service with WalletConnect provider if not already initialized
-          if (!safeService.isInitialized()) {
-            const provider = new ethers.BrowserProvider(publicClient as any);
-            const signer = new ethers.BrowserProvider(client as any).getSigner();
-            await safeService.initialize(address, provider, await signer);
-          }
-
           if (isBatchTransaction) {
-            // Use Safe Protocol Kit for batch transactions - this works with WalletConnect!
-            console.log('Creating Safe batch transaction via Protocol Kit:', state.transactionData.transactions);
+            console.log('📦 [POPUP] Starting BATCH transaction flow');
+            console.log('🔍 [POPUP] Batch transactions to send:', state.transactionData.transactions.length);
+            console.log('📋 [POPUP] Batch transaction details:', JSON.stringify(state.transactionData.transactions, null, 2));
 
-            // Initialize progress for Safe Protocol Kit batch
-            const totalTxs = state.transactionData.transactions.length;
-            setState(prev => ({
-              ...prev,
-              transactionProgress: {
-                current: 0,
-                total: totalTxs,
-                currentTxType: 'Batch Transaction'
-              }
-            }));
-
-            const safeResult = await safeService.createBatchTransaction(
-              state.transactionData.transactions.map((tx: any) => ({
-                to: tx.to,
-                data: tx.data,
-                value: tx.value
-              }))
-            );
-
-            // Convert Safe result to expected format
-            if (safeResult.executed && safeResult.transactionHash) {
-              // Transaction fully executed - update progress to completed
+            // Use sequential transaction signing for Safe + WalletConnect
+            console.log('🔄 [POPUP] Calling sendTransactionsSequentially...');
+            const sequentialResults = await walletConnectSafeService.sendTransactionsSequentially({
+              transactions: state.transactionData.transactions
+            }, (current, total, txType) => {
+              console.log(`📊 [POPUP] Progress update: ${current}/${total} - ${txType}`);
+              // Update progress in real-time
               setState(prev => ({
                 ...prev,
                 transactionProgress: {
-                  current: totalTxs,
-                  total: totalTxs,
-                  currentTxType: 'Batch Transaction Completed'
+                  current,
+                  total,
+                  currentTxType: txType
                 }
               }));
+            });
 
-              result = {
-                transactionHash: safeResult.transactionHash,
-                success: true
-              };
-            } else if (safeResult.safeTxHash) {
-              // Transaction created and signed but needs more signatures - this is still a success for the signing process
-              console.log('Safe batch transaction created and signed:', safeResult.safeTxHash);
-              setState(prev => ({
-                ...prev,
-                step: 'error',
-                error: 'transaction_needs_signatures',
-                errorMessage: 'Batch transaction created and signed. Additional signatures required from other Safe owners.'
-              }));
-              return;
-            } else {
-              // Something went wrong
-              throw new Error('Safe batch transaction failed - no transaction hash or safe transaction hash returned');
-            }
+            console.log('✅ [POPUP] Sequential transactions completed:', sequentialResults.length);
+            console.log('📋 [POPUP] Sequential results:', JSON.stringify(sequentialResults, null, 2));
+
+            // All transactions signed successfully
+            const lastResult = sequentialResults[sequentialResults.length - 1];
+            result = lastResult;
+
+            console.log('🎉 [POPUP] All batch transactions signed successfully');
           } else {
-            // Use Safe Protocol Kit for single transactions
-            console.log('Creating Safe transaction via Protocol Kit...');
-
-            const safeResult = await safeService.createSafeTransaction({
+            console.log('🔄 [POPUP] Starting SINGLE transaction flow');
+            console.log('📋 [POPUP] Single transaction details:', {
               to: state.transactionData.to,
               data: state.transactionData.data,
               value: state.transactionData.value
             });
 
-            if (safeResult.executed && safeResult.transactionHash) {
-              // Transaction fully executed
-              result = {
-                transactionHash: safeResult.transactionHash,
-                success: true
-              };
-            } else if (safeResult.safeTxHash) {
-              // Transaction created and signed but needs more signatures - this is still a success for the signing process
-              console.log('Safe transaction created and signed:', safeResult.safeTxHash);
-              setState(prev => ({
-                ...prev,
-                step: 'error',
-                error: 'transaction_needs_signatures',
-                errorMessage: 'Transaction created and signed. Additional signatures required from other Safe owners.'
-              }));
-              return;
-            } else {
-              // Something went wrong
-              throw new Error('Safe transaction failed - no transaction hash or safe transaction hash returned');
-            }
+            // Single transaction signing
+            console.log('🔄 [POPUP] Calling sendTransaction...');
+            result = await walletConnectSafeService.sendTransaction({
+              to: state.transactionData.to,
+              data: state.transactionData.data,
+              value: state.transactionData.value
+            });
+
+            console.log('✅ [POPUP] Single transaction completed');
           }
-        } catch (protocolKitError) {
-          console.log('Safe Protocol Kit failed, trying WalletConnect fallback:', protocolKitError);
 
-          // Fallback to WalletConnect service for basic transactions
-          try {
-            if (isBatchTransaction) {
-              // For batch, fall back to sequential
-              // Note: sendTransactionsSequentially now throws an error if any transaction fails
-              const sequentialResults = await walletConnectSafeService.sendTransactionsSequentially({
-                transactions: state.transactionData.transactions
-              }, (current, total, txType) => {
-                // Update progress in real-time
-                setState(prev => ({
-                  ...prev,
-                  transactionProgress: {
-                    current,
-                    total,
-                    currentTxType: txType
-                  }
-                }));
-              });
+          console.log('🔍 [POPUP] Final result received:', JSON.stringify(result, null, 2));
 
-              // If we get here, all transactions succeeded
-              const lastResult = sequentialResults[sequentialResults.length - 1];
-              result = lastResult;
-            } else {
-              // For single transaction, try WalletConnect service
-              result = await walletConnectSafeService.sendTransaction({
-                to: state.transactionData.to,
-                data: state.transactionData.data,
-                value: state.transactionData.value
-              });
-            }
-          } catch (fallbackError) {
-            console.error('Both Safe Protocol Kit and WalletConnect service failed:', fallbackError);
-            // Prioritize the WalletConnect error (fallbackError) over the Safe SDK error (protocolKitError)
-            // because the WalletConnect error is more likely to be user-actionable (e.g., user rejection)
-            throw fallbackError;
+          if (result && result.success) {
+            transactionHash = result.transactionHash;
+            console.log('🎉 [POPUP] Transaction(s) signed successfully, hash:', transactionHash);
+
+            console.log('🔄 [POPUP] Updating state with transaction hash...');
+            setState(prev => ({
+              ...prev,
+              transactionHash: result.transactionHash
+            }));
+            console.log('✅ [POPUP] State updated with transaction hash');
+          } else {
+            console.error('❌ [POPUP] Transaction result indicates failure:', result);
+            throw new Error(result?.error || 'Transaction signing failed');
           }
+        } catch (walletConnectError) {
+          console.error('💥 [POPUP] WalletConnect Safe service failed:', walletConnectError);
+          throw walletConnectError;
         }
-
-        if (result && result.success) {
-          transactionHash = result.transactionHash;
-          console.log('Transaction successful:', transactionHash);
-          setState(prev => ({
-            ...prev,
-            transactionHash: result.transactionHash
-          }));
-        } else {
-          console.error('Transaction result indicates failure:', result);
-          throw new Error(result?.error || 'Transaction failed');
-        }
-
-        setIsWaiting(false);
       } else {
         throw new Error('Unsupported wallet connection type');
       }
 
       // Transaction was executed, update the database
+      console.log('🔍 [POPUP] Post-transaction processing...');
+      console.log('🔍 [POPUP] Transaction hash available:', !!transactionHash);
+      console.log('🔍 [POPUP] Transaction hash value:', transactionHash);
+
       if (!transactionHash) {
-        console.error('No transaction hash available for database update');
+        console.error('❌ [POPUP] No transaction hash available for database update');
         setState(prev => ({
           ...prev,
           step: 'error',
@@ -527,46 +467,66 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
       }
 
       try {
-        console.log('Updating order in database with transaction hash:', transactionHash);
+        console.log('🔄 [POPUP] Starting database update process...');
+        console.log('🔍 [POPUP] Order ID:', orderId);
+        console.log('🔍 [POPUP] Transaction hash for DB:', transactionHash);
+
         let updateResult = await apiService.updateOrderTransactionHashById(orderId, transactionHash);
+        console.log('📋 [POPUP] First database update result:', JSON.stringify(updateResult, null, 2));
 
         // Retry once after 2 seconds if the first attempt fails (node latency issue)
         if (!updateResult.success) {
-          console.log('First database update attempt failed, retrying in 2 seconds due to potential node latency...');
+          console.log('⚠️ [POPUP] First database update attempt failed, retrying in 2 seconds...');
           await new Promise(resolve => setTimeout(resolve, 2000));
+          console.log('🔄 [POPUP] Retrying database update...');
           updateResult = await apiService.updateOrderTransactionHashById(orderId, transactionHash);
+          console.log('📋 [POPUP] Retry database update result:', JSON.stringify(updateResult, null, 2));
         }
 
         if (updateResult.success) {
-          console.log('Order successfully updated in database, setting status to live');
+          console.log('✅ [POPUP] Order successfully updated in database');
+          console.log('🔄 [POPUP] Setting state to success...');
           setState(prev => ({ ...prev, step: 'success' }));
+          console.log('✅ [POPUP] State set to success');
         } else {
-          console.error('Database update failed after retry:', updateResult);
+          console.error('❌ [POPUP] Database update failed after retry:', updateResult);
           // Still mark as success since the transaction was executed
+          console.log('🔄 [POPUP] Setting state to success with warning message...');
           setState(prev => ({
             ...prev,
             step: 'success',
             errorMessage: 'Transaction successful but database update failed after retry. Order may not show as live immediately.'
           }));
+          console.log('✅ [POPUP] State set to success with warning');
         }
       } catch (dbError) {
-        console.error('Failed to update order in database:', dbError);
+        console.error('💥 [POPUP] Database update exception:', dbError);
         // Still mark as success since the transaction was executed
+        console.log('🔄 [POPUP] Setting state to success despite DB error...');
         setState(prev => ({
           ...prev,
           step: 'success',
           errorMessage: 'Transaction successful but database update failed. Order may not show as live immediately.'
         }));
+        console.log('✅ [POPUP] State set to success despite DB error');
       }
 
     } catch (error) {
-      console.error('Transaction error:', error);
+      console.error('💥 [POPUP] Transaction error occurred in handleSendTransaction');
+      console.error('🔍 [POPUP] Error type:', typeof error);
+      console.error('🔍 [POPUP] Error constructor:', error?.constructor?.name);
+      console.error('🔍 [POPUP] Error message:', error instanceof Error ? error.message : String(error));
+      console.error('🔍 [POPUP] Error code:', (error as any)?.code);
+      console.error('🔍 [POPUP] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
 
       // Determine error type based on the error message
       let errorType = 'send_transaction_failed';
       let errorMessage = error instanceof Error ? error.message : 'Failed to send transaction';
 
-      // Enhanced error detection for user rejection
+      console.log('🔍 [POPUP] Processing error with type:', errorType);
+      console.log('🔍 [POPUP] Processing error with message:', errorMessage);
+
+      // Enhanced error detection for user rejection and Safe-specific issues
       if (error instanceof Error) {
         const errorMsg = error.message.toLowerCase();
 
@@ -593,12 +553,12 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
           errorMessage = 'Transaction signing was refused in Safe wallet';
         }
 
-        // Timeout error patterns - these are different from user rejection
-        else if (errorMsg.includes('transaction signing timeout') ||
-                 errorMsg.includes('transaction confirmation timeout') ||
-                 errorMsg.includes('timeout') && (errorMsg.includes('safe') || errorMsg.includes('walletconnect'))) {
-          errorType = 'transaction_timeout';
-          errorMessage = 'Transaction took too long to process. It may still be pending in your Safe wallet.';
+        // Network/connection issues
+        else if (errorMsg.includes('network connection issue') ||
+                 errorMsg.includes('connection') ||
+                 errorMsg.includes('network error')) {
+          errorType = 'walletconnect_connection_issue';
+          errorMessage = 'Network connection issue. Please check your connection and retry.';
         }
 
         // Safe SDK specific error patterns
@@ -608,6 +568,14 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
           errorType = 'safe_transaction_refused';
           errorMessage = 'Transaction signature was rejected in Safe wallet';
         }
+
+        // Gas or transaction validation errors
+        else if (errorMsg.includes('gas estimation failed') ||
+                 errorMsg.includes('insufficient funds') ||
+                 errorMsg.includes('nonce')) {
+          errorType = 'transaction_validation_failed';
+          errorMessage = error.message; // Use the original technical error message
+        }
       }
 
       // Check for error codes that indicate user rejection
@@ -616,16 +584,20 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
         errorMessage = 'Transaction signing was refused by user';
       }
 
+      console.log('🔄 [POPUP] Setting error state...');
       setState(prev => ({
         ...prev,
         step: 'error',
         error: errorType,
         errorMessage: errorMessage
       }));
+      console.log('❌ [POPUP] Error state set with type:', errorType);
     } finally {
-      console.log('Transaction process complete, clearing loading states');
+      console.log('🏁 [POPUP] Transaction process complete, clearing loading states');
       setIsSending(false);
       setIsWaiting(false);
+      console.log('✅ [POPUP] Loading states cleared');
+      console.log('🏁 [POPUP] handleSendTransaction END');
     }
   };
 

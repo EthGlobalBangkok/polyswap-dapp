@@ -613,7 +613,7 @@ export class DatabaseService {
    */
   static async updateOrderStatus(orderHash: string, status: 'draft' | 'live' | 'filled' | 'canceled'): Promise<boolean> {
     const sql = `
-      UPDATE polyswap_orders 
+      UPDATE polyswap_orders
       SET status = $1, updated_at = CURRENT_TIMESTAMP
       WHERE order_hash = $2
       RETURNING order_hash
@@ -623,6 +623,75 @@ export class DatabaseService {
       return result.rows.length > 0;
     } catch (error) {
       console.error(`❌ Error updating order status for ${orderHash}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Update order status by ID with optional fill details
+   */
+  static async updateOrderStatusById(orderId: number, status: 'draft' | 'live' | 'filled' | 'canceled', fillDetails?: {
+    filledAt?: Date;
+    fillTransactionHash?: string;
+    fillBlockNumber?: number;
+    fillLogIndex?: number;
+    actualSellAmount?: string;
+    actualBuyAmount?: string;
+    feeAmount?: string;
+  }): Promise<boolean> {
+    let sql = `
+      UPDATE polyswap_orders
+      SET status = $1, updated_at = CURRENT_TIMESTAMP
+    `;
+    let values: any[] = [status];
+    let paramIndex = 2;
+
+    if (fillDetails) {
+      if (fillDetails.filledAt) {
+        sql += `, filled_at = $${paramIndex}`;
+        values.push(fillDetails.filledAt);
+        paramIndex++;
+      }
+      if (fillDetails.fillTransactionHash) {
+        sql += `, fill_transaction_hash = $${paramIndex}`;
+        values.push(fillDetails.fillTransactionHash);
+        paramIndex++;
+      }
+      if (fillDetails.fillBlockNumber) {
+        sql += `, fill_block_number = $${paramIndex}`;
+        values.push(fillDetails.fillBlockNumber);
+        paramIndex++;
+      }
+      if (fillDetails.fillLogIndex) {
+        sql += `, fill_log_index = $${paramIndex}`;
+        values.push(fillDetails.fillLogIndex);
+        paramIndex++;
+      }
+      if (fillDetails.actualSellAmount) {
+        sql += `, actual_sell_amount = $${paramIndex}`;
+        values.push(fillDetails.actualSellAmount);
+        paramIndex++;
+      }
+      if (fillDetails.actualBuyAmount) {
+        sql += `, actual_buy_amount = $${paramIndex}`;
+        values.push(fillDetails.actualBuyAmount);
+        paramIndex++;
+      }
+      if (fillDetails.feeAmount) {
+        sql += `, fee_amount = $${paramIndex}`;
+        values.push(fillDetails.feeAmount);
+        paramIndex++;
+      }
+    }
+
+    sql += ` WHERE id = $${paramIndex} RETURNING id`;
+    values.push(orderId);
+
+    try {
+      const result = await query(sql, values);
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error(`❌ Error updating order status for ID ${orderId}:`, error);
       return false;
     }
   }
@@ -716,6 +785,15 @@ export class DatabaseService {
     `;
     const result = await query(sql, [status, limit, offset]);
     return result.rows;
+  }
+
+  /**
+   * Get polyswap order by order hash and owner address
+   */
+  static async getPolyswapOrderByHashAndOwner(orderHash: string, ownerAddress: string): Promise<DatabasePolyswapOrder | null> {
+    const sql = 'SELECT * FROM polyswap_orders WHERE order_hash = $1 AND owner = $2';
+    const result = await query(sql, [orderHash, ownerAddress.toLowerCase()]);
+    return result.rows[0] || null;
   }
 
   /**

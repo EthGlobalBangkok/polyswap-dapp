@@ -169,6 +169,115 @@ curl -X POST http://localhost:3000/api/markets/update
 - Automatically handles errors and retries
 - Provides detailed logging for monitoring
 
+## 💰 Fund Flow Architecture
+
+The following diagram illustrates how funds move through the PolySwap system during a conditional order lifecycle:
+
+```mermaid
+sequenceDiagram
+  Actor User
+  participant Dapp as Polyswap dApp
+  participant PO as Polymarket OrderBook
+  participant Safe as Safe Wallet (Fund Custody)
+box onchain
+    participant SellToken as Sell Token Contract (USDC)
+    participant CC as ComposableCoW Contract
+    participant PH as Polyswap Handler
+    participant Polymarket as Polymarket Contract
+    participant BuyToken as Buy Token Contract (COW)
+end
+    participant CS as CoW Settlement Contract
+    participant WT as Watch Tower
+    participant CP as CoW Protocol
+
+  Note over User, Safe: Phase 1: Order Setup & Fund Preparation
+  User->>Dapp: Choose market & configure order (sellAmount, buyAmount)
+  Dapp->>User: Check wallet balance for sellAmount
+  
+  alt Insufficient Balance
+    Dapp-->>User: Error: Insufficient funds
+  else Sufficient Balance
+    Dapp-->>PO: Create Polymarket limit order (condition trigger)
+    PO-->>Dapp: Return polymarket order hash
+    
+    Note over Safe, SellToken: Phase 2: Token Approval & Transaction Batch
+    Dapp->>Safe: Check current token allowance for ComposableCoW
+    alt Insufficient Allowance
+      Dapp->>Safe: Prepare batch: [Approval TX, CreateOrder TX]
+      Safe->>SellToken: approve(ComposableCoW, MAX_UINT256)
+      Note over Safe: Funds remain in Safe, only approval granted
+    else Sufficient Allowance
+      Dapp->>Safe: Prepare single TX: [CreateOrder TX]
+    end
+    
+    User->>Safe: Sign transaction batch
+    Safe->>CC: createWithContext(orderParams, valueFactory, data)
+    Note over Safe: ✅ Funds still remain in user's Safe wallet
+    
+    CC->>CC: Store conditional order parameters
+    CC-->>WT: Emit ConditionalOrderCreated(owner, params)
+    WT-->>CP: Register conditional order in orderbook
+  end
+
+  Note over CP, CS: Phase 3: Continuous Order Monitoring (Every Block)
+  loop Every Block Until Condition Met or Expiry
+    CS->>Safe: Call isValidSignature(orderHash, signature)
+    Safe->>CC: Delegate to isValidSafeSignature()
+    CC->>PH: Call verify(order) to check condition
+    PH->>Polymarket: getOrderStatus(polymarket_order_hash)
+    Polymarket-->>PH: Return order status (filled/remaining)
+    
+    alt Polymarket Order Not Filled
+      PH-->>CC: Condition NOT met - revert with POLL_TRY_NEXT_BLOCK
+      CC-->>Safe: Order invalid (condition not met)
+      Safe-->>CS: Invalid signature
+      Note over CS: Skip execution, try next block
+    else Polymarket Order Filled
+      PH-->>CC: ✅ Condition MET - order valid
+      CC-->>Safe: Order valid
+      Safe-->>CS: Valid signature
+      Note over CS: Proceed to execution
+    end
+  end
+
+  Note over CS, BuyToken: Phase 4: Order Execution & Fund Transfer
+  alt Condition Met
+    Note over CS: Settlement begins - funds will move
+    CS->>Safe: Execute delegatecall for fund transfer
+    Safe->>SellToken: transfer(CoW Settlement, sellAmount)
+    Note over SellToken: 💰 User funds leave Safe wallet
+    
+    CS->>CS: Execute swap logic internally
+    CS->>BuyToken: transfer(Safe, buyAmount)
+    Note over BuyToken: 💰 User receives buy tokens in Safe
+    
+    CS->>CS: Emit Trade(owner, sellToken, buyToken, sellAmount, buyAmount, feeAmount, orderUid)
+    CS-->>Dapp: Trade event notification
+    Dapp->>Dapp: Update order status to "executed"
+    
+    Note over User: ✅ Swap completed: User exchanged sellAmount for buyAmount
+  else Condition Never Met (Order Expires)
+    Note over Safe: 💰 Funds remain safely in user's Safe wallet
+    CS-->>Dapp: Order expired
+    Dapp->>Dapp: Update order status to "expired"
+  end
+
+  Note over User, Dapp: Phase 5: Final State
+  alt Order Executed
+    Note over User: Final State: User has buyTokens, spent sellTokens + fees
+  else Order Expired/Cancelled
+    Note over User: Final State: User retains original sellTokens (no loss)
+  end
+```
+
+### Key Fund Safety Features:
+
+- **🔒 No Escrow**: Funds remain in your Safe wallet throughout the entire process
+- **⚡ Atomic Execution**: Funds only transfer when swap is guaranteed to complete
+- **🎯 Condition-Based**: Transfer only occurs if Polymarket condition is satisfied
+- **⏰ Expiry Protection**: If condition never triggers, funds remain safely in your wallet
+- **💸 Gas Efficient**: Only pay gas when orders actually execute
+
 ## 🧑‍💻 Authors
 
 | [<img src="https://github.com/Intermarch3.png?size=85" width=85><br><sub>Lucas Leclerc</sub>](https://github.com/Intermarch3) | [<img src="https://github.com/Pybast.png?size=85" width=85><br><sub>Baptiste Florentin</sub>](https://github.com/Pybast) |

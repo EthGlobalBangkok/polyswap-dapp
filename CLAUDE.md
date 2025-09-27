@@ -135,6 +135,6 @@ Don't create any migration script when the db need to be changed as i will reset
 Keep in mind that the etherjs lib compatibility is not the same between the polymarket sdk and the wagmi lib so some tweak have been made.
 Always watch out to not break any functionnalities when fixing or creating a new one. keep your code clean and easy to understand.
 When changing a moajor thing in the architecture, ask me before doing anything and explain me why this changes are necessary.
-Always do some web research one the official documentation when using some sdk, libs ... to make sur our up to date.
+Always do some web research one the official documentation when using some sdk, libs, apis ... to make sur our up to date.
 when creating some script only to test a feature. remove it at the end of the implementation.
 code with industry quality.

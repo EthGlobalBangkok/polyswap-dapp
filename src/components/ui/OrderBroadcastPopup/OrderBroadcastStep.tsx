@@ -4,7 +4,7 @@ import React from 'react';
 import styles from './OrderBroadcastPopup.module.css';
 
 interface OrderBroadcastStepProps {
-  currentStep: 'polymarket' | 'transaction' | 'success' | 'error';
+  currentStep: 'polymarket' | 'transaction' | 'signed' | 'success' | 'error';
   polymarketOrderHash?: string;
   transactionHash?: string;
 }
@@ -17,13 +17,19 @@ export const OrderBroadcastStep: React.FC<OrderBroadcastStepProps> = ({
   const steps = [
     { id: 'polymarket', label: 'Create Polymarket Order', number: 1 },
     { id: 'transaction', label: 'Sign Transaction', number: 2 },
-    { id: 'success', label: 'Complete', number: 3 }
+    { id: 'signed', label: 'Confirm On-Chain', number: 3 },
+    { id: 'success', label: 'Complete', number: 4 }
   ];
 
   const getStepStatus = (stepId: string) => {
     if (stepId === currentStep) return 'active';
-    if (stepId === 'polymarket' && currentStep !== 'polymarket') return 'completed';
-    if (stepId === 'transaction' && (currentStep === 'success' || currentStep === 'transaction')) return 'completed';
+
+    // Define step order
+    const stepOrder = ['polymarket', 'transaction', 'signed', 'success'];
+    const currentIndex = stepOrder.indexOf(currentStep);
+    const stepIndex = stepOrder.indexOf(stepId);
+
+    if (stepIndex < currentIndex) return 'completed';
     return 'pending';
   };
 

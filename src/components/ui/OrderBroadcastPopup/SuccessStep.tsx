@@ -8,13 +8,15 @@ interface SuccessStepProps {
   polymarketOrderHash: string;
   transactionHash: string;
   onClose: () => void;
+  warningMessage?: string;
 }
 
-export const SuccessStep: React.FC<SuccessStepProps> = ({ 
+export const SuccessStep: React.FC<SuccessStepProps> = ({
   orderId, // Changed from orderHash to orderId
-  polymarketOrderHash, 
+  polymarketOrderHash,
   transactionHash,
-  onClose
+  onClose,
+  warningMessage
 }) => {
   const handleViewOnExplorer = () => {
     const explorerUrl = `https://polygonscan.com/tx/${transactionHash}`;
@@ -46,7 +48,15 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
           </div>
         </div>
       </div>
-      
+
+      {warningMessage && (
+        <div className={styles.infoBox} style={{ backgroundColor: '#fff3cd', border: '1px solid #ffeaa7', marginTop: '16px' }}>
+          <p style={{ color: '#856404', margin: '0' }}>
+            ⚠️ {warningMessage}
+          </p>
+        </div>
+      )}
+
       <div className={styles.buttonGroup}>
         <button
           className={styles.secondaryButton}

@@ -117,6 +117,46 @@ export class WalletConnectSafeService {
   }
 
   /**
+   * Wait for transaction to be confirmed on-chain
+   * Used when we need to ensure the transaction is indexed before calling backend
+   */
+  async waitForTransactionConfirmation(
+    transactionHash: string,
+    timeoutMs: number = 60000 // 1 minute default timeout
+  ): Promise<any> {
+    console.log('🚀 [WC-WAIT] waitForTransactionConfirmation START');
+    console.log('🔍 [WC-WAIT] Transaction hash:', transactionHash);
+    console.log('🔍 [WC-WAIT] Timeout:', timeoutMs, 'ms');
+
+    if (!this.provider) {
+      throw new Error('Provider not initialized. Call initialize() first.');
+    }
+
+    try {
+      console.log('⏳ [WC-WAIT] Waiting for transaction confirmation...');
+      const startTime = Date.now();
+
+      const receipt = await Promise.race([
+        this.provider.waitForTransaction(transactionHash),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Transaction confirmation timeout')), timeoutMs)
+        )
+      ]);
+
+      const endTime = Date.now();
+      console.log(`✅ [WC-WAIT] Transaction confirmed in ${endTime - startTime}ms`);
+      console.log('📋 [WC-WAIT] Receipt:', JSON.stringify(receipt, null, 2));
+      console.log('🏁 [WC-WAIT] waitForTransactionConfirmation END - SUCCESS');
+
+      return receipt;
+    } catch (error) {
+      console.error('💥 [WC-WAIT] Transaction confirmation failed:', error);
+      console.log('🏁 [WC-WAIT] waitForTransactionConfirmation END - ERROR');
+      throw error;
+    }
+  }
+
+  /**
    * Send transaction via WalletConnect to Safe
    * The Safe app will handle the multi-sig requirements internally
    * Returns immediately after successful signature, not waiting for execution
@@ -357,41 +397,88 @@ export class WalletConnectSafeService {
   }
 
   /**
-   * Send a batch of transactions to Safe via WalletConnect
-   * Safe WalletConnect doesn't support direct MultiSend calls, so we fall back to sequential transactions
+   * Send multiple transactions sequentially to Safe via WalletConnect
+   * Each transaction is signed individually and executed one by one
    */
-  async sendBatchTransaction(
-    batchRequest: WalletConnectSafeBatchTransactionRequest
-  ): Promise<WalletConnectSafeTransactionResult> {
+  async sendMultipleTransactions(
+    transactions: WalletConnectSafeTransactionRequest[],
+    onProgress?: (current: number, total: number, txType: string, txHash?: string) => void
+  ): Promise<WalletConnectSafeTransactionResult[]> {
+    console.log('🚀 [WC-MULTI] sendMultipleTransactions START');
+    console.log('🔍 [WC-MULTI] Transactions to send:', transactions.length);
+    console.log('📋 [WC-MULTI] Transaction list:', JSON.stringify(transactions, null, 2));
+
     if (!this.signer || !this.provider) {
+      console.error('❌ [WC-MULTI] Service not initialized');
       throw new Error('Service not initialized. Call initialize() first.');
     }
 
-    try {
-      console.log('Sending Safe batch transaction via WalletConnect:', batchRequest);
+    const results: WalletConnectSafeTransactionResult[] = [];
+    const totalTxs = transactions.length;
 
-      // If there's only one transaction, send it directly
-      if (batchRequest.transactions.length === 1) {
-        console.log('Single transaction detected, sending directly');
-        return await this.sendTransaction(batchRequest.transactions[0]);
+    for (let i = 0; i < transactions.length; i++) {
+      const tx = transactions[i];
+      const currentTx = i + 1;
+
+      console.log(`🔄 [WC-MULTI] Processing transaction ${currentTx}/${totalTxs}`);
+      console.log('📋 [WC-MULTI] Transaction details:', JSON.stringify(tx, null, 2));
+
+      // Determine transaction type for better UX
+      let txType = 'Transaction';
+      if (totalTxs > 1) {
+        if (tx.data.startsWith('0xf08a0323')) {
+          txType = 'Set Fallback Handler';
+        } else if (tx.data.startsWith('0x095ea7b3')) {
+          txType = 'Token Approval';
+        } else {
+          txType = 'Conditional Order';
+        }
       }
 
-      // For Safe WalletConnect, batch transactions through MultiSend don't work reliably
-      // because the MultiSend contract requires delegatecall which WalletConnect can't handle properly
-      console.log('Multiple transactions detected - Safe WalletConnect requires sequential execution');
+      console.log(`🏷️ [WC-MULTI] Transaction type determined: ${txType}`);
 
-      // Use sequential transactions as the primary method for Safe WalletConnect
-      // This will now throw an error if any transaction fails, stopping the process
-      const results = await this.sendTransactionsSequentially(batchRequest);
+      // Call progress callback before starting transaction
+      if (onProgress) {
+        console.log('📊 [WC-MULTI] Calling progress callback (before):', currentTx - 1, totalTxs, txType);
+        onProgress(currentTx - 1, totalTxs, txType);
+      }
 
-      // If we get here, all transactions succeeded
-      const lastSuccessfulResult = results[results.length - 1];
-      return lastSuccessfulResult;
+      try {
+        console.log(`🔄 [WC-MULTI] Calling sendTransaction for ${currentTx}/${totalTxs}...`);
+        const result = await this.sendTransaction(tx);
+        console.log(`✅ [WC-MULTI] Transaction ${currentTx} completed:`, JSON.stringify(result, null, 2));
 
-    } catch (error) {
-      console.error('Error sending Safe transactions via WalletConnect:', error);
-      throw new Error(`Safe transaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        results.push(result);
+
+        console.log(`🎉 [WC-MULTI] Transaction ${currentTx} (${txType}) signed successfully:`, result.transactionHash);
+
+        // Update progress after successful transaction signature
+        if (onProgress) {
+          console.log('📊 [WC-MULTI] Calling progress callback (after):', currentTx, totalTxs, txType, result.transactionHash);
+          onProgress(currentTx, totalTxs, txType, result.transactionHash);
+        }
+
+        // Small delay between transactions to avoid overwhelming the Safe app
+        if (i < transactions.length - 1) {
+          console.log('⏳ [WC-MULTI] Waiting 1 second before next transaction...');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+      } catch (error) {
+        console.error(`💥 [WC-MULTI] Transaction ${currentTx} (${txType}) failed:`, error);
+        console.error('🔍 [WC-MULTI] Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+
+        // Stop the process and throw the error - don't continue with remaining transactions
+        const errorMessage = `Transaction ${currentTx} (${txType}) failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        console.error('❌ [WC-MULTI] Throwing error:', errorMessage);
+        throw new Error(errorMessage);
+      }
     }
+
+    console.log(`🎉 [WC-MULTI] All ${totalTxs} transactions signed successfully`);
+    console.log('📋 [WC-MULTI] Final results:', JSON.stringify(results, null, 2));
+    console.log('🏁 [WC-MULTI] sendMultipleTransactions END - SUCCESS');
+    return results;
   }
 
 

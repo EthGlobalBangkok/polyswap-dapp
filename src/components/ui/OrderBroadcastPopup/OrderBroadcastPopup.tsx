@@ -19,7 +19,7 @@ interface OrderBroadcastPopupProps {
   orderId: number; // Changed from orderHash to orderId
 }
 
-export type Step = 'polymarket' | 'transaction' | 'success' | 'error';
+export type Step = 'polymarket' | 'transaction' | 'signed' | 'success' | 'error';
 
 export interface PopupState {
   step: Step;
@@ -177,30 +177,93 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
   useEffect(() => {
     if (wagmiIsSuccess && wagmiTxData && state.step === 'transaction') {
       console.log('Wagmi transaction succeeded:', wagmiTxData);
-      
+
       // Update database with transaction hash and mark as success
       const updateDatabase = async () => {
         try {
           await apiService.updateOrderTransactionHashById(orderId, wagmiTxData);
-          setState(prev => ({ 
-            ...prev, 
+          setState(prev => ({
+            ...prev,
             step: 'success',
             transactionHash: wagmiTxData
           }));
         } catch (dbError) {
           console.error('Failed to update order in database:', dbError);
           // Still mark as success since the transaction was executed
-          setState(prev => ({ 
-            ...prev, 
+          setState(prev => ({
+            ...prev,
             step: 'success',
             transactionHash: wagmiTxData
           }));
         }
       };
-      
+
       updateDatabase();
     }
   }, [wagmiIsSuccess, wagmiTxData, state.step, orderId]);
+
+  // Handle 'signed' state - wait for confirmation and update database
+  useEffect(() => {
+    const handleSignedState = async () => {
+      if (state.step !== 'signed' || !state.transactionHash) {
+        return;
+      }
+
+      console.log('🚀 [POPUP] Handling signed state - waiting for confirmation');
+      console.log('🔍 [POPUP] Transaction hash:', state.transactionHash);
+
+      try {
+        // Wait for transaction to be confirmed on-chain
+        console.log('⏳ [POPUP] Waiting for transaction confirmation...');
+        await walletConnectSafeService.waitForTransactionConfirmation(state.transactionHash, 60000); // 1 minute timeout
+        console.log('✅ [POPUP] Transaction confirmed on-chain');
+
+        // Add 5-second delay for propagation to ensure indexing services are updated
+        console.log('⏳ [POPUP] Waiting 5 seconds for blockchain indexing propagation...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        console.log('✅ [POPUP] Propagation delay completed');
+
+        // Now that transaction is confirmed and propagated, update the database
+        console.log('🔄 [POPUP] Starting database update after confirmation and propagation...');
+        let updateResult = await apiService.updateOrderTransactionHashById(orderId, state.transactionHash);
+        console.log('📋 [POPUP] Database update result:', JSON.stringify(updateResult, null, 2));
+
+        if (updateResult.success) {
+          console.log('✅ [POPUP] Order successfully updated in database');
+          setState(prev => ({ ...prev, step: 'success' }));
+        } else {
+          console.error('❌ [POPUP] Database update failed:', updateResult);
+          // Still mark as success since the transaction was executed
+          setState(prev => ({
+            ...prev,
+            step: 'success',
+            errorMessage: 'Transaction successful but database update failed. Order may not show as live immediately.'
+          }));
+        }
+      } catch (error) {
+        console.error('💥 [POPUP] Error in signed state handling:', error);
+
+        // Check if it's a timeout vs other error
+        if (error instanceof Error && error.message.includes('timeout')) {
+          // Transaction confirmation timeout - still mark as success but with warning
+          setState(prev => ({
+            ...prev,
+            step: 'success',
+            errorMessage: 'Transaction signed successfully but confirmation took longer than expected. Order should be live shortly.'
+          }));
+        } else {
+          // Other errors - still mark as success since transaction was signed
+          setState(prev => ({
+            ...prev,
+            step: 'success',
+            errorMessage: 'Transaction signed successfully but there was an issue updating the order status. Order should be live shortly.'
+          }));
+        }
+      }
+    };
+
+    handleSignedState();
+  }, [state.step, state.transactionHash, orderId]);
 
   // On open, fetch order to determine resume step from DB status and polymarket hash
   useEffect(() => {
@@ -371,76 +434,64 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
           return;
         }
       } else if (isWalletConnect) {
-        // Use WalletConnect Safe service directly - optimized for Safe + WalletConnect
+        // Use WalletConnect Safe service directly - simplified flow
         console.log('🎯 [POPUP] Using WalletConnect Safe service for transaction signing');
         console.log('🔍 [POPUP] WalletConnect service initialized:', walletConnectSafeService.isInitialized());
 
-        let result;
         try {
-          if (isBatchTransaction) {
-            console.log('📦 [POPUP] Starting BATCH transaction flow');
-            console.log('🔍 [POPUP] Batch transactions to send:', state.transactionData.transactions.length);
-            console.log('📋 [POPUP] Batch transaction details:', JSON.stringify(state.transactionData.transactions, null, 2));
+          // Get transactions array - support both batch and single transaction formats
+          const transactions = isBatchTransaction ? state.transactionData.transactions : [state.transactionData];
 
-            // Use sequential transaction signing for Safe + WalletConnect
-            console.log('🔄 [POPUP] Calling sendTransactionsSequentially...');
-            const sequentialResults = await walletConnectSafeService.sendTransactionsSequentially({
-              transactions: state.transactionData.transactions
-            }, (current, total, txType) => {
-              console.log(`📊 [POPUP] Progress update: ${current}/${total} - ${txType}`);
-              // Update progress in real-time
-              setState(prev => ({
-                ...prev,
-                transactionProgress: {
-                  current,
-                  total,
-                  currentTxType: txType
-                }
-              }));
-            });
+          console.log('🔍 [POPUP] Transactions to process:', transactions.length);
+          console.log('📋 [POPUP] Transaction details:', JSON.stringify(transactions, null, 2));
 
-            console.log('✅ [POPUP] Sequential transactions completed:', sequentialResults.length);
-            console.log('📋 [POPUP] Sequential results:', JSON.stringify(sequentialResults, null, 2));
+          let results: any[];
 
-            // All transactions signed successfully
-            const lastResult = sequentialResults[sequentialResults.length - 1];
-            result = lastResult;
-
-            console.log('🎉 [POPUP] All batch transactions signed successfully');
-          } else {
-            console.log('🔄 [POPUP] Starting SINGLE transaction flow');
-            console.log('📋 [POPUP] Single transaction details:', {
-              to: state.transactionData.to,
-              data: state.transactionData.data,
-              value: state.transactionData.value
-            });
-
-            // Single transaction signing
-            console.log('🔄 [POPUP] Calling sendTransaction...');
-            result = await walletConnectSafeService.sendTransaction({
-              to: state.transactionData.to,
-              data: state.transactionData.data,
-              value: state.transactionData.value
-            });
-
+          if (transactions.length === 1) {
+            // Single transaction - use direct method
+            console.log('🔄 [POPUP] Processing single transaction');
+            const result = await walletConnectSafeService.sendTransaction(transactions[0]);
+            results = [result];
             console.log('✅ [POPUP] Single transaction completed');
+          } else {
+            // Multiple transactions - use sequential method
+            console.log('🔄 [POPUP] Processing multiple transactions sequentially');
+            results = await walletConnectSafeService.sendMultipleTransactions(
+              transactions,
+              (current, total, txType, txHash) => {
+                console.log(`📊 [POPUP] Progress update: ${current}/${total} - ${txType}`, txHash);
+                setState(prev => ({
+                  ...prev,
+                  transactionProgress: {
+                    current,
+                    total,
+                    currentTxType: txType
+                  }
+                }));
+              }
+            );
+            console.log('✅ [POPUP] Multiple transactions completed');
           }
 
-          console.log('🔍 [POPUP] Final result received:', JSON.stringify(result, null, 2));
+          console.log('🔍 [POPUP] All results received:', JSON.stringify(results, null, 2));
 
-          if (result && result.success) {
-            transactionHash = result.transactionHash;
-            console.log('🎉 [POPUP] Transaction(s) signed successfully, hash:', transactionHash);
+          // Get the last transaction hash (main transaction)
+          const lastResult = results[results.length - 1];
+          if (lastResult && lastResult.success) {
+            transactionHash = lastResult.transactionHash;
+            console.log('🎉 [POPUP] All transactions signed successfully, main hash:', transactionHash);
 
-            console.log('🔄 [POPUP] Updating state with transaction hash...');
+            // Move to "signed" state - show success with tx hash but keep processing
+            console.log('🔄 [POPUP] Moving to signed state...');
             setState(prev => ({
               ...prev,
-              transactionHash: result.transactionHash
+              step: 'signed',
+              transactionHash: lastResult.transactionHash
             }));
-            console.log('✅ [POPUP] State updated with transaction hash');
+            console.log('✅ [POPUP] Moved to signed state');
           } else {
-            console.error('❌ [POPUP] Transaction result indicates failure:', result);
-            throw new Error(result?.error || 'Transaction signing failed');
+            console.error('❌ [POPUP] Transaction results indicate failure:', results);
+            throw new Error('Transaction signing failed');
           }
         } catch (walletConnectError) {
           console.error('💥 [POPUP] WalletConnect Safe service failed:', walletConnectError);
@@ -450,66 +501,10 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
         throw new Error('Unsupported wallet connection type');
       }
 
-      // Transaction was executed, update the database
-      console.log('🔍 [POPUP] Post-transaction processing...');
-      console.log('🔍 [POPUP] Transaction hash available:', !!transactionHash);
-      console.log('🔍 [POPUP] Transaction hash value:', transactionHash);
-
-      if (!transactionHash) {
-        console.error('❌ [POPUP] No transaction hash available for database update');
-        setState(prev => ({
-          ...prev,
-          step: 'error',
-          error: 'transaction_failed',
-          errorMessage: 'Transaction completed but no transaction hash was returned'
-        }));
-        return;
-      }
-
-      try {
-        console.log('🔄 [POPUP] Starting database update process...');
-        console.log('🔍 [POPUP] Order ID:', orderId);
-        console.log('🔍 [POPUP] Transaction hash for DB:', transactionHash);
-
-        let updateResult = await apiService.updateOrderTransactionHashById(orderId, transactionHash);
-        console.log('📋 [POPUP] First database update result:', JSON.stringify(updateResult, null, 2));
-
-        // Retry once after 2 seconds if the first attempt fails (node latency issue)
-        if (!updateResult.success) {
-          console.log('⚠️ [POPUP] First database update attempt failed, retrying in 2 seconds...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          console.log('🔄 [POPUP] Retrying database update...');
-          updateResult = await apiService.updateOrderTransactionHashById(orderId, transactionHash);
-          console.log('📋 [POPUP] Retry database update result:', JSON.stringify(updateResult, null, 2));
-        }
-
-        if (updateResult.success) {
-          console.log('✅ [POPUP] Order successfully updated in database');
-          console.log('🔄 [POPUP] Setting state to success...');
-          setState(prev => ({ ...prev, step: 'success' }));
-          console.log('✅ [POPUP] State set to success');
-        } else {
-          console.error('❌ [POPUP] Database update failed after retry:', updateResult);
-          // Still mark as success since the transaction was executed
-          console.log('🔄 [POPUP] Setting state to success with warning message...');
-          setState(prev => ({
-            ...prev,
-            step: 'success',
-            errorMessage: 'Transaction successful but database update failed after retry. Order may not show as live immediately.'
-          }));
-          console.log('✅ [POPUP] State set to success with warning');
-        }
-      } catch (dbError) {
-        console.error('💥 [POPUP] Database update exception:', dbError);
-        // Still mark as success since the transaction was executed
-        console.log('🔄 [POPUP] Setting state to success despite DB error...');
-        setState(prev => ({
-          ...prev,
-          step: 'success',
-          errorMessage: 'Transaction successful but database update failed. Order may not show as live immediately.'
-        }));
-        console.log('✅ [POPUP] State set to success despite DB error');
-      }
+      // For WalletConnect, we now handle the flow differently:
+      // 1. Transaction signing is complete (we're in "signed" state)
+      // 2. Now we need to wait for confirmation and update the database
+      // This will be handled by the useEffect for 'signed' state
 
     } catch (error) {
       console.error('💥 [POPUP] Transaction error occurred in handleSendTransaction');
@@ -633,7 +628,7 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
             }}
           />
         );
-      
+
       case 'transaction':
         return (
           <TransactionSignStep
@@ -654,7 +649,41 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
             }}
           />
         );
-      
+
+      case 'signed':
+        return (
+          <div className={styles.stepContent}>
+            <div className={styles.successIcon}>✅</div>
+            <h2 className={styles.stepTitle}>Transaction Signed Successfully!</h2>
+            <p className={styles.stepDescription}>
+              Your transaction has been signed and submitted to the blockchain.
+            </p>
+
+            <div className={styles.infoBox} style={{ marginBottom: '16px' }}>
+              <div className={styles.transactionDetails}>
+                <div className={styles.detailRow}>
+                  <span className={styles.detailLabel}>Transaction Hash:</span>
+                  <span className={styles.detailValue}>
+                    {state.transactionHash?.substring(0, 10)}...{state.transactionHash?.substring(state.transactionHash.length - 8)}
+                  </span>
+                </div>
+                <div className={styles.detailRow}>
+                  <span className={styles.detailLabel}>Status:</span>
+                  <span className={styles.detailValue} style={{ color: '#28a745' }}>Signed & Submitted</span>
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.loadingSpinner}>
+              <div className={styles.spinner}></div>
+              <p>Waiting for transaction confirmation and indexing to update order status...</p>
+              <p className={styles.note} style={{ fontSize: '12px', marginTop: '8px' }}>
+                This usually takes 15-35 seconds on Polygon (confirmation + indexing)
+              </p>
+            </div>
+          </div>
+        );
+
       case 'success':
         return (
           <SuccessStep
@@ -662,6 +691,7 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
             polymarketOrderHash={state.polymarketOrderHash || ''}
             transactionHash={state.transactionHash || ''}
             onClose={handleClose}
+            warningMessage={state.errorMessage}
           />
         );
       

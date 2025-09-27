@@ -14,7 +14,7 @@ interface OrderCancellationPopupProps {
   order: DatabasePolyswapOrder;
 }
 
-type CancellationStep = 'confirm' | 'polymarket' | 'transaction' | 'waiting' | 'success' | 'error';
+type CancellationStep = 'confirm' | 'polymarket' | 'transaction' | 'signed' | 'success' | 'error';
 
 interface PopupState {
   step: CancellationStep;
@@ -87,6 +87,84 @@ export default function OrderCancellationPopup({
       initializeSafeServices();
     }
   }, [address, client, publicClient, isOpen]);
+
+  // Handle 'signed' state - wait for confirmation and update database
+  useEffect(() => {
+    const handleSignedState = async () => {
+      if (state.step !== 'signed' || !state.transactionHash) {
+        return;
+      }
+
+      console.log('🚀 [CANCEL] Handling signed state - waiting for confirmation');
+      console.log('🔍 [CANCEL] Transaction hash:', state.transactionHash);
+
+      try {
+        // Wait for transaction to be confirmed on-chain
+        console.log('⏳ [CANCEL] Waiting for transaction confirmation...');
+        await walletConnectSafeService.waitForTransactionConfirmation(state.transactionHash, 60000); // 1 minute timeout
+        console.log('✅ [CANCEL] Transaction confirmed on-chain');
+
+        // Add 5-second delay for propagation to ensure indexing services are updated
+        console.log('⏳ [CANCEL] Waiting 5 seconds for blockchain indexing propagation...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        console.log('✅ [CANCEL] Propagation delay completed');
+
+        // Now that transaction is confirmed and propagated, update the database
+        console.log('🔄 [CANCEL] Starting database update after confirmation and propagation...');
+        console.log('🔍 [CANCEL] Order hash to cancel:', order.order_hash);
+
+        // Call the same API that was used during preparation but now with the transaction hash
+        const response = await fetch('/api/polyswap/orders/remove', {
+          method: 'PUT', // Use PUT to update the existing cancellation
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            orderHash: order.order_hash,
+            transactionHash: state.transactionHash,
+            confirmed: true // Flag to indicate this is the confirmation step
+          })
+        });
+
+        const result = await response.json();
+        console.log('📋 [CANCEL] Database update result:', JSON.stringify(result, null, 2));
+
+        if (result.success) {
+          console.log('✅ [CANCEL] Order successfully canceled in database');
+          setState(prev => ({ ...prev, step: 'success' }));
+        } else {
+          console.error('❌ [CANCEL] Database update failed:', result);
+          // Still mark as success since the transaction was executed
+          setState(prev => ({
+            ...prev,
+            step: 'success',
+            errorMessage: 'Transaction successful but database update failed. Order cancellation may not show immediately.'
+          }));
+        }
+      } catch (error) {
+        console.error('💥 [CANCEL] Error in signed state handling:', error);
+
+        // Check if it's a timeout vs other error
+        if (error instanceof Error && error.message.includes('timeout')) {
+          // Transaction confirmation timeout - still mark as success but with warning
+          setState(prev => ({
+            ...prev,
+            step: 'success',
+            errorMessage: 'Transaction signed successfully but confirmation took longer than expected. Order should be canceled shortly.'
+          }));
+        } else {
+          // Other errors - still mark as success since transaction was signed
+          setState(prev => ({
+            ...prev,
+            step: 'success',
+            errorMessage: 'Transaction signed successfully but there was an issue updating the order status. Order should be canceled shortly.'
+          }));
+        }
+      }
+    };
+
+    handleSignedState();
+  }, [state.step, state.transactionHash, order.order_hash]);
 
   const handleConfirmCancellation = async () => {
     setState(prev => ({ ...prev, step: 'polymarket' }));
@@ -262,14 +340,14 @@ export default function OrderCancellationPopup({
         return;
       }
 
-      console.log('✅ [CANCEL] Order cancellation transaction successful:', transactionHash);
-      console.log('🔄 [CANCEL] Setting state to success...');
+      console.log('✅ [CANCEL] Order cancellation transaction signed successfully:', transactionHash);
+      console.log('🔄 [CANCEL] Moving to signed state...');
       setState(prev => ({
         ...prev,
-        step: 'success',
+        step: 'signed',
         transactionHash
       }));
-      console.log('✅ [CANCEL] State set to success');
+      console.log('✅ [CANCEL] Moved to signed state');
 
     } catch (error: any) {
       console.error('💥 [CANCEL] Transaction error occurred in handleSendTransaction');
@@ -370,8 +448,8 @@ export default function OrderCancellationPopup({
         return 'Canceling Polymarket Order';
       case 'transaction':
         return 'Sign Cancellation Transaction';
-      case 'waiting':
-        return 'Processing Transaction';
+      case 'signed':
+        return 'Transaction Signed Successfully';
       case 'success':
         return 'Order Cancellation Complete';
       case 'error':
@@ -480,6 +558,42 @@ export default function OrderCancellationPopup({
             </div>
           )}
 
+          {state.step === 'signed' && (
+            <div className={styles.stepContent}>
+              <div className={styles.successIcon}>✅</div>
+              <h3>Transaction Signed Successfully!</h3>
+              <p className={styles.stepDescription}>
+                Your cancellation transaction has been signed and submitted to the blockchain.
+              </p>
+
+              <div className={styles.successDetails}>
+                {state.polymarketCanceled && (
+                  <p>✅ Polymarket order canceled</p>
+                )}
+                {state.transactionHash && (
+                  <p>✅ Transaction Hash:
+                    <a
+                      href={`https://polygonscan.com/tx/${state.transactionHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#0066cc', textDecoration: 'underline', marginLeft: '4px' }}
+                    >
+                      {state.transactionHash.slice(0, 10)}...{state.transactionHash.slice(-8)}
+                    </a>
+                  </p>
+                )}
+              </div>
+
+              <div className={styles.loadingSection} style={{ marginTop: '16px' }}>
+                <div className={styles.spinner}></div>
+                <p>Waiting for transaction confirmation and indexing to update order status...</p>
+                <p className={styles.subText}>
+                  This usually takes 15-35 seconds on Polygon (confirmation + indexing)
+                </p>
+              </div>
+            </div>
+          )}
+
           {state.step === 'success' && (
             <div className={styles.stepContent}>
               <div className={styles.successIcon}>✅</div>
@@ -490,9 +604,26 @@ export default function OrderCancellationPopup({
                   <p>✅ Polymarket order canceled</p>
                 )}
                 {state.transactionHash && (
-                  <p>✅ CoW Protocol transaction executed: {state.transactionHash.slice(0, 10)}...{state.transactionHash.slice(-8)}</p>
+                  <p>✅ CoW Protocol transaction executed:
+                    <a
+                      href={`https://polygonscan.com/tx/${state.transactionHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#0066cc', textDecoration: 'underline', marginLeft: '4px' }}
+                    >
+                      {state.transactionHash.slice(0, 10)}...{state.transactionHash.slice(-8)}
+                    </a>
+                  </p>
                 )}
               </div>
+
+              {state.errorMessage && (
+                <div className={styles.infoBox} style={{ backgroundColor: '#fff3cd', border: '1px solid #ffeaa7', marginTop: '16px' }}>
+                  <p style={{ color: '#856404', margin: '0' }}>
+                    ⚠️ {state.errorMessage}
+                  </p>
+                </div>
+              )}
 
               <p className={styles.note}>
                 The order has been successfully canceled and will be updated in your order list.

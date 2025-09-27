@@ -24,7 +24,7 @@ export class SafeFallbackHandlerService {
   private static readonly FALLBACK_HANDLER_STORAGE_SLOT = '0x6c9a6c4a39284e37ed1cf53d337577d14212a4870fb976a4366c693b939918d5';
 
   // Expected PolySwap handler address
-  private static readonly EXPECTED_POLYSWAP_HANDLER = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER || '0x2F1EA76972a3A62571f595340D12b967eB0fB5BC';
+  private static readonly EXPECTED_HANDLER = process.env.EXTENSIBLE_FALLBACK_HANDLER || '0x2f55e8b20D0B9FEFA187AA7d00B6Cbe563605bF5';
 
   /**
    * Get the current fallback handler for a Safe address
@@ -66,7 +66,7 @@ export class SafeFallbackHandlerService {
     expectedHandler?: string
   ): Promise<FallbackHandlerCheck> {
     try {
-      const expected = expectedHandler || this.EXPECTED_POLYSWAP_HANDLER;
+      const expected = expectedHandler || this.EXPECTED_HANDLER;
       const current = await this.getCurrentFallbackHandler(safeAddress, provider);
 
       // Normalize addresses for comparison (both to lowercase)
@@ -108,7 +108,7 @@ export class SafeFallbackHandlerService {
     handlerAddress?: string
   ): FallbackHandlerTransaction {
     try {
-      const handler = handlerAddress || this.EXPECTED_POLYSWAP_HANDLER;
+      const handler = handlerAddress || this.EXPECTED_HANDLER;
 
       // Safe's setFallbackHandler function signature
       const safeInterface = new ethers.Interface([

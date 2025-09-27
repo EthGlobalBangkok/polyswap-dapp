@@ -81,11 +81,6 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
         // Get RPC URL from public client
         const rpcUrl = (publicClient as any).transport?.url || 'https://polygon-rpc.com';
         
-        console.log('Fetching batch transaction data with:', {
-          orderId,
-          ownerAddress: address,
-          rpcUrl
-        });
 
         const response = await fetch(`/api/polyswap/orders/id/${orderId}/batch-transaction`, {
           method: 'POST',
@@ -116,11 +111,6 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
 
           onGetTransactionData(transactionToPass);
           
-          console.log('Batch transaction prepared:', {
-            needsApproval: batch.needsApproval,
-            transactionCount: batch.transactions.length,
-            gasEstimate: result.data.gasEstimate
-          });
         } else {
           if (result.error === 'insufficient_balance') {
             onError(`Insufficient balance: ${result.message}`);
@@ -129,7 +119,6 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
           }
         }
       } catch (error) {
-        console.error('Error fetching batch transaction data:', error);
         onError(error instanceof Error ? error.message : 'Failed to prepare batch transaction');
       } finally {
         setIsLoading(false);

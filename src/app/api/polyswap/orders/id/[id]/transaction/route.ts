@@ -203,7 +203,46 @@ export async function PUT(
       }, { status: 500 });
     }
 
-    // Update the order with complete transaction details
+    // Calculate order UID using the confirmed event data
+    let orderUid: string | undefined;
+    try {
+      const { OrderUidCalculationService } = await import('../../../../../../../backend/services/orderUidCalculationService');
+      const { ethers } = await import('ethers');
+
+      // Initialize provider
+      const RPC_URL = process.env.RPC_URL;
+      if (!RPC_URL) {
+        throw new Error('RPC_URL environment variable not set');
+      }
+      const provider = new ethers.JsonRpcProvider(RPC_URL);
+      OrderUidCalculationService.initialize(provider);
+
+      // Create PolyswapOrderData from the order
+      const polyswapOrderData = {
+        sellToken: order.sell_token,
+        buyToken: order.buy_token,
+        receiver: order.owner,
+        sellAmount: order.sell_amount.toString(),
+        minBuyAmount: order.min_buy_amount.toString(),
+        t0: Math.floor(order.start_time.getTime() / 1000).toString(),
+        t: Math.floor(order.end_time.getTime() / 1000).toString(),
+        polymarketOrderHash: order.polymarket_order_hash!,
+        appData: eventDetails.appData, // Use appData from the event
+      };
+
+      // Calculate order UID
+      orderUid = await OrderUidCalculationService.calculateCompleteOrderUidOnChain(
+        polyswapOrderData,
+        order.owner
+      );
+
+      console.log(`✅ Calculated order UID for order ${orderId}: ${orderUid}`);
+    } catch (uidError) {
+      console.error(`⚠️ Could not calculate order UID for order ${orderId}:`, uidError);
+      // Continue without order UID - it can be calculated later if needed
+    }
+
+    // Update the order with complete transaction details including order UID
     const updated = await DatabaseService.updateOrderTransactionDetails(
       orderId,
       transactionHash,
@@ -211,7 +250,8 @@ export async function PUT(
       eventDetails.logIndex,
       eventDetails.handler,
       eventDetails.appData,
-      eventDetails.orderHash
+      eventDetails.orderHash,
+      orderUid
     );
 
     if (!updated) {
@@ -232,6 +272,7 @@ export async function PUT(
         handler: eventDetails.handler,
         appData: eventDetails.appData,
         orderHash: eventDetails.orderHash,
+        orderUid: orderUid,
         message: 'Transaction details updated successfully'
       }
     });

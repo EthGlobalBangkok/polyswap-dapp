@@ -83,8 +83,6 @@ class PolyswapBlockchainListener {
 
       for (const order of ordersWithoutUid) {
         try {
-          console.log(`🔄 Calculating UID for order ${order.order_hash}`);
-
           // Create PolyswapOrder data from database record
           const polyswapOrderData = OrderUidCalculationService.createPolyswapOrderDataFromDbOrder(order);
 
@@ -95,13 +93,7 @@ class PolyswapBlockchainListener {
           );
 
           // Update the database with the calculated UID
-          const updated = await DatabaseService.updateOrderUid(order.order_hash, orderUid);
-
-          if (updated) {
-            console.log(`✅ Updated order ${order.order_hash} with UID ${orderUid}`);
-          } else {
-            console.error(`❌ Failed to update order ${order.order_hash} with UID`);
-          }
+          await DatabaseService.updateOrderUid(order.order_hash, orderUid);
         } catch (error) {
           console.error(`❌ Error calculating UID for order ${order.order_hash}:`, error);
         }

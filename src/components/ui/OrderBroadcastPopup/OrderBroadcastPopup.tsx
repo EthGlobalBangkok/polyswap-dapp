@@ -47,7 +47,6 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
   onClose, 
   orderId 
 }) => {
-  console.log('OrderBroadcastPopup rendered with:', { isOpen, orderId });
   
   const { address, connector } = useAccount();
   const publicClient = usePublicClient();
@@ -78,14 +77,12 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
   useEffect(() => {
     const initializeSafe = async () => {
       if (!address || !publicClient) {
-        console.log('Waiting for address or publicClient...');
         return;
       }
 
       const isSafeApp = connector?.name === 'Safe';
       const isWalletConnect = connector?.name === 'WalletConnect';
 
-      console.log('Initializing for connector:', connector?.name, { isSafeApp, isWalletConnect, address, hasClient: !!client });
 
       // Reset any previous errors when trying to initialize
       if (state.error === 'unsupported_wallet' || state.error === 'safe_initialization_failed') {
@@ -101,15 +98,12 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
         try {
           const provider = new ethers.BrowserProvider(publicClient as any);
           await safeService.initialize(address, provider);
-          console.log('Safe App initialization successful');
           setState(prev => ({
             ...prev,
             isSafeInitialized: true,
             isSafeWallet: true
           }));
-          console.log('✅ Safe App initialization completed');
         } catch (error) {
-          console.error('Failed to initialize Safe SDK:', error);
           setState(prev => ({
             ...prev,
             step: 'error',
@@ -127,15 +121,12 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
           walletConnectSafeService.initialize(await signer, provider);
 
           // Try to get Safe info to validate the connection
-          console.log('Checking WalletConnect Safe connection for address:', address);
           const safeInfo = await walletConnectSafeService.getSafeInfo(address);
 
-          console.log('Safe info result:', safeInfo);
 
           // If the direct address check fails, it might be an EOA owner of a Safe
           // For WalletConnect connections, we can be more permissive since the Safe app controls access
           if (!safeInfo.isSafe) {
-            console.log('Address is not a Safe contract, but WalletConnect connection detected - allowing as Safe owner');
           }
 
           setState(prev => ({
@@ -145,9 +136,7 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
             safeInfo: safeInfo.isSafe ? safeInfo : { isSafe: true, isOwner: true } // Mark as Safe owner if not direct Safe contract
           }));
 
-          console.log('WalletConnect Safe initialization successful');
         } catch (error) {
-          console.error('Failed to initialize WalletConnect Safe service:', error);
           setState(prev => ({
             ...prev,
             step: 'error',
@@ -156,11 +145,9 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
           }));
         }
       } else if (isWalletConnect && !client) {
-        console.log('WalletConnect detected but client not ready yet...');
         // Don't show error yet, wait for client
         return;
       } else {
-        console.log('Unsupported wallet type:', { connector: connector?.name, hasClient: !!client });
         setState(prev => ({
           ...prev,
           step: 'error',
@@ -176,7 +163,6 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
   // Handle Wagmi transaction success
   useEffect(() => {
     if (wagmiIsSuccess && wagmiTxData && state.step === 'transaction') {
-      console.log('Wagmi transaction succeeded:', wagmiTxData);
 
       // Update database with transaction hash and mark as success
       const updateDatabase = async () => {
@@ -188,7 +174,6 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
             transactionHash: wagmiTxData
           }));
         } catch (dbError) {
-          console.error('Failed to update order in database:', dbError);
           // Still mark as success since the transaction was executed
           setState(prev => ({
             ...prev,
@@ -209,30 +194,20 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
         return;
       }
 
-      console.log('🚀 [POPUP] Handling signed state - waiting for confirmation');
-      console.log('🔍 [POPUP] Transaction hash:', state.transactionHash);
 
       try {
         // Wait for transaction to be confirmed on-chain
-        console.log('⏳ [POPUP] Waiting for transaction confirmation...');
         await walletConnectSafeService.waitForTransactionConfirmation(state.transactionHash, 60000); // 1 minute timeout
-        console.log('✅ [POPUP] Transaction confirmed on-chain');
 
         // Add 5-second delay for propagation to ensure indexing services are updated
-        console.log('⏳ [POPUP] Waiting 5 seconds for blockchain indexing propagation...');
         await new Promise(resolve => setTimeout(resolve, 5000));
-        console.log('✅ [POPUP] Propagation delay completed');
 
         // Now that transaction is confirmed and propagated, update the database
-        console.log('🔄 [POPUP] Starting database update after confirmation and propagation...');
         let updateResult = await apiService.updateOrderTransactionHashById(orderId, state.transactionHash);
-        console.log('📋 [POPUP] Database update result:', JSON.stringify(updateResult, null, 2));
 
         if (updateResult.success) {
-          console.log('✅ [POPUP] Order successfully updated in database');
           setState(prev => ({ ...prev, step: 'success' }));
         } else {
-          console.error('❌ [POPUP] Database update failed:', updateResult);
           // Still mark as success since the transaction was executed
           setState(prev => ({
             ...prev,
@@ -241,7 +216,6 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
           }));
         }
       } catch (error) {
-        console.error('💥 [POPUP] Error in signed state handling:', error);
 
         // Check if it's a timeout vs other error
         if (error instanceof Error && error.message.includes('timeout')) {
@@ -271,33 +245,23 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
     const primeFromDb = async () => {
       if (!isOpen || !orderId) return;
       try {
-        console.log('🔍 primeFromDb called:', { isOpen, orderId });
         const res = await fetch(`/api/polyswap/orders/id/${orderId}`);
         const json = await res.json();
         if (!res.ok || !json.success) return;
         if (abort) return;
         const order = json.data as { status: string; polymarket_order_hash?: string | null; transaction_hash?: string | null };
 
-        console.log('🔍 primeFromDb order data:', {
-          status: order.status,
-          hasPolymarketHash: !!order.polymarket_order_hash,
-          polymarketHash: order.polymarket_order_hash,
-          hasTransactionHash: !!order.transaction_hash
-        });
 
         // If Polymarket order already created, skip to transaction step
         if (order.polymarket_order_hash) {
-          console.log('📋 primeFromDb: Skipping to transaction step');
           setState(prev => ({
             ...prev,
             step: 'transaction',
             polymarketOrderHash: order.polymarket_order_hash || undefined
           }));
         } else {
-          console.log('📋 primeFromDb: Starting from polymarket step');
         }
       } catch (error) {
-        console.error('❌ primeFromDb error:', error);
       }
     };
     primeFromDb();
@@ -306,12 +270,10 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
 
 
   if (!isOpen) {
-    console.log('Popup is not open, returning null');
     return null;
   }
 
   const handleCreatePolymarketOrder = async (polymarketOrderHash: string) => {
-    console.log('✅ Polymarket order created, moving to transaction step:', polymarketOrderHash);
     setState(prev => ({
       ...prev,
       step: 'transaction',
@@ -326,12 +288,6 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
     const isBatch = transactionData.isBatch && Array.isArray(transactionData.transactions);
     const totalTxs = isBatch ? transactionData.transactions.length : 1;
 
-    console.log('✅ Transaction data received:', {
-      isBatch,
-      totalTxs,
-      hasTransactions: Array.isArray(transactionData.transactions),
-      transactionCount: transactionData.transactions?.length
-    });
 
     setState(prev => ({
       ...prev,
@@ -347,58 +303,29 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
   };
 
   const handleSendTransaction = async () => {
-    console.log('🚀 [POPUP] handleSendTransaction START');
-    console.log('🔍 [POPUP] Initial state check:', {
-      hasTransactionData: !!state.transactionData,
-      isSafeInitialized: state.isSafeInitialized,
-      step: state.step,
-      orderId: orderId,
-      canProceed: !!(state.transactionData && state.isSafeInitialized),
-      connectorName: connector?.name,
-      address: address
-    });
-    console.log('🔍 [POPUP] Transaction data structure:', JSON.stringify(state.transactionData, null, 2));
 
     if (!state.transactionData || !state.isSafeInitialized) {
-      console.error('❌ [POPUP] handleSendTransaction BLOCKED - Missing requirements:', {
-        transactionData: !!state.transactionData,
-        isSafeInitialized: state.isSafeInitialized
-      });
       return;
     }
 
-    console.log('🔄 [POPUP] Setting isSending = true');
     setIsSending(true);
     
     try {
       const isSafeApp = connector?.name === 'Safe';
       const isWalletConnect = connector?.name === 'WalletConnect';
 
-      console.log('🔍 [POPUP] Connector analysis:', {
-        connectorName: connector?.name,
-        isSafeApp,
-        isWalletConnect
-      });
 
       let transactionHash: string;
 
       // Check if this is a batch transaction (all Safe transactions are now batch format)
       const isBatchTransaction = state.transactionData.isBatch && Array.isArray(state.transactionData.transactions);
 
-      console.log('🔍 [POPUP] Transaction structure analysis:', {
-        isBatch: state.transactionData.isBatch,
-        hasTransactions: Array.isArray(state.transactionData.transactions),
-        transactionCount: state.transactionData.transactions?.length,
-        isBatchTransaction,
-        transactionDataKeys: Object.keys(state.transactionData)
-      });
 
       if (isSafeApp) {
         let result;
         
         if (isBatchTransaction) {
           // Use Safe SDK batch transaction method
-          console.log('Sending batch transaction via Safe SDK:', state.transactionData.transactions);
           result = await safeService.createBatchTransaction(
             state.transactionData.transactions.map((tx: any) => ({
               to: tx.to,
@@ -435,31 +362,23 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
         }
       } else if (isWalletConnect) {
         // Use WalletConnect Safe service directly - simplified flow
-        console.log('🎯 [POPUP] Using WalletConnect Safe service for transaction signing');
-        console.log('🔍 [POPUP] WalletConnect service initialized:', walletConnectSafeService.isInitialized());
 
         try {
           // Get transactions array - support both batch and single transaction formats
           const transactions = isBatchTransaction ? state.transactionData.transactions : [state.transactionData];
 
-          console.log('🔍 [POPUP] Transactions to process:', transactions.length);
-          console.log('📋 [POPUP] Transaction details:', JSON.stringify(transactions, null, 2));
 
           let results: any[];
 
           if (transactions.length === 1) {
             // Single transaction - use direct method
-            console.log('🔄 [POPUP] Processing single transaction');
             const result = await walletConnectSafeService.sendTransaction(transactions[0]);
             results = [result];
-            console.log('✅ [POPUP] Single transaction completed');
           } else {
             // Multiple transactions - use sequential method
-            console.log('🔄 [POPUP] Processing multiple transactions sequentially');
             results = await walletConnectSafeService.sendMultipleTransactions(
               transactions,
               (current, total, txType, txHash) => {
-                console.log(`📊 [POPUP] Progress update: ${current}/${total} - ${txType}`, txHash);
                 setState(prev => ({
                   ...prev,
                   transactionProgress: {
@@ -470,31 +389,24 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
                 }));
               }
             );
-            console.log('✅ [POPUP] Multiple transactions completed');
           }
 
-          console.log('🔍 [POPUP] All results received:', JSON.stringify(results, null, 2));
 
           // Get the last transaction hash (main transaction)
           const lastResult = results[results.length - 1];
           if (lastResult && lastResult.success) {
             transactionHash = lastResult.transactionHash;
-            console.log('🎉 [POPUP] All transactions signed successfully, main hash:', transactionHash);
 
             // Move to "signed" state - show success with tx hash but keep processing
-            console.log('🔄 [POPUP] Moving to signed state...');
             setState(prev => ({
               ...prev,
               step: 'signed',
               transactionHash: lastResult.transactionHash
             }));
-            console.log('✅ [POPUP] Moved to signed state');
           } else {
-            console.error('❌ [POPUP] Transaction results indicate failure:', results);
             throw new Error('Transaction signing failed');
           }
         } catch (walletConnectError) {
-          console.error('💥 [POPUP] WalletConnect Safe service failed:', walletConnectError);
           throw walletConnectError;
         }
       } else {
@@ -507,19 +419,11 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
       // This will be handled by the useEffect for 'signed' state
 
     } catch (error) {
-      console.error('💥 [POPUP] Transaction error occurred in handleSendTransaction');
-      console.error('🔍 [POPUP] Error type:', typeof error);
-      console.error('🔍 [POPUP] Error constructor:', error?.constructor?.name);
-      console.error('🔍 [POPUP] Error message:', error instanceof Error ? error.message : String(error));
-      console.error('🔍 [POPUP] Error code:', (error as any)?.code);
-      console.error('🔍 [POPUP] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
 
       // Determine error type based on the error message
       let errorType = 'send_transaction_failed';
       let errorMessage = error instanceof Error ? error.message : 'Failed to send transaction';
 
-      console.log('🔍 [POPUP] Processing error with type:', errorType);
-      console.log('🔍 [POPUP] Processing error with message:', errorMessage);
 
       // Enhanced error detection for user rejection and Safe-specific issues
       if (error instanceof Error) {
@@ -579,20 +483,15 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
         errorMessage = 'Transaction signing was refused by user';
       }
 
-      console.log('🔄 [POPUP] Setting error state...');
       setState(prev => ({
         ...prev,
         step: 'error',
         error: errorType,
         errorMessage: errorMessage
       }));
-      console.log('❌ [POPUP] Error state set with type:', errorType);
     } finally {
-      console.log('🏁 [POPUP] Transaction process complete, clearing loading states');
       setIsSending(false);
       setIsWaiting(false);
-      console.log('✅ [POPUP] Loading states cleared');
-      console.log('🏁 [POPUP] handleSendTransaction END');
     }
   };
 

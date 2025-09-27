@@ -720,7 +720,7 @@ export class DatabaseService {
    */
   static async updateOrderPolymarketHashById(orderId: number, polymarketOrderHash: string): Promise<boolean> {
     const sql = `
-      UPDATE polyswap_orders 
+      UPDATE polyswap_orders
       SET polymarket_order_hash = $1, updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
       RETURNING id
@@ -806,7 +806,8 @@ export class DatabaseService {
     logIndex: number,
     handler: string,
     appData: string,
-    orderHash: string
+    orderHash: string,
+    orderUid?: string
   ): Promise<boolean> {
     const sql = `
       UPDATE polyswap_orders
@@ -817,9 +818,10 @@ export class DatabaseService {
         handler = $4,
         app_data = $5,
         order_hash = $6,
+        order_uid = $7,
         status = 'live',
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $7
+      WHERE id = $8
       RETURNING id
     `;
     try {
@@ -830,6 +832,7 @@ export class DatabaseService {
         handler.toLowerCase(),
         appData,
         orderHash,
+        orderUid || null,
         orderId
       ]);
       console.log(`✅ Order ID ${orderId} updated with complete transaction details and set to live status`);
@@ -908,6 +911,23 @@ export class DatabaseService {
       return result.rows;
     } catch (error) {
       console.error('❌ Error fetching live orders:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get all polyswap orders (all statuses)
+   */
+  static async getAllPolyswapOrders(): Promise<DatabasePolyswapOrder[]> {
+    const sql = `
+      SELECT * FROM polyswap_orders
+      ORDER BY created_at ASC
+    `;
+    try {
+      const result = await query(sql);
+      return result.rows;
+    } catch (error) {
+      console.error('❌ Error fetching all orders:', error);
       return [];
     }
   }

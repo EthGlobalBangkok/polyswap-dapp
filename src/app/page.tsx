@@ -1,95 +1,80 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+'use client';
+
+import { useState } from 'react';
+import Navbar from '../components/layout/Navbar';
+import Footer from '../components/layout/Footer';
+import MarketGrid from '../components/ui/MarketGrid';
+import CreateOrderView from '../components/ui/CreateOrderView';
+import OrdersView from '../components/ui/OrdersView';
+import { Market } from '../types/market';
+import styles from './page.module.css';
+
+import { WagmiProvider } from 'wagmi'
+import { config } from '../wagmi/config'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+// Navigation states
+type ViewState = 'markets' | 'create-order' | 'orders';
 
 export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>src/app/page.tsx</code>.
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [currentView, setCurrentView] = useState<ViewState>('markets');
+  const [selectedMarketId, setSelectedMarketId] = useState<string | null>(null);
 
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
-          >
-            Read our docs
-          </a>
+  const handleMarketClick = (market: Market) => {
+    console.log('Creating conditional order for market:', market.title);
+    setSelectedMarketId(market.id);
+    setCurrentView('create-order');
+  };
+
+  const handleOrdersClick = () => {
+    setCurrentView('orders');
+  };
+
+  const handleBackToMarkets = () => {
+    setCurrentView('markets');
+    setSelectedMarketId(null);
+  };
+
+  const queryClient = new QueryClient()
+
+  // Render the appropriate view based on current state
+  const renderCurrentView = () => {
+    switch (currentView) {
+      case 'create-order':
+        return selectedMarketId ? (
+          <CreateOrderView 
+            marketId={selectedMarketId} 
+            onBack={handleBackToMarkets}
+          />
+        ) : null;
+      
+      case 'orders':
+        return <OrdersView onBack={handleBackToMarkets} />;
+      
+      case 'markets':
+      default:
+        return <MarketGrid onMarketClick={handleMarketClick} />;
+    }
+  };
+
+  return (
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <div className={styles.page}>
+          <Navbar 
+            onOrdersClick={handleOrdersClick}
+            onLogoClick={handleBackToMarkets}
+          />
+          
+          <main className={styles.main}>
+            <div className="container">
+              {renderCurrentView()}
+            </div>
+          </main>
+          
+          <Footer />
         </div>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }

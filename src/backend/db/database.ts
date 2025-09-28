@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-dotenvConfig({ path: resolve(__dirname, "../../.env") });
+dotenvConfig({ path: resolve(__dirname, "../../../.env") });
 
 // Database configuration
 const dbConfig = {

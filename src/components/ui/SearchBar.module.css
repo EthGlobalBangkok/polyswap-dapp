@@ -1,0 +1,230 @@
+.searchContainer {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.searchInputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background-color: var(--background-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-sm);
+  transition: all var(--transition-normal);
+}
+
+.searchInputWrapper:focus-within {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-primary-alpha);
+}
+
+.searchIcon {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  margin-right: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.searchInput {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 1rem;
+  outline: none;
+  padding: var(--spacing-sm) 0;
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+}
+
+.searchInput:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.categoryButton {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  background-color: var(--background-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  margin-left: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.categoryButton:hover {
+  background-color: var(--background-secondary);
+  border-color: var(--accent-primary);
+}
+
+.categoryButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.categoryLabel {
+  font-weight: 500;
+}
+
+.categoryArrow {
+  font-size: 0.8rem;
+  transition: transform var(--transition-normal);
+}
+
+.categoryDropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: var(--background-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-medium);
+  z-index: 1000;
+  margin-top: var(--spacing-xs);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.categoryOption {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  font-size: 0.9rem;
+}
+
+.categoryOption:hover {
+  background-color: var(--background-tertiary);
+  color: var(--text-primary);
+}
+
+.categoryOption.selected {
+  background-color: var(--accent-primary);
+  color: white;
+}
+
+.searchButton {
+  background-color: var(--accent-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  margin-left: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.searchButton:hover:not(:disabled) {
+  background-color: var(--accent-secondary);
+  transform: translateY(-1px);
+}
+
+.searchButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.clearButton {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-normal);
+  margin-left: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.clearButton:hover {
+  color: var(--text-primary);
+  background-color: var(--background-tertiary);
+}
+
+.clearButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.loadingSpinner {
+  margin-left: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-color);
+  border-top: 2px solid var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .searchInputWrapper {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+  }
+
+  .searchInput {
+    width: 100%;
+    order: 1;
+  }
+
+  .categoryButton {
+    width: 100%;
+    justify-content: space-between;
+    order: 2;
+    margin-left: 0;
+  }
+
+  .searchButton {
+    width: 100%;
+    order: 3;
+    margin-left: 0;
+  }
+
+  .clearButton {
+    position: absolute;
+    top: var(--spacing-sm);
+    right: var(--spacing-sm);
+    order: 0;
+  }
+
+  .categoryDropdown {
+    position: static;
+    margin-top: var(--spacing-sm);
+    order: 4;
+  }
+}
+
+@media (max-width: 480px) {
+  .searchContainer {
+    max-width: 100%;
+  }
+} 

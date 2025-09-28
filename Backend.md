@@ -12,16 +12,18 @@ The PolySwap backend provides:
 - **🔍 Order Tracking**: Real-time monitoring of PolySwap conditional orders created on-chain
 - **⚡ Blockchain Listener**: Automated event detection and processing from the ComposableCoW contract
 - **💾 Data Storage**: PostgreSQL database for efficient querying and historical data access
-- **🚀 RESTful API**: Clean endpoints for frontend integration and external applications
+- **🚀 Next.js API Routes**: Integrated API endpoints for frontend integration
+- **🔢 Order UID Management**: Automatic calculation and storage of CoW Protocol order UIDs
 
 ## 🏗️ Architecture
 
 ### Core Components
 
-* **Express API Server**: RESTful endpoints for market and order data
+* **Next.js API Routes**: RESTful endpoints integrated with the frontend application
 * **Blockchain Listener**: Real-time event monitoring using ethers.js
 * **PostgreSQL Database**: Persistent storage with optimized indexing
 * **Data Services**: Market data fetching from Polymarket CLOB API
+* **Order UID Calculation**: Automatic order UID generation using PolySwap Handler contract
 
 ### Event Processing
 
@@ -29,16 +31,26 @@ The listener monitors the **ComposableCoW** contract for `ConditionalOrderCreate
 
 1. **Filters** events to identify PolySwap orders (by handler address)
 2. **Decodes** the staticInput to extract order parameters
-3. **Validates** and processes the order data
-4. **Stores** order information in the database for API access
+3. **Calculates** order UIDs using the PolySwap Handler contract
+4. **Validates** and processes the order data
+5. **Stores** order information with UIDs in the database for API access
+
+### Order UID Calculation
+
+PolySwap automatically calculates and stores CoW Protocol order UIDs:
+
+- Uses the PolySwap Handler contract for order hash calculation
+- Combines order hash with owner address and validity timestamp
+- Stores UIDs for efficient order lookup and matching
+- Enables proper integration with CoW Protocol settlement
 
 ## 🧪 Stack
 
 * **Runtime**: [Node.js](https://nodejs.org/) with [TypeScript](https://www.typescriptlang.org/)
-* **API Framework**: [Express.js](https://expressjs.com/)
+* **Framework**: [Next.js 15](https://nextjs.org/) with App Router
 * **Blockchain**: [ethers.js v6](https://docs.ethers.org/v6/) for Polygon interaction
 * **Database**: [PostgreSQL 15](https://www.postgresql.org/) with Docker
-* **Development**: [ts-node](https://typestrong.org/ts-node/) for development server
+* **Package Manager**: [pnpm](https://pnpm.io/) for fast, efficient dependency management
 
 ## 📡 API Endpoints
 
@@ -46,29 +58,58 @@ The listener monitors the **ComposableCoW** contract for `ConditionalOrderCreate
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/markets/top` | Top 50 markets by volume |
+| `GET` | `/api/markets/top` | Top markets by volume |
 | `GET` | `/api/markets/search?q=keywords` | Search markets by keywords |
 | `GET` | `/api/markets/:id` | Get market by ID or condition ID |
+| `GET` | `/api/markets/category/:category` | Get markets by category |
 | `GET` | `/api/markets` | Get all markets with pagination |
 
 ### PolySwap Order Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `POST` | `/api/polyswap/orders/create` | Create a new draft order |
 | `GET` | `/api/polyswap/orders/:owner` | Get orders by owner address |
 | `GET` | `/api/polyswap/orders/hash/:orderHash` | Get order by hash |
+| `GET` | `/api/polyswap/orders/id/:id` | Get order by ID |
+| `PUT` | `/api/polyswap/orders/id/:id/transaction` | Update order with transaction hash |
+| `GET` | `/api/polyswap/orders/id/:id/batch-transaction` | Get batch transaction data |
 | `GET` | `/api/polyswap/orders` | Get all orders with pagination |
 | `GET` | `/api/polyswap/orders/polymarket/:hash` | Get orders by Polymarket hash |
-| `GET` | `/api/polyswap/orders/stats` | Get order statistics |
+| `PUT` | `/api/polyswap/orders/remove` | Cancel/remove orders |
+
+### Token Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/tokens` | Get supported token list |
 
 ### Utility Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/health` | Health check endpoint |
-| `GET` | `/` | Welcome message |
+| `GET` | `/api/health` | Health check endpoint |
 
 ## 🔍 API Examples
+
+### Create a New Order
+
+```bash
+curl -X POST "http://localhost:3000/api/polyswap/orders/create" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sellToken": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+    "buyToken": "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6",
+    "sellAmount": "1000000000",
+    "minBuyAmount": "500000000000000000",
+    "selectedOutcome": 0,
+    "betPercentage": "50",
+    "startDate": "now",
+    "deadline": "2024-12-31T23:59:59Z",
+    "marketId": "market_123",
+    "owner": "0x1234...5678"
+  }'
+```
 
 ### Get Top Markets
 
@@ -88,6 +129,16 @@ curl "http://localhost:3000/api/markets/search?q=trump,election&type=all"
 curl "http://localhost:3000/api/polyswap/orders/0x1234...5678"
 ```
 
+### Update Order with Transaction Hash
+
+```bash
+curl -X PUT "http://localhost:3000/api/polyswap/orders/id/123/transaction" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transactionHash": "0xabcd...1234"
+  }'
+```
+
 ## 🎧 Blockchain Listener
 
 The listener continuously monitors the Polygon blockchain for PolySwap order creation events.
@@ -99,6 +150,7 @@ The listener continuously monitors the Polygon blockchain for PolySwap order cre
 - **Error Handling**: Robust error recovery and reconnection logic
 - **Data Validation**: Ensures order data integrity before database insertion
 - **Batch Processing**: Efficient processing of large event ranges
+- **Order UID Calculation**: Automatic generation of CoW Protocol order UIDs
 
 ### Order Data Structure
 
@@ -106,7 +158,9 @@ The listener extracts and stores the following order information:
 
 ```typescript
 {
-  orderHash: string;        // Unique order identifier
+  id: number;              // Database ID
+  orderHash: string;       // Unique order identifier from event
+  orderUid: string;        // CoW Protocol order UID (calculated)
   owner: string;           // Order creator address
   handler: string;         // PolySwap handler contract
   sellToken: string;       // Token to sell
@@ -120,6 +174,7 @@ The listener extracts and stores the following order information:
   blockNumber: number;     // Block where order was created
   transactionHash: string; // Transaction hash
   logIndex: number;        // Event log index
+  status: string;          // Order status (draft, live, filled, canceled)
 }
 ```
 
@@ -127,11 +182,48 @@ The listener extracts and stores the following order information:
 
 ### Markets Table
 
-Stores Polymarket prediction market data with essential fields for efficient querying.
+Stores Polymarket prediction market data with essential fields for efficient querying:
+
+- Market identifiers and metadata
+- Outcome information and pricing
+- Volume and liquidity data
+- Category and search indexing
 
 ### PolySwap Orders Table
 
-Stores conditional order data extracted from blockchain events with optimized indexes for common query patterns.
+Stores conditional order data extracted from blockchain events with optimized indexes:
+
+- Order parameters and timing
+- Blockchain event data
+- **Order UID storage** for CoW Protocol integration
+- Status tracking and lifecycle management
+- Foreign key relationships to markets
+
+### Key Database Features
+
+- **Order UID Indexing**: Fast lookup by CoW Protocol order UID
+- **Owner Indexing**: Efficient queries by wallet address
+- **Status Filtering**: Quick retrieval by order status
+- **Timestamp Indexing**: Time-based queries and analytics
+
+## 🔢 Order UID Management
+
+PolySwap includes comprehensive order UID calculation and management:
+
+### Calculation Process
+
+1. **Event Detection**: ConditionalOrderCreated event triggers UID calculation
+2. **Data Assembly**: Combines order parameters from database and event
+3. **Contract Call**: Uses PolySwap Handler contract to calculate order hash
+4. **UID Generation**: Combines order hash + owner + validTo timestamp
+5. **Storage**: Saves UID to database for future reference
+
+### Service Integration
+
+- Automatic calculation during order finalization
+- Integration with CoW Protocol settlement
+- Support for order lookup by UID
+- Efficient batching for historical orders
 
 ## 📊 Monitoring & Logging
 
@@ -140,26 +232,35 @@ The system provides comprehensive logging for:
 - **API Requests**: Request/response logging with timing
 - **Event Processing**: Detailed blockchain event processing logs
 - **Database Operations**: Query execution and performance metrics
+- **Order UID Calculation**: UID generation process and results
 - **Error Tracking**: Structured error logging with context
 
 ### Code Structure
 
 ```
 src/
-├── index.ts              # Express API server entry point
-├── listener.ts           # Blockchain event listener
-├── db/
-│   └── database.ts       # Database connection utilities
-├── interfaces/
-│   ├── Market.ts         # Market data types
-│   ├── PolyswapOrder.ts  # Order data types
-│   └── Database.ts       # Database result types
-├── routes/
-│   ├── market.ts         # Market API endpoints
-│   └── polyswapOrder.ts  # Order API endpoints
-└── services/
-    ├── databaseService.ts      # Database operations
-    └── polymarketAPIService.ts # External API integration
+├── app/
+│   └── api/                    # Next.js API routes
+│       ├── health/            # Health check endpoints
+│       ├── markets/           # Market data endpoints
+│       ├── polyswap/          # Order management endpoints
+│       └── tokens/            # Token information endpoints
+├── backend/
+│   ├── listener.ts            # Blockchain event listener
+│   ├── db/
+│   │   └── database.ts        # Database connection utilities
+│   ├── interfaces/
+│   │   ├── Market.ts          # Market data types
+│   │   ├── PolyswapOrder.ts   # Order data types
+│   │   └── Database.ts        # Database result types
+│   └── services/
+│       ├── databaseService.ts           # Database operations
+│       ├── polymarketAPIService.ts      # External API integration
+│       ├── orderUidCalculationService.ts # Order UID calculation
+│       ├── transactionEventService.ts   # Event processing
+│       └── transactionEncodingService.ts # Transaction encoding
+└── components/                 # Frontend components
+    └── ui/                    # UI components and order management
 ```
 
 ## 🧑‍💻 Authors

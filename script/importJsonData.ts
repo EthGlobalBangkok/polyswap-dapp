@@ -56,21 +56,20 @@ async function loadDataFromJson() {
       
       console.log(`🔄 Processing batch ${batchNumber}/${totalBatches} (${batch.length} markets)...`);
       
-      for (const market of batch) {
-        try {
-          await DatabaseService.insertMarket(market);
-          successCount++;
-        } catch (error) {
-          errorCount++;
-          console.error(`❌ Error inserting market ${market.id} (${market.question.substring(0, 50)}...):`, 
-            error instanceof Error ? error.message : error);
-        }
-        processedCount++;
-        
-        // Show progress every 500 markets
-        if (processedCount % 500 === 0) {
-          console.log(`📊 Progress: ${processedCount}/${markets.length} markets processed (${successCount} success, ${errorCount} errors)`);
-        }
+      try {
+        await DatabaseService.insertMarkets(batch);
+        successCount += batch.length;
+      } catch (error) {
+        errorCount += batch.length;
+        console.error(`❌ Error inserting batch ${batchNumber}:`, 
+          error instanceof Error ? error.message : error);
+      }
+      
+      processedCount += batch.length;
+      
+      // Show progress every 500 markets
+      if (processedCount % 500 === 0) {
+        console.log(`📊 Progress: ${processedCount}/${markets.length} markets processed (${successCount} success, ${errorCount} errors)`);
       }
       
       // Small delay between batches to be gentle on the database
@@ -98,7 +97,7 @@ async function loadDataFromJson() {
     console.log('\n🔍 Running sample queries...');
     
     // Find Trump-related markets
-    const trumpMarkets = await DatabaseService.getMarketsByQuestion('Trump');
+    const trumpMarkets = await DatabaseService.searchMarkets('Trump');
     console.log(`Found ${trumpMarkets.length} markets containing "Trump"`);
     
     // Find high-volume markets
@@ -108,6 +107,16 @@ async function loadDataFromJson() {
     // Find markets ending soon
     const soonEndingMarkets = await DatabaseService.getMarketsEndingAfter(new Date());
     console.log(`Found ${soonEndingMarkets.length} markets ending after today`);
+    
+    // Show category distribution
+    console.log('\n📊 Category distribution:');
+    const categories = ['Politics', 'Crypto', 'Economics', 'Sports', 'Entertainment', 'World', 'Technology', 'Other'];
+    for (const category of categories) {
+      const categoryMarkets = await DatabaseService.getMarketsByCategory(category, 1);
+      if (categoryMarkets.length > 0) {
+        console.log(`  ${category}: ${categoryMarkets.length} markets`);
+      }
+    }
     
     console.log('\n✅ Data import completed successfully!');
     

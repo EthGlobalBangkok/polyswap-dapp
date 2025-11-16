@@ -478,13 +478,57 @@ class ApiService {
 
   async getMarketBySlug(slug: string): Promise<ApiMarket | null> {
     const response = await this.fetchApi(`/markets/search?q=${slug}&type=slug`);
-    
+
     if (response.success && response.data && Array.isArray(response.data) && response.data.length > 0) {
       const marketData = response.data[0];
       return this.convertBackendMarket(marketData);
     }
     // Gracefully indicate no slug match without throwing
     return null;
+  }
+
+  // Get a swap quote from CoW Protocol
+  async getQuote(params: {
+    sellToken: string;
+    buyToken: string;
+    sellAmount: string;
+    userAddress: string;
+    chainId?: number;
+  }): Promise<{
+    success: boolean;
+    data?: {
+      buyAmount: string;
+      sellAmount: string;
+      feeAmount: string;
+      validTo: number;
+      exchangeRate: string;
+      buyAmountFormatted: string;
+      sellAmountFormatted: string;
+      sellTokenUsdPrice: number | null;
+      buyTokenUsdPrice: number | null;
+    };
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/polyswap/quote`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(params),
+      });
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Failed to fetch quote:', error);
+      return {
+        success: false,
+        error: 'Failed to fetch quote',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
   }
 }
 

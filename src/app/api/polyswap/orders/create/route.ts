@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ethers } from 'ethers';
 import { DatabaseService } from '../../../../../backend/services/databaseService';
 
 export async function POST(request: NextRequest) {

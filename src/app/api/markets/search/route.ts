@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
         }, { status: 400 });
       }
       if (type === 'slug') {
-        let market = await DatabaseService.getMarketBySlug(keywords[0]);
+        const market = await DatabaseService.getMarketBySlug(keywords[0]);
         if (market) {
           markets.push(market);
         }

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../backend/services/databaseService';
 import { transformDatabaseMarkets } from '../../../../backend/utils/transformers';
 

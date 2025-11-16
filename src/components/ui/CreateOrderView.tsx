@@ -44,10 +44,22 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<number | null>(null); // Changed from orderHash to orderId
   const [showBroadcastPopup, setShowBroadcastPopup] = useState(false);
-  
+
   // Token selector modals state
   const [showSellTokenSelector, setShowSellTokenSelector] = useState(false);
   const [showBuyTokenSelector, setShowBuyTokenSelector] = useState(false);
+
+  // Quote state
+  const [quote, setQuote] = useState<{
+    buyAmount: string;
+    sellAmount: string;
+    feeAmount: string;
+    exchangeRate: string;
+    sellTokenUsdPrice: number | null;
+    buyTokenUsdPrice: number | null;
+  } | null>(null);
+  const [isLoadingQuote, setIsLoadingQuote] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
 
   // Date utility functions
   const formatDateTimeLocal = (date: Date) => {
@@ -68,10 +80,6 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
     return formatDateTimeLocal(now);
   };
 
-  const getCurrentDateTime = () => {
-    return formatDateTimeLocal(new Date());
-  };
-  
   // Form state
   const [formData, setFormData] = useState<OrderFormData>(() => {
     const now = new Date();
@@ -181,6 +189,76 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
     fetchMarketData();
     fetchTokens();
   }, [marketId]);
+
+  // Debounced quote fetching
+  useEffect(() => {
+    // Only fetch quote if we have all required data
+    if (!formData.sellAmount || !formData.sellToken || !formData.buyToken || !address || parseFloat(formData.sellAmount) <= 0) {
+      setQuote(null);
+      setQuoteError(null);
+      return;
+    }
+
+    const sellToken = tokens.find(t => t.symbol === formData.sellToken);
+    const buyToken = tokens.find(t => t.symbol === formData.buyToken);
+
+    if (!sellToken || !buyToken) {
+      return;
+    }
+
+    // Debounce the quote fetching by 500ms
+    const timeoutId = setTimeout(async () => {
+      try {
+        setIsLoadingQuote(true);
+        setQuoteError(null);
+
+        // Convert sell amount to wei
+        const sellAmountWei = (BigInt(Math.floor(parseFloat(formData.sellAmount) * Math.pow(10, sellToken.decimals)))).toString();
+
+        const result = await apiService.getQuote({
+          sellToken: sellToken.address,
+          buyToken: buyToken.address,
+          sellAmount: sellAmountWei,
+          userAddress: address,
+          chainId: sellToken.chainId,
+        });
+
+        if (result.success && result.data) {
+
+          const quoteData = {
+            buyAmount: result.data.buyAmount,
+            sellAmount: result.data.sellAmount,
+            feeAmount: result.data.feeAmount,
+            exchangeRate: result.data.exchangeRate,
+            sellTokenUsdPrice: result.data.sellTokenUsdPrice,
+            buyTokenUsdPrice: result.data.buyTokenUsdPrice,
+          };
+
+          setQuote(quoteData);
+
+          // Auto-fill buy amount if not manually set
+          const currentMinBuyAmount = formData.minBuyAmount;
+          if (parseFloat(currentMinBuyAmount) === 0) {
+            const buyAmountFormatted = (parseFloat(result.data.buyAmount) / Math.pow(10, buyToken.decimals)).toFixed(6);
+            setFormData(prev => ({ ...prev, minBuyAmount: buyAmountFormatted }));
+          }
+
+          setQuoteError(null);
+        } else {
+          setQuoteError(result.message || 'Failed to fetch quote');
+          setQuote(null);
+        }
+      } catch {
+        setQuoteError('Failed to fetch quote');
+        setQuote(null);
+      } finally {
+        setIsLoadingQuote(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.sellAmount, formData.sellToken, formData.buyToken, address, tokens]);
 
   const handleInputChange = (field: keyof OrderFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -429,8 +507,13 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
   };
 
   const calculateMinReceive = () => {
-    // TODO: Implement logic to calculate minimum receive amount based on market conditions
-    return '0'
+    if (quote && quote.buyAmount) {
+      const buyToken = getTokenData(formData.buyToken);
+      if (buyToken) {
+        return (parseFloat(quote.buyAmount) / Math.pow(10, buyToken.decimals)).toFixed(6);
+      }
+    }
+    return '0';
   };
 
   // Utility functions for token calculations
@@ -440,19 +523,62 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
     return BigInt(Math.floor(amountFloat * Math.pow(10, decimals)));
   };
 
-  const calculateTokenUsdValue = (amount: string, tokenSymbol: string): string => {
-    // For now, return amount without USD conversion since we don't have price data
-    // TODO: Integrate with a price API for real USD values
-    if (!amount || amount === '0') return '0';
-    return amount;
+  const calculateSellValue = () => {
+    if (!formData.sellAmount || !quote) return '$0.00';
+
+    // Use the sell token USD price from the quote
+    if (quote.sellTokenUsdPrice !== null && quote.sellTokenUsdPrice !== undefined) {
+      const usdValue = parseFloat(formData.sellAmount) * quote.sellTokenUsdPrice;
+      return `$${usdValue.toFixed(2)}`;
+    }
+
+    return '$0.00';
   };
 
   const calculateEstimatedValue = () => {
-    return calculateTokenUsdValue(formData.minBuyAmount, formData.buyToken);
+    if (!formData.minBuyAmount || !quote) return '$0.00';
+
+    // Use the buy token USD price from the quote
+    if (quote.buyTokenUsdPrice !== null && quote.buyTokenUsdPrice !== undefined) {
+      const usdValue = parseFloat(formData.minBuyAmount) * quote.buyTokenUsdPrice;
+      return `$${usdValue.toFixed(2)}`;
+    }
+
+    return '$0.00';
   };
 
-  const calculateSellValue = () => {
-    return calculateTokenUsdValue(formData.sellAmount, formData.sellToken);
+  const getExchangeRateDisplay = (): string => {
+    if (!quote || !quote.buyAmount || !quote.sellAmount) return '';
+
+    const sellToken = getTokenData(formData.sellToken);
+    const buyToken = getTokenData(formData.buyToken);
+
+    if (!sellToken || !buyToken) return '';
+
+    // Convert wei amounts to human-readable amounts
+    const buyAmountWei = parseFloat(quote.buyAmount);
+    const sellAmountWei = parseFloat(quote.sellAmount);
+    const buyAmountHuman = buyAmountWei / Math.pow(10, buyToken.decimals);
+    const sellAmountHuman = sellAmountWei / Math.pow(10, sellToken.decimals);
+
+    // Calculate human-readable exchange rate
+    const humanRate = buyAmountHuman / sellAmountHuman;
+
+    // Format with appropriate precision
+    let formattedRate: string;
+    if (humanRate < 0.000001) {
+      formattedRate = humanRate.toExponential(6);
+    } else if (humanRate < 0.01) {
+      formattedRate = humanRate.toFixed(8);
+    } else if (humanRate < 1) {
+      formattedRate = humanRate.toFixed(6);
+    } else if (humanRate < 1000) {
+      formattedRate = humanRate.toFixed(4);
+    } else {
+      formattedRate = humanRate.toFixed(2);
+    }
+
+    return `1 ${sellToken.symbol} ≈ ${formattedRate} ${buyToken.symbol}`;
   };
 
   const calculateDaysUntilDeadline = () => {
@@ -627,7 +753,13 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
                       )}
                     </button>
                   </div>
-                  <div className={styles.tokenValue}>≈ {calculateSellValue()}</div>
+                  <div className={styles.tokenValue}>
+                    {isLoadingQuote ? (
+                      <span style={{ opacity: 0.6 }}>Loading...</span>
+                    ) : (
+                      calculateSellValue()
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -675,7 +807,23 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
                       )}
                     </button>
                   </div>
-                  <div className={styles.tokenValue}>≈ {calculateEstimatedValue()}</div>
+                  <div className={styles.tokenValue}>
+                    {isLoadingQuote ? (
+                      <span style={{ opacity: 0.6 }}>Loading...</span>
+                    ) : (
+                      calculateEstimatedValue()
+                    )}
+                  </div>
+                  {quote && getExchangeRateDisplay() && (
+                    <div className={styles.exchangeRate} style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                      {getExchangeRateDisplay()}
+                    </div>
+                  )}
+                  {quoteError && (
+                    <div style={{ fontSize: '12px', color: '#ff6b6b', marginTop: '4px' }}>
+                      {quoteError}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

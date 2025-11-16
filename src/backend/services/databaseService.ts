@@ -639,7 +639,7 @@ export class DatabaseService {
       UPDATE polyswap_orders
       SET status = $1, updated_at = CURRENT_TIMESTAMP
     `;
-    let values: any[] = [status];
+    const values: unknown[] = [status];
     let paramIndex = 2;
 
     if (fillDetails) {

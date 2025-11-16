@@ -262,7 +262,7 @@ export class PolymarketOrderService {
       // We need to be careful with the precision here
       const requiredAmount = (priceBigInt * sizeBigInt * decimalsMultiplier) / (1000000n * 1000000n);
 
-      let ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
+      const ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
       if (!ok) {
         throw new Error('Insufficient allowance for USDC');
       }
@@ -315,7 +315,7 @@ export class PolymarketOrderService {
 
       await this.clobClient?.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
 
-      let ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
+      const ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
       if (!ok) {
         throw new Error('Insufficient allowance for USDC');
       }

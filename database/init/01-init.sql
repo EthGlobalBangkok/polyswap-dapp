@@ -66,6 +66,14 @@ CREATE TABLE IF NOT EXISTS polyswap_orders (
     outcome_selected VARCHAR(256), -- Selected outcome index
     bet_percentage DECIMAL(5, 2), -- Bet percentage (0-100)
     status VARCHAR(20) NOT NULL DEFAULT 'draft', -- Order status: draft|live|filled|canceled
+    order_uid VARCHAR(114), -- CoW Protocol order UID (56 bytes = 0x + 112 hex chars)
+    filled_at TIMESTAMP WITH TIME ZONE, -- When the order was filled
+    fill_transaction_hash VARCHAR(66), -- Transaction hash of the Trade event
+    fill_block_number BIGINT, -- Block number where order was filled
+    fill_log_index INTEGER, -- Log index of the Trade event
+    actual_sell_amount DECIMAL(78, 0), -- Actual amount of tokens sold
+    actual_buy_amount DECIMAL(78, 0), -- Actual amount of tokens bought
+    fee_amount DECIMAL(78, 0), -- Trade fee amount
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
@@ -90,7 +98,7 @@ CREATE INDEX IF NOT EXISTS idx_polyswap_orders_block_number ON polyswap_orders(b
 CREATE INDEX IF NOT EXISTS idx_polyswap_orders_polymarket_hash ON polyswap_orders(polymarket_order_hash);
 CREATE INDEX IF NOT EXISTS idx_polyswap_orders_market_id ON polyswap_orders(market_id);
 CREATE INDEX IF NOT EXISTS idx_polyswap_orders_status ON polyswap_orders(status);
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_status ON polyswap_orders(status);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_order_uid ON polyswap_orders(order_uid);
 
 -- Create trigger to automatically update updated_at for polyswap_orders
 CREATE TRIGGER update_polyswap_orders_updated_at 

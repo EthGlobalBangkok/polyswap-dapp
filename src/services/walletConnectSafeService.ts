@@ -356,6 +356,8 @@ export class WalletConnectSafeService {
       if (totalTxs > 1) {
         if (tx.data.startsWith('0xf08a0323')) {
           txType = 'Set Fallback Handler';
+        } else if (tx.data.startsWith('0x3365582c')) {
+          txType = 'Set Domain Verifier';
         } else if (tx.data.startsWith('0x095ea7b3')) {
           txType = 'Token Approval';
         } else {
@@ -424,6 +426,8 @@ export class WalletConnectSafeService {
       if (totalTxs > 1) {
         if (tx.data.startsWith('0xf08a0323')) {
           txType = 'Set Fallback Handler';
+        } else if (tx.data.startsWith('0x3365582c')) {
+          txType = 'Set Domain Verifier';
         } else if (tx.data.startsWith('0x095ea7b3')) {
           txType = 'Token Approval';
         } else {

@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { ERC20ApprovalService } from './erc20ApprovalService';
 import { SafeFallbackHandlerService } from './safeFallbackHandlerService';
+import { SafeDomainVerifierService } from './safeDomainVerifierService';
 
 export interface BatchTransactionRequest {
   to: string;
@@ -14,6 +15,8 @@ export interface BatchTransactionResult {
   approvalTransaction?: BatchTransactionRequest;
   needsFallbackHandler: boolean;
   fallbackHandlerTransaction?: BatchTransactionRequest;
+  needsDomainVerifier: boolean;
+  domainVerifierTransaction?: BatchTransactionRequest;
   mainTransaction: BatchTransactionRequest;
 }
 
@@ -40,6 +43,8 @@ export class SafeBatchService {
       const transactions: BatchTransactionRequest[] = [];
       let needsFallbackHandler = false;
       let fallbackHandlerTransaction: BatchTransactionRequest | undefined;
+      let needsDomainVerifier = false;
+      let domainVerifierTransaction: BatchTransactionRequest | undefined;
 
       // Step 1: Check if Safe fallback handler needs to be set
       try {
@@ -56,7 +61,6 @@ export class SafeBatchService {
         });
 
         if (fallbackTx) {
-          console.log('🚨 ADDING FALLBACK HANDLER TO BATCH - THIS SHOULD NOT HAPPEN!');
           needsFallbackHandler = true;
           fallbackHandlerTransaction = {
             to: fallbackTx.to,
@@ -64,6 +68,30 @@ export class SafeBatchService {
             value: fallbackTx.value
           };
           transactions.push(fallbackHandlerTransaction);
+
+          // Step 1.5: Add domain verifier transaction when fallback handler is being set
+          // Note: Gas estimation will fail for this tx since fallback handler isn't set yet,
+          // but the transaction itself is valid and will execute successfully in the batch
+          // after the fallback handler is set (Safe executes batch transactions sequentially)
+          try {
+            const domainVerifierTx = await SafeDomainVerifierService.createDomainVerifierTransaction(
+              ownerAddress,
+              provider
+            );
+
+            needsDomainVerifier = true;
+            domainVerifierTransaction = {
+              to: domainVerifierTx.to,
+              data: domainVerifierTx.data,
+              value: domainVerifierTx.value
+            };
+            transactions.push(domainVerifierTransaction);
+
+            console.log('🔐 ADDING DOMAIN VERIFIER TO BATCH (will execute after fallback handler)');
+          } catch (domainError) {
+            console.warn('Could not create domain verifier transaction:', domainError);
+            // Continue without domain verifier - the fallback handler will still be set
+          }
         }
       } catch (error) {
         console.warn('Could not check fallback handler (may not be a Safe wallet):', error);
@@ -104,6 +132,8 @@ export class SafeBatchService {
         approvalTransaction,
         needsFallbackHandler,
         fallbackHandlerTransaction,
+        needsDomainVerifier,
+        domainVerifierTransaction,
         mainTransaction
       };
 
@@ -167,6 +197,7 @@ export class SafeBatchService {
     transactionCount: number;
     hasApproval: boolean;
     hasFallbackHandler: boolean;
+    hasDomainVerifier: boolean;
     summary: string[];
   } {
     const summary: string[] = [];
@@ -174,6 +205,11 @@ export class SafeBatchService {
 
     if (batchResult.needsFallbackHandler) {
       summary.push(`${step}. Set Safe fallback handler to PolySwap handler`);
+      step++;
+    }
+
+    if (batchResult.needsDomainVerifier) {
+      summary.push(`${step}. Set Safe domain verifier for CoW Protocol`);
       step++;
     }
 
@@ -188,6 +224,7 @@ export class SafeBatchService {
       transactionCount: batchResult.transactions.length,
       hasApproval: batchResult.needsApproval,
       hasFallbackHandler: batchResult.needsFallbackHandler,
+      hasDomainVerifier: batchResult.needsDomainVerifier,
       summary
     };
   }
@@ -208,6 +245,18 @@ export class SafeBatchService {
       const estimates: bigint[] = [];
       
       for (const tx of batchResult.transactions) {
+        // Skip gas estimation for setDomainVerifier when fallback handler is being set in the same batch
+        // The transaction is valid but gas estimation fails because fallback handler isn't set yet
+        const isSetDomainVerifier = tx.data.startsWith('0x3365582c');
+        const isSetFallbackHandler = tx.data.startsWith('0xf08a0323');
+
+        if (isSetDomainVerifier && batchResult.needsFallbackHandler) {
+          // Domain verifier transaction in same batch as fallback handler - skip estimation
+          console.log('⚠️ Skipping gas estimation for setDomainVerifier (will execute after fallback handler)');
+          estimates.push(BigInt(100000)); // Reasonable default for this transaction
+          continue;
+        }
+
         try {
           const gasEstimate = await provider.estimateGas({
             to: tx.to,
@@ -219,7 +268,16 @@ export class SafeBatchService {
         } catch (error) {
           console.warn('Gas estimation failed for transaction, using default:', error);
           // Use reasonable defaults for different transaction types
-          const defaultGas = tx.data.startsWith('0xa9059cbb') ? BigInt(65000) : BigInt(200000); // transfer vs complex
+          let defaultGas: bigint;
+          if (tx.data.startsWith('0xa9059cbb')) {
+            defaultGas = BigInt(65000); // ERC20 transfer
+          } else if (isSetFallbackHandler) {
+            defaultGas = BigInt(750000); // setFallbackHandler
+          } else if (isSetDomainVerifier) {
+            defaultGas = BigInt(100000); // setDomainVerifier
+          } else {
+            defaultGas = BigInt(200000); // complex transaction
+          }
           estimates.push(defaultGas);
         }
       }

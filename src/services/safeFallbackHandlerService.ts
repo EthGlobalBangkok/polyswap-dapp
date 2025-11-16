@@ -41,15 +41,7 @@ export class SafeFallbackHandlerService {
       );
 
       // Parse the bytes32 value to get the address
-      // Remove leading zeros and format as address
       const fallbackHandler = ethers.getAddress('0x' + storageValue.slice(-40));
-
-      console.log('getCurrentFallbackHandler result:', {
-        safeAddress,
-        storageValue,
-        parsedHandler: fallbackHandler
-      });
-
       return fallbackHandler;
     } catch (error) {
       console.error('Error reading fallback handler storage:', error);
@@ -75,17 +67,6 @@ export class SafeFallbackHandlerService {
 
       const isCorrect = currentNormalized === expectedNormalized;
       const needsUpdate = !isCorrect;
-
-      // Debug logging
-      console.log('Fallback handler check:', {
-        safeAddress,
-        current,
-        expected,
-        currentNormalized,
-        expectedNormalized,
-        isCorrect,
-        needsUpdate
-      });
 
       return {
         currentHandler: current,
@@ -143,20 +124,10 @@ export class SafeFallbackHandlerService {
     try {
       const check = await this.checkFallbackHandler(safeAddress, provider, expectedHandler);
 
-      console.log('🔍 BEFORE RETURN - checkAndCreateFallbackHandlerTransaction:', {
-        safeAddress,
-        needsUpdate: check.needsUpdate,
-        willCreateTransaction: check.needsUpdate
-      });
-
       if (check.needsUpdate) {
-        const transaction = this.createSetFallbackHandlerTransaction(safeAddress, check.expectedHandler);
-        console.log('🚨 CREATING FALLBACK HANDLER TRANSACTION:', transaction);
-        return transaction;
-      } else {
-        console.log('✅ NO FALLBACK HANDLER TRANSACTION NEEDED');
-        return null;
+        return this.createSetFallbackHandlerTransaction(safeAddress, check.expectedHandler);
       }
+      return null;
     } catch (error) {
       console.error('Error checking and creating fallback handler transaction:', error);
       throw new Error(`Failed to check/create fallback handler transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);

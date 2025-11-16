@@ -38,25 +38,9 @@ export class ERC20ApprovalService {
         throw new Error('SPENDER address not configured in environment variables');
       }
 
-      console.log('Checking ERC20 approval:', {
-        token: tokenAddress,
-        owner: ownerAddress,
-        spender: this.SPENDER_ADDRESS,
-        amount: amount
-      });
-
       const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
-      
-      // Get current allowance
       const currentAllowance = await tokenContract.allowance(ownerAddress, this.SPENDER_ADDRESS);
       const requiredAmount = BigInt(amount);
-      
-      console.log('Allowance check result:', {
-        currentAllowance: currentAllowance.toString(),
-        requiredAmount: requiredAmount.toString(),
-        needsApproval: currentAllowance < requiredAmount
-      });
-
       const needsApproval = currentAllowance < requiredAmount;
       
       let approvalData: string | undefined;

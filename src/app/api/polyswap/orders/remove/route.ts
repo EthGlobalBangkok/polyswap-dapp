@@ -15,12 +15,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('🗑️ Remove order request:', {
-      orderHash,
-      ownerAddress
-    });
-
-    // Validate that the order exists and is owned by the user
     const order = await DatabaseService.getPolyswapOrderByHashAndOwner(orderHash, ownerAddress.toLowerCase());
     if (!order) {
       return NextResponse.json(
@@ -51,31 +45,16 @@ export async function POST(request: NextRequest) {
       value: '0'
     };
 
-    console.log('🔧 Generated remove transaction:', {
-      to: removeTransaction.to,
-      data: removeTransaction.data,
-      orderHash
-    });
-
-    // Step 1: Cancel the Polymarket order if it exists
     let polymarketCanceled = false;
     if (order.polymarket_order_hash && order.polymarket_order_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
       try {
-        console.log('🚫 Canceling Polymarket order:', order.polymarket_order_hash);
-
         const polymarketOrderService = getPolymarketOrderService();
         await polymarketOrderService.initialize();
-
-        const cancelResult = await polymarketOrderService.cancelOrder(order.polymarket_order_hash);
-        console.log('✅ Polymarket order canceled successfully:', cancelResult);
+        await polymarketOrderService.cancelOrder(order.polymarket_order_hash);
         polymarketCanceled = true;
       } catch (polymarketError) {
-        console.error('❌ Failed to cancel Polymarket order:', polymarketError);
-        // Don't fail the entire request - continue with CoW Protocol cancellation
-        // but log the error for debugging
+        console.error('Failed to cancel Polymarket order:', polymarketError);
       }
-    } else {
-      console.log('ℹ️ No Polymarket order to cancel (order hash is null or empty)');
     }
 
     // Return transaction data for frontend execution
@@ -112,13 +91,6 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    console.log('🔄 Update order cancellation request:', {
-      orderHash,
-      transactionHash,
-      confirmed
-    });
-
-    // Validate that the order exists
     const order = await DatabaseService.getPolyswapOrderByHash(orderHash);
     if (!order) {
       return NextResponse.json(
@@ -134,11 +106,6 @@ export async function PUT(request: NextRequest) {
     );
 
     if (result) {
-      console.log('✅ Order status updated to canceled successfully:', {
-        orderHash,
-        transactionHash
-      });
-
       return NextResponse.json({
         success: true,
         message: 'Order cancellation confirmed and database updated',

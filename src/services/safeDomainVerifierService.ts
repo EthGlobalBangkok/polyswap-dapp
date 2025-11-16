@@ -31,14 +31,7 @@ export class SafeDomainVerifierService {
         provider
       );
 
-      const domainSeparator = await contract.domainSeparator();
-
-      console.log('getDomainSeparator result:', {
-        composableCowAddress: this.COMPOSABLE_COW_ADDRESS,
-        domainSeparator
-      });
-
-      return domainSeparator;
+      return await contract.domainSeparator();
     } catch (error) {
       console.error('Error fetching domain separator from ComposableCoW:', error);
       throw new Error(`Failed to fetch domain separator: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -72,20 +65,11 @@ export class SafeDomainVerifierService {
         verifier
       ]);
 
-      const transaction: DomainVerifierTransaction = {
+      return {
         to: safeAddress,
         data: data,
         value: '0'
       };
-
-      console.log('Created setDomainVerifier transaction:', {
-        safeAddress,
-        domainSeparator,
-        verifier,
-        transaction
-      });
-
-      return transaction;
     } catch (error) {
       console.error('Error creating setDomainVerifier transaction:', error);
       throw new Error(`Failed to create transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -108,16 +92,11 @@ export class SafeDomainVerifierService {
       // Fetch domain separator from ComposableCoW contract
       const domainSeparator = await this.getDomainSeparator(provider);
 
-      // Create the transaction
-      const transaction = this.createSetDomainVerifierTransaction(
+      return this.createSetDomainVerifierTransaction(
         safeAddress,
         domainSeparator,
         verifierAddress
       );
-
-      console.log('🔐 CREATING DOMAIN VERIFIER TRANSACTION:', transaction);
-
-      return transaction;
     } catch (error) {
       console.error('Error creating domain verifier transaction:', error);
       throw new Error(`Failed to create domain verifier transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);

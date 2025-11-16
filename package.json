@@ -14,7 +14,6 @@
     "start:market-updater": "tsx src/backend/listener.ts --market-update-only",
     "start:market-updater-standalone": "tsx script/marketUpdater.ts",
     "saveMarkets": "tsx script/getMarkets.ts",
-    "populate-order-uids": "tsx scripts/populate-order-uids.ts",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",

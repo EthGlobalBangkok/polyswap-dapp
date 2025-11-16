@@ -421,8 +421,6 @@ export class DatabaseService {
       RETURNING id
     `;
 
-    console.log('Inserting frontend order with data:', orderData);
-    // all null value are filed that are filled later during the order creation flow
     const values = [
       orderData.owner.toLowerCase(), // Use actual owner address from request
       orderData.sellToken.toLowerCase(),
@@ -440,7 +438,6 @@ export class DatabaseService {
     try {
       const result = await query(sql, values);
       const orderId = result.rows[0].id;
-      console.log(`✅ Successfully inserted frontend order with ID ${orderId}`);
       return orderId;
     } catch (error) {
       console.error(`❌ Database error inserting frontend order:`, error);
@@ -513,7 +510,6 @@ export class DatabaseService {
 
     try {
       await query(sql, values);
-      console.log(`✅ Successfully inserted order ${order.orderHash}`);
     } catch (error) {
       console.error(`❌ Database error inserting order ${order.orderHash}:`, error);
       console.error('Order data:', {
@@ -765,7 +761,6 @@ export class DatabaseService {
     `;
     try {
       const result = await query(sql, [transactionHash, orderId]);
-      console.log(`✅ Order ID ${orderId} updated with transaction hash and set to live status`);
       return result.rows.length > 0;
     } catch (error) {
       console.error(`❌ Error updating transaction hash for order ID ${orderId}:`, error);
@@ -835,7 +830,6 @@ export class DatabaseService {
         orderUid || null,
         orderId
       ]);
-      console.log(`✅ Order ID ${orderId} updated with complete transaction details and set to live status`);
       return result.rows.length > 0;
     } catch (error) {
       console.error(`❌ Error updating transaction details for order ID ${orderId}:`, error);

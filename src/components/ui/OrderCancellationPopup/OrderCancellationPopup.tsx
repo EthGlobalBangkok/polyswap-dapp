@@ -76,9 +76,8 @@ export default function OrderCancellationPopup({
         walletConnectSafeService.initialize(await signer, provider);
 
         setState(prev => ({ ...prev, isSafeInitialized: true }));
-        console.log('✅ Safe services initialized successfully');
       } catch (error) {
-        console.error('❌ Failed to initialize Safe services:', error);
+        console.error('Failed to initialize Safe services:', error);
         setState(prev => ({ ...prev, isSafeInitialized: false }));
       }
     };
@@ -95,23 +94,12 @@ export default function OrderCancellationPopup({
         return;
       }
 
-      console.log('🚀 [CANCEL] Handling signed state - waiting for confirmation');
-      console.log('🔍 [CANCEL] Transaction hash:', state.transactionHash);
-
       try {
         // Wait for transaction to be confirmed on-chain
-        console.log('⏳ [CANCEL] Waiting for transaction confirmation...');
-        await walletConnectSafeService.waitForTransactionConfirmation(state.transactionHash, 60000); // 1 minute timeout
-        console.log('✅ [CANCEL] Transaction confirmed on-chain');
+        await walletConnectSafeService.waitForTransactionConfirmation(state.transactionHash, 60000);
 
         // Add 5-second delay for propagation to ensure indexing services are updated
-        console.log('⏳ [CANCEL] Waiting 5 seconds for blockchain indexing propagation...');
         await new Promise(resolve => setTimeout(resolve, 5000));
-        console.log('✅ [CANCEL] Propagation delay completed');
-
-        // Now that transaction is confirmed and propagated, update the database
-        console.log('🔄 [CANCEL] Starting database update after confirmation and propagation...');
-        console.log('🔍 [CANCEL] Order hash to cancel:', order.order_hash);
 
         // Call the same API that was used during preparation but now with the transaction hash
         const response = await fetch('/api/polyswap/orders/remove', {
@@ -127,13 +115,11 @@ export default function OrderCancellationPopup({
         });
 
         const result = await response.json();
-        console.log('📋 [CANCEL] Database update result:', JSON.stringify(result, null, 2));
 
         if (result.success) {
-          console.log('✅ [CANCEL] Order successfully canceled in database');
           setState(prev => ({ ...prev, step: 'success' }));
         } else {
-          console.error('❌ [CANCEL] Database update failed:', result);
+          console.error('Database update failed:', result);
           // Still mark as success since the transaction was executed
           setState(prev => ({
             ...prev,
@@ -142,7 +128,7 @@ export default function OrderCancellationPopup({
           }));
         }
       } catch (error) {
-        console.error('💥 [CANCEL] Error in signed state handling:', error);
+        console.error('Error in cancellation confirmation:', error);
 
         // Check if it's a timeout vs other error
         if (error instanceof Error && error.message.includes('timeout')) {
@@ -214,48 +200,21 @@ export default function OrderCancellationPopup({
   };
 
   const handleSendTransaction = async () => {
-    console.log('🚀 [CANCEL] handleSendTransaction START');
-    console.log('🔍 [CANCEL] Initial state check:', {
-      hasTransactionData: !!state.transactionData,
-      isSafeInitialized: state.isSafeInitialized,
-      step: state.step,
-      orderHash: order.order_hash,
-      connectorName: connector?.name
-    });
-    console.log('🔍 [CANCEL] Transaction data:', JSON.stringify(state.transactionData, null, 2));
-
     if (!state.transactionData || !state.isSafeInitialized) {
-      console.error('❌ [CANCEL] handleSendTransaction BLOCKED - Missing requirements:', {
-        transactionData: !!state.transactionData,
-        isSafeInitialized: state.isSafeInitialized
-      });
+      console.error('Missing requirements for sending transaction');
       return;
     }
 
-    console.log('🔄 [CANCEL] Setting isSending = true');
     setIsSending(true);
 
     try {
       const isSafeApp = connector?.name === 'Safe';
       const isWalletConnect = connector?.name === 'WalletConnect';
 
-      console.log('🔍 [CANCEL] Connector analysis:', {
-        connectorName: connector?.name,
-        isSafeApp,
-        isWalletConnect
-      });
-
       let transactionHash: string;
-
-      console.log('🔍 [CANCEL] Transaction structure analysis:', {
-        connectorName: connector?.name,
-        transactionDataKeys: Object.keys(state.transactionData),
-        transactionData: state.transactionData
-      });
 
       if (isSafeApp) {
         // Use Safe SDK for Safe app connections
-        console.log('Using Safe SDK for Safe app connection');
         const result = await safeService.createSafeTransaction({
           to: state.transactionData.to,
           data: state.transactionData.data,
@@ -282,38 +241,21 @@ export default function OrderCancellationPopup({
         }
       } else if (isWalletConnect) {
         // Use WalletConnect Safe service directly - optimized for Safe + WalletConnect
-        console.log('🎯 [CANCEL] Using WalletConnect Safe service for cancellation transaction');
-        console.log('🔍 [CANCEL] WalletConnect service initialized:', walletConnectSafeService.isInitialized());
-
         try {
-          console.log('🔄 [CANCEL] Calling sendTransaction...');
-          console.log('📋 [CANCEL] Transaction params:', {
-            to: state.transactionData.to,
-            data: state.transactionData.data,
-            value: state.transactionData.value
-          });
-
           const result = await walletConnectSafeService.sendTransaction({
             to: state.transactionData.to,
             data: state.transactionData.data,
             value: state.transactionData.value
           });
 
-          console.log('✅ [CANCEL] sendTransaction completed');
-          console.log('🔍 [CANCEL] Result received:', JSON.stringify(result, null, 2));
-
           if (result && result.success) {
             transactionHash = result.transactionHash;
-            console.log('🎉 [CANCEL] Cancellation transaction signed successfully:', transactionHash);
-
-            console.log('🔄 [CANCEL] Updating state with transaction hash...');
             setState(prev => ({
               ...prev,
               transactionHash: result.transactionHash
             }));
-            console.log('✅ [CANCEL] State updated with transaction hash');
           } else {
-            console.error('❌ [CANCEL] Transaction result indicates failure:', result);
+            console.error('Transaction failed:', result);
             throw new Error('Transaction signing failed');
           }
         } catch (walletConnectError) {

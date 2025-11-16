@@ -11,22 +11,16 @@ export class MarketUpdateService {
    */
   static startUpdateRoutine(intervalMinutes: number = 60) {
     if (this.updateInterval) {
-      console.log('⚠️ Market update routine is already running');
       return;
     }
 
-    const intervalMs = intervalMinutes * 60 * 1000; // Convert minutes to milliseconds
-    console.log(`🚀 Starting market update routine with ${intervalMinutes} minute interval`);
+    const intervalMs = intervalMinutes * 60 * 1000;
+    console.log(`Market update routine started (${intervalMinutes} min interval)`);
 
-    // Run immediately on start
     this.updateMarkets();
-
-    // Set up recurring updates
     this.updateInterval = setInterval(() => {
       this.updateMarkets();
     }, intervalMs);
-
-    console.log(`✅ Market update routine started successfully`);
   }
 
   /**
@@ -36,7 +30,7 @@ export class MarketUpdateService {
     if (this.updateInterval) {
       clearInterval(this.updateInterval);
       this.updateInterval = null;
-      console.log('🛑 Market update routine stopped');
+      console.log('Market update routine stopped');
     }
   }
 
@@ -45,86 +39,54 @@ export class MarketUpdateService {
    */
   static async updateMarkets(): Promise<void> {
     if (this.isUpdating) {
-      console.log('⏳ Market update already in progress, skipping...');
       return;
     }
 
     this.isUpdating = true;
     const startTime = Date.now();
-    console.log(`🔄 Starting market update at ${new Date().toISOString()}`);
 
     try {
-      // Get current database stats
-      const statsBefore = await DatabaseService.getMarketStats();
-      console.log(`📊 Current DB stats: ${statsBefore.totalMarkets} markets, $${statsBefore.totalVolume.toFixed(2)} total volume`);
-
-      // Fetch markets from Polymarket API
-      console.log('📡 Fetching markets from Polymarket API...');
-      const endDateMin = new Date().toISOString(); // Only get active markets
+      const endDateMin = new Date().toISOString();
       const markets = await PolymarketAPIService.getOpenMarkets({
         endDateMin,
       });
 
-      console.log(`✅ Fetched ${markets.length} active markets from API`);
-
       if (markets.length === 0) {
-        console.log('⚠️ No markets returned from API, skipping database update');
         return;
       }
 
-      // Process markets in batches for better performance
       const batchSize = 100;
       let successCount = 0;
       let errorCount = 0;
 
-      console.log(`📦 Processing markets in batches of ${batchSize}...`);
-
       for (let i = 0; i < markets.length; i += batchSize) {
         const batch = markets.slice(i, i + batchSize);
-        console.log(`🔄 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(markets.length / batchSize)} (${batch.length} markets)`);
 
         for (const market of batch) {
           try {
-            // Use insertMarket which handles both insert and update via ON CONFLICT
             await DatabaseService.insertMarket(market);
             successCount++;
           } catch (error) {
-            console.error(`❌ Error processing market ${market.id}:`, error);
+            console.error(`Error processing market ${market.id}:`, error);
             errorCount++;
           }
         }
 
-        // Small delay between batches to avoid overwhelming the database
         if (i + batchSize < markets.length) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
 
-      // Clean up closed/ended markets after updating (if enabled)
       const shouldRemoveClosed = process.env.AUTO_REMOVE_CLOSED_MARKETS?.toLowerCase() === 'true';
       if (shouldRemoveClosed) {
-        console.log('🧹 Cleaning up closed/ended markets...');
-        const removedCount = await DatabaseService.removeClosedMarkets();
-        if (removedCount > 0) {
-          console.log(`🗑️ Removed ${removedCount} closed/ended markets from database`);
-        } else {
-          console.log('✅ No closed markets to remove');
-        }
-      } else {
-        console.log('ℹ️ Auto-removal of closed markets is disabled');
+        await DatabaseService.removeClosedMarkets();
       }
 
-      // Get updated database stats
-      const statsAfter = await DatabaseService.getMarketStats();
-      
       const duration = (Date.now() - startTime) / 1000;
-      console.log(`✅ Market update completed in ${duration.toFixed(2)}s`);
-      console.log(`📈 Results: ${successCount} processed, ${errorCount} errors`);
-      console.log(`📊 New DB stats: ${statsAfter.totalMarkets} markets (+${statsAfter.totalMarkets - statsBefore.totalMarkets}), $${statsAfter.totalVolume.toFixed(2)} total volume`);
+      console.log(`Market update completed: ${successCount} processed, ${errorCount} errors (${duration.toFixed(1)}s)`);
 
     } catch (error) {
-      const duration = (Date.now() - startTime) / 1000;
-      console.error(`❌ Market update failed after ${duration.toFixed(2)}s:`, error);
+      console.error('Market update failed:', error);
     } finally {
       this.isUpdating = false;
     }

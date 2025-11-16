@@ -39,9 +39,7 @@ export class PolymarketAPIService {
         }
 
         const data = await response.json();
-        console.log(`Received response with ${Array.isArray(data) ? data.length : 'unknown'} items`);
-        
-        // Check if data is an array or has a data property
+
         let markets: Market[];
         if (Array.isArray(data)) {
           markets = data;
@@ -49,49 +47,38 @@ export class PolymarketAPIService {
         } else {
           throw new Error(`Unexpected response structure: ${JSON.stringify(data)}`);
         }
-        
-        // Add fetched markets to our collection
+
         allMarkets.push(...markets);
         fetchedCount += markets.length;
-        
-        console.log(`Fetched ${markets.length} markets. Total: ${fetchedCount}`);
-        
-        // Check if we've reached the maximum number of markets (if specified)
+
         if (maxNb && fetchedCount >= maxNb) {
-          console.log(`Reached maximum limit of ${maxNb} markets`);
           break;
         }
         if (markets.length === 0) {
-          console.log("No more markets to fetch, exiting loop");
           break;
         }
         
         // Add a small delay to be respectful to the API
         await new Promise(resolve => setTimeout(resolve, 50));
-        
+
       } while (true);
 
-      console.log(`Finished fetching. Total markets retrieved: ${allMarkets.length}`);
-      
-      // If maxNb was specified and we have more markets than requested, trim the array
       if (maxNb && allMarkets.length > maxNb) {
         return allMarkets.slice(0, maxNb);
       }
-      
+
       return allMarkets;
-      
+
     } catch (error) {
       console.error("Error fetching markets:", error);
       if (allMarkets.length === 0) {
         throw error;
       }
-      console.log(`Returning ${allMarkets.length} markets that were successfully fetched before the error`);
-      
-      // If maxNb was specified and we have more markets than requested, trim the array
+
       if (maxNb && allMarkets.length > maxNb) {
         return allMarkets.slice(0, maxNb);
       }
-      
+
       return allMarkets;
     }
   }
@@ -116,14 +103,11 @@ export class PolymarketAPIService {
       }
 
       const data = await response.json();
-      console.log(`Received response with ${Array.isArray(data) ? data.length : 'unknown'} items`);
-      
-      // Check if data is an array
+
       if (!Array.isArray(data)) {
         throw new Error(`Unexpected response structure: ${JSON.stringify(data)}`);
       }
-      
-      // Return the first market found or null
+
       return data[0] || null;
     } catch (error) {
       console.error("Error fetching market by condition ID:", error);

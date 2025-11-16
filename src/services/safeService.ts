@@ -29,9 +29,8 @@ export class SafeService {
         provider: signer || provider,
         safeAddress: safeAddress,
       });
-      console.log('✅ Safe initialized successfully with address:', safeAddress);
     } catch (error) {
-      console.error('❌ Safe initialization failed:', error);
+      console.error('Safe initialization failed:', error);
       throw new Error(`Failed to initialize Safe: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }

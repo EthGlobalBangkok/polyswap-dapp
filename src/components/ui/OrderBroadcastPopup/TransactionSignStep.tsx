@@ -260,11 +260,9 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
       )}
       
       <div className={styles.infoBox} style={{ marginBottom: '16px', fontSize: '14px', color: '#666' }}>
-        <p><strong>📱 For WalletConnect users:</strong></p>
-        <p>• Check your Safe mobile/desktop app for the transaction request</p>
-        <p>• Sign the transaction to queue it in your Safe</p>
-        <p>• The transaction will execute automatically after signing (if threshold is met)</p>
-        <p>• If additional signatures are needed, the transaction will remain queued</p>
+        <p><strong>⚠️ Attention:</strong></p>
+        <p>• Do not execute the transaction with the gas sponsored by Safe</p>
+        <p>• Execute each transaction one by one, do not batch the transactions</p>
         {batchData?.needsApproval && (
           <p>• <strong>Each transaction in the batch requires individual signing</strong></p>
         )}

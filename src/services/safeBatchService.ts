@@ -53,13 +53,6 @@ export class SafeBatchService {
           provider
         );
 
-        console.log('🔍 AFTER FALLBACK CHECK:', {
-          ownerAddress,
-          fallbackTx: fallbackTx,
-          fallbackTxTruthy: !!fallbackTx,
-          fallbackTxNull: fallbackTx === null
-        });
-
         if (fallbackTx) {
           needsFallbackHandler = true;
           fallbackHandlerTransaction = {
@@ -70,9 +63,6 @@ export class SafeBatchService {
           transactions.push(fallbackHandlerTransaction);
 
           // Step 1.5: Add domain verifier transaction when fallback handler is being set
-          // Note: Gas estimation will fail for this tx since fallback handler isn't set yet,
-          // but the transaction itself is valid and will execute successfully in the batch
-          // after the fallback handler is set (Safe executes batch transactions sequentially)
           try {
             const domainVerifierTx = await SafeDomainVerifierService.createDomainVerifierTransaction(
               ownerAddress,
@@ -86,16 +76,12 @@ export class SafeBatchService {
               value: domainVerifierTx.value
             };
             transactions.push(domainVerifierTransaction);
-
-            console.log('🔐 ADDING DOMAIN VERIFIER TO BATCH (will execute after fallback handler)');
           } catch (domainError) {
             console.warn('Could not create domain verifier transaction:', domainError);
-            // Continue without domain verifier - the fallback handler will still be set
           }
         }
       } catch (error) {
-        console.warn('Could not check fallback handler (may not be a Safe wallet):', error);
-        // Continue without fallback handler check - this is normal for EOA wallets
+        // Continue - not all wallets are Safe wallets
       }
 
       // Step 2: Check if approval is needed
@@ -251,9 +237,7 @@ export class SafeBatchService {
         const isSetFallbackHandler = tx.data.startsWith('0xf08a0323');
 
         if (isSetDomainVerifier && batchResult.needsFallbackHandler) {
-          // Domain verifier transaction in same batch as fallback handler - skip estimation
-          console.log('⚠️ Skipping gas estimation for setDomainVerifier (will execute after fallback handler)');
-          estimates.push(BigInt(100000)); // Reasonable default for this transaction
+          estimates.push(BigInt(100000));
           continue;
         }
 

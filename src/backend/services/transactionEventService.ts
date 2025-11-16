@@ -44,20 +44,13 @@ export class TransactionEventService {
    */
   static async getTransactionEventDetails(transactionHash: string): Promise<TransactionEventDetails | null> {
     try {
-      console.log(`🔍 Fetching transaction details for hash: ${transactionHash}`);
-
-      // Initialize provider
       const provider = new ethers.JsonRpcProvider(this.RPC_URL);
-
-      // Get transaction receipt
       const receipt = await provider.getTransactionReceipt(transactionHash);
 
       if (!receipt) {
-        console.error(`❌ Transaction receipt not found for hash: ${transactionHash}`);
+        console.error(`Transaction receipt not found for hash: ${transactionHash}`);
         return null;
       }
-
-      console.log(`📦 Transaction found in block: ${receipt.blockNumber}`);
 
       // Create contract interface for parsing logs
       const contractInterface = new ethers.Interface([this.CONDITIONAL_ORDER_CREATED_ABI]);
@@ -84,7 +77,6 @@ export class TransactionEventService {
               logIndex: log.index,
               blockNumber: receipt.blockNumber
             };
-            console.log(`✅ Found ConditionalOrderCreated event at log index: ${log.index}`);
             break;
           }
         } catch (parseError) {
@@ -94,18 +86,13 @@ export class TransactionEventService {
       }
 
       if (!conditionalOrderEvent) {
-        console.error(`❌ No ConditionalOrderCreated event found in transaction: ${transactionHash}`);
+        console.error(`No ConditionalOrderCreated event found in transaction: ${transactionHash}`);
         return null;
       }
 
-      // Extract event data
       const { parsedLog, logIndex, blockNumber } = conditionalOrderEvent;
       const params = parsedLog.args.params as ConditionalOrderParams;
-
-      // Decode staticInput to get app_data
       const appData = this.extractAppDataFromStaticInput(params.staticInput);
-
-      // Calculate order hash
       const orderHash = this.calculateOrderHash(params);
 
       const eventDetails: TransactionEventDetails = {
@@ -118,17 +105,10 @@ export class TransactionEventService {
         salt: params.salt
       };
 
-      console.log(`📝 Event details extracted:`, {
-        blockNumber: eventDetails.blockNumber,
-        logIndex: eventDetails.logIndex,
-        handler: eventDetails.handler,
-        orderHash: eventDetails.orderHash
-      });
-
       return eventDetails;
 
     } catch (error) {
-      console.error(`❌ Error fetching transaction event details:`, error);
+      console.error(`Error fetching transaction event details:`, error);
       throw new Error(`Failed to fetch transaction event details: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -139,15 +119,10 @@ export class TransactionEventService {
   private static extractAppDataFromStaticInput(staticInput: string): string {
     try {
       const abiCoder = new ethers.AbiCoder();
-
-      // Calculate the expected number of fields based on data length
-      const dataLength = (staticInput.length - 2) / 2; // Remove 0x and convert to bytes
-      const fieldsCount = Math.floor(dataLength / 32); // Each field is 32 bytes
-
-      console.log(`📊 StaticInput analysis: ${dataLength} bytes, ${fieldsCount} fields`);
+      const dataLength = (staticInput.length - 2) / 2;
+      const fieldsCount = Math.floor(dataLength / 32);
 
       if (fieldsCount === 8) {
-        // 8 fields: missing appData field, return default
         return "0x0000000000000000000000000000000000000000000000000000000000000000";
       } else if (fieldsCount === 9) {
         // 9 fields: full structure with appData
@@ -163,13 +138,12 @@ export class TransactionEventService {
           "bytes32"  // appData
         ], staticInput);
 
-        return decoded[8]; // appData is the 9th field (index 8)
+        return decoded[8];
       } else {
-        console.warn(`⚠️ Unexpected number of fields: ${fieldsCount}. Returning default app_data.`);
         return "0x0000000000000000000000000000000000000000000000000000000000000000";
       }
     } catch (error) {
-      console.error('❌ Error extracting app_data from staticInput:', error);
+      console.error('Error extracting app_data from staticInput:', error);
       return "0x0000000000000000000000000000000000000000000000000000000000000000";
     }
   }
@@ -186,7 +160,7 @@ export class TransactionEventService {
 
       return ethers.keccak256(encoded);
     } catch (error) {
-      console.error('❌ Error calculating order hash:', error);
+      console.error('Error calculating order hash:', error);
       throw error;
     }
   }

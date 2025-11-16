@@ -50,26 +50,19 @@ export class PolymarketOrderService {
    * Initialize the Polymarket CLOB client (singleton pattern)
    */
   public async initialize(): Promise<void> {
-    // If already initialized, return immediately
     if (this.isInitialized) {
-      console.log('PolymarketOrderService already initialized, skipping...');
       return;
     }
 
-    // If initialization is in progress, wait for it to complete
     if (initializationPromise) {
-      console.log('PolymarketOrderService initialization in progress, waiting...');
       return initializationPromise;
     }
 
-    // Start initialization
     initializationPromise = this.performInitialization();
     try {
       await initializationPromise;
       this.isInitialized = true;
-      console.log('PolymarketOrderService successfully initialized');
     } catch (error) {
-      // Reset initialization promise on failure so we can retry
       initializationPromise = null;
       throw error;
     }
@@ -82,12 +75,8 @@ export class PolymarketOrderService {
     try {
       const host = process.env.CLOB_API_URL || 'https://clob.polymarket.com';
       const chainId = parseInt(process.env.CHAIN_ID || '137');
-      
-      console.log('Initializing provider with RPC URL:', process.env.RPC_URL || "https://polygon-rpc.com");
-      
-      // Use regular JsonRpcProvider
       const rpcUrl = process.env.RPC_URL || "https://polygon-rpc.com";
-      
+
       this.provider = new ethers.JsonRpcProvider(rpcUrl);
       
       // Create ethers v6 signer
@@ -125,11 +114,9 @@ export class PolymarketOrderService {
       );
       
       this.signer = v6Signer;
-      
-      // Test the connection and log block number
+
       try {
-        const blockNumber = await this.provider.getBlockNumber();
-        console.log('Current block number:', blockNumber);
+        await this.provider.getBlockNumber();
       } catch (networkError) {
         console.error('Failed to connect to Polygon network:', networkError);
         throw new Error(`Failed to connect to Polygon network: ${networkError}`);
@@ -182,15 +169,7 @@ export class PolymarketOrderService {
         spender // spender (Polymarket contract)
       );
       
-      // Check if allowance is sufficient (both are BigInt in ethers v6)
       const isSufficient = currentAllowance >= requiredAmount;
-      console.log(`Allowance check for ${token}:`, {
-        owner: ownerAddress,
-        spender,
-        currentAllowance: currentAllowance.toString(),
-        requiredAmount: requiredAmount.toString(),
-        isSufficient
-      });
       return isSufficient;
     } catch (error) {
       console.error('Failed to check allowance:', error);
@@ -205,39 +184,21 @@ export class PolymarketOrderService {
     }
     
     try {
-      console.log(`Getting decimals for token: ${token}`);
-      
-      // Validate token address format
       if (!ethers.isAddress(token)) {
         throw new Error(`Invalid token address format: ${token}`);
       }
-      
-      // ERC20 ABI for decimals function
+
       const erc20Abi = [
         "function decimals() view returns (uint8)"
       ];
-      
-      // Create contract instance
+
       const tokenContract = new ethers.Contract(token, erc20Abi, this.provider);
-      
-      // Call decimals function
       const decimalsResult = await tokenContract.decimals();
-      // In ethers v6, contract call results might be BigInt, convert to number
       const decimals: number = Number(decimalsResult);
-      console.log(`Token ${token} has ${decimals} decimals`);
-      
+
       return decimals;
     } catch (error: any) {
       console.error('Failed to get token decimals:', error);
-      
-      // Log additional details about the error
-      if (error.transaction) {
-        console.error('Transaction details:', error.transaction);
-      }
-      if (error.error) {
-        console.error('Error details:', error.error);
-      }
-      
       throw new Error(`Failed to get token decimals for token ${token}: ${error}`);
     }
   }
@@ -305,7 +266,7 @@ export class PolymarketOrderService {
       if (!ok) {
         throw new Error('Insufficient allowance for USDC');
       }
-      console.log("\nConfig: ", config, "\n");
+
       try {
         const response = await this.clobClient!.createAndPostOrder({
           tokenID: config.tokenID,
@@ -352,9 +313,8 @@ export class PolymarketOrderService {
       // Calculate required amount: (price * size) * (10 ** decimals)
       const requiredAmount = (priceBigInt * sizeBigInt * decimalsMultiplier) / (1000000n * 1000000n);
 
-      const res = await this.clobClient?.getBalanceAllowance({ asset_type: AssetType.COLLATERAL })
-      console.log("Balance and allowances:", res);
-      
+      await this.clobClient?.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+
       let ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
       if (!ok) {
         throw new Error('Insufficient allowance for USDC');

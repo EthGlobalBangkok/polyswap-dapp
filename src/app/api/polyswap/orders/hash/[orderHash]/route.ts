@@ -1,6 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../../../backend/services/databaseService';
 
+/**
+ * @swagger
+ * /api/polyswap/orders/hash/{orderHash}:
+ *   get:
+ *     tags:
+ *       - Orders
+ *     summary: Get order by hash
+ *     description: Returns a specific order by its order hash
+ *     parameters:
+ *       - name: orderHash
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order hash (0x + 64 hex chars)
+ *     responses:
+ *       200:
+ *         description: Order details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/Order'
+ *       400:
+ *         description: Invalid order hash format
+ *       404:
+ *         description: Order not found
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ orderHash: string }> }

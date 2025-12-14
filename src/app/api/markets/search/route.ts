@@ -3,6 +3,71 @@ import { DatabaseService } from '../../../../backend/services/databaseService';
 import { transformDatabaseMarkets } from '../../../../backend/utils/transformers';
 import { DatabaseMarket } from '@/backend/interfaces/Database';
 
+/**
+ * @swagger
+ * /api/markets/search:
+ *   get:
+ *     tags:
+ *       - Markets
+ *     summary: Search markets
+ *     description: Search markets by question text with multi-word support
+ *     parameters:
+ *       - name: q
+ *         in: query
+ *         schema:
+ *           type: string
+ *         description: Search query (space-separated keywords)
+ *       - name: type
+ *         in: query
+ *         schema:
+ *           type: string
+ *           enum: [all, any, slug]
+ *           default: all
+ *         description: Search type (all=AND, any=OR, slug=exact slug match)
+ *       - name: category
+ *         in: query
+ *         schema:
+ *           type: string
+ *         description: Filter by category
+ *       - name: limit
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Number of results to return (max 500)
+ *       - name: offset
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *         description: Offset for pagination
+ *     responses:
+ *       200:
+ *         description: Search results
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Market'
+ *                 count:
+ *                   type: integer
+ *                 searchType:
+ *                   type: string
+ *                 keywords:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *       400:
+ *         description: Missing search parameters
+ *       404:
+ *         description: No markets found
+ */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

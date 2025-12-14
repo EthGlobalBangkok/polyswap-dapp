@@ -2,6 +2,70 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../backend/services/databaseService';
 import { transformDatabaseMarkets } from '../../../backend/utils/transformers';
 
+/**
+ * @swagger
+ * /api/markets:
+ *   get:
+ *     tags:
+ *       - Markets
+ *     summary: Get all markets
+ *     description: Returns a paginated list of prediction markets
+ *     parameters:
+ *       - name: limit
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Number of markets to return (max 500)
+ *       - name: offset
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *         description: Offset for pagination
+ *       - name: minVolume
+ *         in: query
+ *         schema:
+ *           type: number
+ *         description: Filter by minimum trading volume
+ *       - name: endAfter
+ *         in: query
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Filter markets ending after this date
+ *     responses:
+ *       200:
+ *         description: List of markets
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Market'
+ *                 count:
+ *                   type: integer
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     limit:
+ *                       type: integer
+ *                     offset:
+ *                       type: integer
+ *                     hasMore:
+ *                       type: boolean
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

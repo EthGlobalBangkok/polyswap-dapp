@@ -2,6 +2,56 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../../backend/services/databaseService';
 import { transformDatabaseMarkets } from '../../../../../backend/utils/transformers';
 
+/**
+ * @swagger
+ * /api/markets/category/{category}:
+ *   get:
+ *     tags:
+ *       - Markets
+ *     summary: Get markets by category
+ *     description: Returns markets filtered by category
+ *     parameters:
+ *       - name: category
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Market category (e.g., "Sports", "Politics", "Crypto")
+ *       - name: limit
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Number of markets to return (max 500)
+ *       - name: offset
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *         description: Offset for pagination
+ *     responses:
+ *       200:
+ *         description: Markets in the specified category
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Market'
+ *                 count:
+ *                   type: integer
+ *                 category:
+ *                   type: string
+ *                 pagination:
+ *                   type: object
+ *       400:
+ *         description: Missing category parameter
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ category: string }> }

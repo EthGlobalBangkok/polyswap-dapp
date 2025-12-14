@@ -1,6 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../../../backend/services/databaseService';
 
+/**
+ * @swagger
+ * /api/polyswap/orders/polymarket/{polymarketHash}:
+ *   get:
+ *     tags:
+ *       - Orders
+ *     summary: Get orders by Polymarket hash
+ *     description: Returns all orders linked to a Polymarket order hash
+ *     parameters:
+ *       - name: polymarketHash
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Polymarket order hash (0x + 64 hex chars)
+ *     responses:
+ *       200:
+ *         description: Orders linked to the Polymarket hash
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Order'
+ *                 count:
+ *                   type: integer
+ *       400:
+ *         description: Invalid Polymarket hash format
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ polymarketHash: string }> }

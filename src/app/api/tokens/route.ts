@@ -1,5 +1,46 @@
 import { NextResponse } from 'next/server';
 
+/**
+ * @swagger
+ * /api/tokens:
+ *   get:
+ *     tags:
+ *       - Tokens
+ *     summary: Get supported tokens
+ *     description: Returns a list of tokens supported on Polygon from CoW Protocol token lists
+ *     responses:
+ *       200:
+ *         description: List of tokens
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 tokens:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       chainId:
+ *                         type: integer
+ *                       address:
+ *                         type: string
+ *                       name:
+ *                         type: string
+ *                       symbol:
+ *                         type: string
+ *                       decimals:
+ *                         type: integer
+ *                       logoURI:
+ *                         type: string
+ *                 count:
+ *                   type: integer
+ *                 cached:
+ *                   type: boolean
+ */
+
 interface Token {
   chainId: number;
   address: string;

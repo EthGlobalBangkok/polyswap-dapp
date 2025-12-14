@@ -2,6 +2,78 @@ import { NextRequest, NextResponse } from 'next/server';
 import { CowQuoteService } from '@/backend/services/cowQuoteService';
 import { TokenPriceService } from '@/backend/services/tokenPriceService';
 
+/**
+ * @swagger
+ * /api/polyswap/quote:
+ *   post:
+ *     tags:
+ *       - Quote
+ *     summary: Get swap quote
+ *     description: Get a quote for swapping tokens via CoW Protocol
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - sellToken
+ *               - buyToken
+ *               - sellAmount
+ *               - userAddress
+ *             properties:
+ *               sellToken:
+ *                 type: string
+ *                 description: Token address to sell
+ *               buyToken:
+ *                 type: string
+ *                 description: Token address to buy
+ *               sellAmount:
+ *                 type: string
+ *                 description: Amount to sell in wei
+ *               userAddress:
+ *                 type: string
+ *                 description: User wallet address
+ *               chainId:
+ *                 type: integer
+ *                 default: 137
+ *                 description: Chain ID (default Polygon)
+ *     responses:
+ *       200:
+ *         description: Quote details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     buyAmount:
+ *                       type: string
+ *                     sellAmount:
+ *                       type: string
+ *                     feeAmount:
+ *                       type: string
+ *                     validTo:
+ *                       type: integer
+ *                     exchangeRate:
+ *                       type: number
+ *                     buyAmountFormatted:
+ *                       type: string
+ *                     sellAmountFormatted:
+ *                       type: string
+ *                     sellTokenUsdPrice:
+ *                       type: number
+ *                     buyTokenUsdPrice:
+ *                       type: number
+ *       400:
+ *         description: Invalid request or no route found
+ *       502:
+ *         description: CoW API error
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

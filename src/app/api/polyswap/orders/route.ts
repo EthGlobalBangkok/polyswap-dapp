@@ -1,6 +1,68 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../backend/services/databaseService';
 
+/**
+ * @swagger
+ * /api/polyswap/orders:
+ *   get:
+ *     tags:
+ *       - Orders
+ *     summary: Get all orders
+ *     description: Returns all Polyswap orders with optional filters
+ *     parameters:
+ *       - name: limit
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Number of orders to return (max 500)
+ *       - name: offset
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *         description: Offset for pagination
+ *       - name: fromBlock
+ *         in: query
+ *         schema:
+ *           type: integer
+ *         description: Filter orders from this block number
+ *       - name: toBlock
+ *         in: query
+ *         schema:
+ *           type: integer
+ *         description: Filter orders up to this block number
+ *       - name: sellToken
+ *         in: query
+ *         schema:
+ *           type: string
+ *         description: Filter by sell token address
+ *       - name: buyToken
+ *         in: query
+ *         schema:
+ *           type: string
+ *         description: Filter by buy token address
+ *     responses:
+ *       200:
+ *         description: List of orders
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Order'
+ *                 count:
+ *                   type: integer
+ *       400:
+ *         description: Invalid block range
+ *       500:
+ *         description: Server error
+ */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

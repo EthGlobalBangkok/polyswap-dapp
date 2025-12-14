@@ -2,6 +2,54 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../../backend/services/databaseService';
 import { getPolymarketOrderService } from '../../../../../backend/services/polymarketOrderService';
 
+/**
+ * @swagger
+ * /api/polyswap/orders/polymarket:
+ *   put:
+ *     tags:
+ *       - Orders
+ *     summary: Create Polymarket order
+ *     description: Creates a Polymarket order for an existing draft order
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - orderId
+ *             properties:
+ *               orderId:
+ *                 type: integer
+ *                 description: The numerical ID of the draft order
+ *     responses:
+ *       200:
+ *         description: Polymarket order created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     orderId:
+ *                       type: integer
+ *                     polymarketOrderHash:
+ *                       type: string
+ *                     txs:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *       400:
+ *         description: Invalid order ID or order status
+ *       404:
+ *         description: Order or market not found
+ *       500:
+ *         description: Service error
+ */
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();

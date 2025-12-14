@@ -4,6 +4,103 @@ import { TransactionEncodingService } from '../../../../../../../backend/service
 import { TransactionEventService } from '../../../../../../../backend/services/transactionEventService';
 import { PolyswapOrderData } from '../../../../../../../backend/interfaces/PolyswapOrder';
 
+/**
+ * @swagger
+ * /api/polyswap/orders/id/{id}/transaction:
+ *   get:
+ *     tags:
+ *       - Orders
+ *     summary: Get transaction data for order
+ *     description: Generates transaction data for signing a Polyswap order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Order numerical ID
+ *     responses:
+ *       200:
+ *         description: Transaction data for signing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     transaction:
+ *                       type: object
+ *                       properties:
+ *                         to:
+ *                           type: string
+ *                         data:
+ *                           type: string
+ *                         value:
+ *                           type: string
+ *                     orderId:
+ *                       type: integer
+ *                     polymarketOrderHash:
+ *                       type: string
+ *       400:
+ *         description: Invalid order ID or missing Polymarket order
+ *       404:
+ *         description: Order not found
+ *   put:
+ *     tags:
+ *       - Orders
+ *     summary: Update order transaction details
+ *     description: Updates order with transaction hash after signing
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Order numerical ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - transactionHash
+ *             properties:
+ *               transactionHash:
+ *                 type: string
+ *                 description: Transaction hash (0x + 64 hex chars)
+ *     responses:
+ *       200:
+ *         description: Transaction details updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     orderId:
+ *                       type: integer
+ *                     transactionHash:
+ *                       type: string
+ *                     blockNumber:
+ *                       type: integer
+ *                     orderHash:
+ *                       type: string
+ *                     orderUid:
+ *                       type: string
+ *       400:
+ *         description: Invalid request
+ *       404:
+ *         description: Order not found
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

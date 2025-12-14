@@ -5,6 +5,102 @@ import { ethers } from 'ethers';
 import composableCowABI from '../../../../../abi/composableCoW.json';
 import { verifySignature } from '../../../../../backend/utils/signatureVerification';
 
+/**
+ * @swagger
+ * /api/polyswap/orders/remove:
+ *   post:
+ *     tags:
+ *       - Orders
+ *     summary: Cancel an order
+ *     description: Cancels a Polyswap order and returns the transaction to execute
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - orderHash
+ *               - ownerAddress
+ *               - signature
+ *               - timestamp
+ *               - chainId
+ *             properties:
+ *               orderHash:
+ *                 type: string
+ *                 description: Hash of the order to cancel
+ *               ownerAddress:
+ *                 type: string
+ *                 description: Owner wallet address
+ *               signature:
+ *                 type: string
+ *                 description: Signed message for authentication
+ *               timestamp:
+ *                 type: integer
+ *                 description: Timestamp of the signature
+ *               chainId:
+ *                 type: integer
+ *                 description: Chain ID
+ *     responses:
+ *       200:
+ *         description: Transaction to execute for cancellation
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     transaction:
+ *                       type: object
+ *                       properties:
+ *                         to:
+ *                           type: string
+ *                         data:
+ *                           type: string
+ *                         value:
+ *                           type: string
+ *                     polymarketCanceled:
+ *                       type: boolean
+ *       400:
+ *         description: Invalid request or order status
+ *       401:
+ *         description: Missing authentication
+ *       403:
+ *         description: Unauthorized
+ *       404:
+ *         description: Order not found
+ *   put:
+ *     tags:
+ *       - Orders
+ *     summary: Confirm order cancellation
+ *     description: Confirms the order cancellation after on-chain transaction
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - orderHash
+ *               - transactionHash
+ *               - confirmed
+ *             properties:
+ *               orderHash:
+ *                 type: string
+ *               transactionHash:
+ *                 type: string
+ *               confirmed:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Order status updated
+ *       404:
+ *         description: Order not found
+ */
 export async function POST(request: NextRequest) {
   try {
     const { orderHash, ownerAddress, signature, timestamp, chainId } = await request.json();

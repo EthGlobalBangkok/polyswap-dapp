@@ -1,6 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../../backend/services/databaseService';
 
+/**
+ * @swagger
+ * /api/polyswap/orders/{owner}:
+ *   get:
+ *     tags:
+ *       - Orders
+ *     summary: Get orders by owner
+ *     description: Returns all orders for a specific wallet address
+ *     parameters:
+ *       - name: owner
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Wallet address of the order owner
+ *       - name: limit
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Number of orders to return
+ *       - name: offset
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *         description: Offset for pagination
+ *     responses:
+ *       200:
+ *         description: Orders for the specified owner
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Order'
+ *                 count:
+ *                   type: integer
+ *       400:
+ *         description: Invalid owner address
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ owner: string }> }

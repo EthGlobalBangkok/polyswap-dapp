@@ -1,6 +1,87 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../../backend/services/databaseService';
 
+/**
+ * @swagger
+ * /api/polyswap/orders/create:
+ *   post:
+ *     tags:
+ *       - Orders
+ *     summary: Create a new order
+ *     description: Creates a new Polyswap order for a prediction market
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - sellToken
+ *               - buyToken
+ *               - sellAmount
+ *               - minBuyAmount
+ *               - selectedOutcome
+ *               - betPercentage
+ *               - startDate
+ *               - deadline
+ *               - marketId
+ *               - owner
+ *             properties:
+ *               sellToken:
+ *                 type: string
+ *                 description: Token address to sell (e.g., USDC)
+ *               buyToken:
+ *                 type: string
+ *                 description: Token address to buy (outcome token)
+ *               sellAmount:
+ *                 type: string
+ *                 description: Amount to sell in wei
+ *               minBuyAmount:
+ *                 type: string
+ *                 description: Minimum amount to receive in wei
+ *               selectedOutcome:
+ *                 type: string
+ *                 description: Selected outcome (e.g., "Yes", "No")
+ *               betPercentage:
+ *                 type: number
+ *                 description: Bet percentage (1-100)
+ *               startDate:
+ *                 type: string
+ *                 description: Start date ISO string or "now"
+ *               deadline:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Order deadline
+ *               marketId:
+ *                 type: string
+ *                 description: Market condition ID
+ *               owner:
+ *                 type: string
+ *                 description: Safe wallet address
+ *     responses:
+ *       200:
+ *         description: Order created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     orderId:
+ *                       type: integer
+ *                     status:
+ *                       type: string
+ *       400:
+ *         description: Invalid request parameters
+ *       404:
+ *         description: Market not found
+ *       500:
+ *         description: Server error
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

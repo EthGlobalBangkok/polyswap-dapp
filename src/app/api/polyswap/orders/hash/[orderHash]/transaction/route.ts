@@ -1,6 +1,76 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../../../../backend/services/databaseService';
 
+/**
+ * @swagger
+ * /api/polyswap/orders/hash/{orderHash}/transaction:
+ *   get:
+ *     tags:
+ *       - Orders
+ *     summary: Get transaction data by order hash
+ *     description: Generates transaction data for signing by order hash
+ *     parameters:
+ *       - name: orderHash
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order hash (0x + 64 hex chars)
+ *     responses:
+ *       200:
+ *         description: Transaction data for signing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     transaction:
+ *                       type: object
+ *                     orderHash:
+ *                       type: string
+ *                     polymarketOrderHash:
+ *                       type: string
+ *       400:
+ *         description: Invalid order hash or missing Polymarket order
+ *       404:
+ *         description: Order not found
+ *   put:
+ *     tags:
+ *       - Orders
+ *     summary: Update transaction hash by order hash
+ *     description: Updates order with transaction hash after signing
+ *     parameters:
+ *       - name: orderHash
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order hash (0x + 64 hex chars)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - transactionHash
+ *             properties:
+ *               transactionHash:
+ *                 type: string
+ *                 description: Transaction hash (0x + 64 hex chars)
+ *     responses:
+ *       200:
+ *         description: Transaction hash updated
+ *       400:
+ *         description: Invalid request
+ *       404:
+ *         description: Order not found
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ orderHash: string }> }

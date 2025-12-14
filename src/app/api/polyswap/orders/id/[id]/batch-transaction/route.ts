@@ -5,6 +5,70 @@ import { TransactionEncodingService } from '../../../../../../../backend/service
 import { SafeBatchService } from '../../../../../../../services/safeBatchService';
 import { PolyswapOrderData } from '../../../../../../../backend/interfaces/PolyswapOrder';
 
+/**
+ * @swagger
+ * /api/polyswap/orders/id/{id}/batch-transaction:
+ *   post:
+ *     tags:
+ *       - Orders
+ *     summary: Prepare batch transaction with approval
+ *     description: Prepares a batch transaction including ERC20 approval if needed
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Order numerical ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - ownerAddress
+ *               - rpcUrl
+ *             properties:
+ *               ownerAddress:
+ *                 type: string
+ *                 description: Safe wallet address
+ *               rpcUrl:
+ *                 type: string
+ *                 description: RPC URL for blockchain calls
+ *     responses:
+ *       200:
+ *         description: Batch transaction prepared
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     batchTransaction:
+ *                       type: object
+ *                       properties:
+ *                         transactions:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                         needsApproval:
+ *                           type: boolean
+ *                     summary:
+ *                       type: object
+ *                     gasEstimate:
+ *                       type: object
+ *                     balanceValidation:
+ *                       type: object
+ *       400:
+ *         description: Invalid request or insufficient balance
+ *       404:
+ *         description: Order not found
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

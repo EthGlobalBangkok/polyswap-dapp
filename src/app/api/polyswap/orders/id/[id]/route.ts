@@ -1,6 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DatabaseService } from '../../../../../../backend/services/databaseService';
 
+/**
+ * @swagger
+ * /api/polyswap/orders/id/{id}:
+ *   get:
+ *     tags:
+ *       - Orders
+ *     summary: Get order by ID
+ *     description: Returns a specific order by its numerical ID
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Order numerical ID
+ *     responses:
+ *       200:
+ *         description: Order details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/Order'
+ *       400:
+ *         description: Invalid order ID
+ *       404:
+ *         description: Order not found
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

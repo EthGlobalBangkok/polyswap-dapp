@@ -3,6 +3,38 @@ import { DatabaseService } from '../../../../backend/services/databaseService';
 import { PolymarketAPIService } from '../../../../backend/services/polymarketAPIService';
 import { transformDatabaseMarket } from '../../../../backend/utils/transformers';
 
+/**
+ * @swagger
+ * /api/markets/{identifier}:
+ *   get:
+ *     tags:
+ *       - Markets
+ *     summary: Get market by identifier
+ *     description: Get a specific market by condition ID or market ID
+ *     parameters:
+ *       - name: identifier
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Market condition ID (0x...) or market ID
+ *     responses:
+ *       200:
+ *         description: Market details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/Market'
+ *       400:
+ *         description: Missing identifier
+ *       404:
+ *         description: Market not found
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ identifier: string }> }

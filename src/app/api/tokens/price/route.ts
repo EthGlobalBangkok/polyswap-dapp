@@ -1,6 +1,54 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TokenPriceService } from '@/backend/services/tokenPriceService';
 
+/**
+ * @swagger
+ * /api/tokens/price:
+ *   post:
+ *     tags:
+ *       - Tokens
+ *     summary: Get token price
+ *     description: Get current USD price for a token
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - tokenAddress
+ *             properties:
+ *               tokenAddress:
+ *                 type: string
+ *                 description: Token contract address
+ *               chainId:
+ *                 type: integer
+ *                 default: 137
+ *                 description: Chain ID (default Polygon)
+ *     responses:
+ *       200:
+ *         description: Token price
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     tokenAddress:
+ *                       type: string
+ *                     chainId:
+ *                       type: integer
+ *                     usdPrice:
+ *                       type: number
+ *       400:
+ *         description: Invalid token address
+ *       404:
+ *         description: Price unavailable
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

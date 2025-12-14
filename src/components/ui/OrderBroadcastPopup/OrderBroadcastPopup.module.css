@@ -12,40 +12,42 @@
 }
 
 .popup {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  background: var(--background-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
   width: 100%;
   max-width: 500px;
   max-height: 90vh;
   overflow-y: auto;
   position: relative;
+  border: 1px solid var(--border-color);
 }
 
 .closeButton {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: var(--spacing-md);
+  right: var(--spacing-md);
   background: none;
   border: none;
   font-size: 24px;
   cursor: pointer;
-  color: #666;
+  color: var(--text-secondary);
   width: 30px;
   height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  transition: background-color 0.2s;
+  transition: all var(--transition-normal);
 }
 
 .closeButton:hover {
-  background-color: #f0f0f0;
+  background-color: var(--background-tertiary);
+  color: var(--text-primary);
 }
 
 .content {
-  padding: 24px;
+  padding: var(--spacing-lg);
   padding-top: 60px;
 }
 
@@ -63,7 +65,7 @@
   left: 0;
   right: 0;
   height: 2px;
-  background-color: #e0e0e0;
+  background-color: var(--border-color);
   z-index: 1;
 }
 
@@ -79,38 +81,40 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background-color: #e0e0e0;
+  background-color: var(--background-tertiary);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 8px;
+  margin-bottom: var(--spacing-sm);
   font-weight: bold;
-  color: #666;
-  border: 2px solid #e0e0e0;
+  color: var(--text-secondary);
+  border: 2px solid var(--border-color);
+  transition: all var(--transition-normal);
 }
 
 .stepNumber.completed {
-  background-color: #4CAF50;
+  background-color: var(--accent-success);
   color: white;
-  border-color: #4CAF50;
+  border-color: var(--accent-success);
 }
 
 .stepNumber.active {
-  background-color: #2196F3;
+  background-color: var(--accent-primary);
   color: white;
-  border-color: #2196F3;
+  border-color: var(--accent-primary);
   transform: scale(1.1);
 }
 
 .stepLabel {
   font-size: 12px;
-  color: #666;
+  color: var(--text-secondary);
   text-align: center;
   max-width: 100px;
+  transition: color var(--transition-normal);
 }
 
 .stepLabel.active {
-  color: #2196F3;
+  color: var(--accent-primary);
   font-weight: 500;
 }
 
@@ -120,73 +124,74 @@
 }
 
 .stepTitle {
-  font-size: 24px;
+  font-size: 1.5rem;
   font-weight: 600;
-  margin-bottom: 12px;
-  color: #333;
+  margin-bottom: var(--spacing-sm);
+  color: var(--text-primary);
 }
 
 .stepDescription {
-  font-size: 16px;
-  color: #666;
-  margin-bottom: 24px;
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-lg);
   line-height: 1.5;
 }
 
 /* Info Box */
 .infoBox {
-  background-color: #f8f9fa;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 24px;
+  background-color: var(--background-secondary);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
   text-align: left;
+  border: 1px solid var(--border-color);
 }
 
 .infoBox h3 {
   margin-top: 0;
-  margin-bottom: 12px;
-  color: #333;
-  font-size: 16px;
+  margin-bottom: var(--spacing-sm);
+  color: var(--text-primary);
+  font-size: 1rem;
 }
 
 .infoBox ul {
-  padding-left: 20px;
+  padding-left: var(--spacing-lg);
   margin: 0;
 }
 
 .infoBox ul li {
-  margin-bottom: 8px;
-  color: #666;
+  margin-bottom: var(--spacing-sm);
+  color: var(--text-secondary);
 }
 
 /* Transaction Details */
 .transactionDetails {
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .detailRow {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: var(--spacing-sm);
 }
 
 .detailLabel {
-  color: #666;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
 .detailValue {
-  color: #333;
+  color: var(--text-primary);
   font-family: monospace;
-  font-size: 12px;
+  font-size: 0.75rem;
   word-break: break-all;
 }
 
 .transactionHash {
-  font-size: 12px;
-  color: #666;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
   font-family: monospace;
-  margin-top: 8px;
+  margin-top: var(--spacing-sm);
 }
 
 /* Progress Bar */
@@ -194,78 +199,82 @@
   position: relative;
   width: 100%;
   height: 8px;
-  background-color: #f0f0f0;
-  border-radius: 4px;
+  background-color: var(--background-tertiary);
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  margin-bottom: 8px;
+  margin-bottom: var(--spacing-sm);
 }
 
 .progressBarFill {
   height: 100%;
-  background: linear-gradient(90deg, #2196F3, #1976D2);
-  border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+  border-radius: var(--radius-sm);
   transition: width 0.3s ease-in-out;
 }
 
 .progressText {
-  font-size: 12px;
-  color: #666;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
   text-align: center;
   display: block;
 }
 
 /* Buttons */
 .primaryButton {
-  background-color: #2196F3;
+  background-color: var(--accent-primary);
   color: white;
   border: none;
-  border-radius: 8px;
-  padding: 12px 24px;
-  font-size: 16px;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  transition: background-color 0.2s;
+  gap: var(--spacing-sm);
+  transition: all var(--transition-normal);
 }
 
 .primaryButton:hover:not(:disabled) {
-  background-color: #1976D2;
+  background-color: var(--accent-secondary);
+  transform: translateY(-1px);
 }
 
 .primaryButton:disabled {
-  background-color: #BBDEFB;
+  background-color: var(--background-tertiary);
+  color: var(--text-secondary);
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .secondaryButton {
-  background-color: #f0f0f0;
-  color: #333;
-  border: none;
-  border-radius: 8px;
-  padding: 12px 24px;
-  font-size: 16px;
+  background-color: var(--background-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  transition: background-color 0.2s;
+  gap: var(--spacing-sm);
+  transition: all var(--transition-normal);
 }
 
 .secondaryButton:hover {
-  background-color: #e0e0e0;
+  background-color: var(--background-secondary);
+  border-color: var(--accent-primary);
 }
 
 .buttonGroup {
   display: flex;
-  gap: 12px;
-  margin-top: 24px;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-lg);
 }
 
 .buttonGroup .primaryButton,
@@ -278,8 +287,8 @@
 .spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid #f3f3f3;
-  border-top: 2px solid #2196F3;
+  border: 2px solid var(--border-color);
+  border-top: 2px solid var(--accent-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -293,13 +302,13 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  padding: 24px 0;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg) 0;
 }
 
 .loadingSpinner p {
   margin: 0;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 /* Success/Error Icons */
@@ -307,26 +316,48 @@
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background-color: #4CAF50;
+  background-color: var(--accent-success);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 30px;
   font-weight: bold;
-  margin: 0 auto 20px;
+  margin: 0 auto var(--spacing-lg);
 }
 
 .errorIcon {
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background-color: #f44336;
+  background-color: var(--accent-danger);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 30px;
   font-weight: bold;
-  margin: 0 auto 20px;
+  margin: 0 auto var(--spacing-lg);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .popup {
+    max-width: 90vw;
+    margin: var(--spacing-md);
+  }
+
+  .content {
+    padding: var(--spacing-md);
+    padding-top: 50px;
+  }
+
+  .buttonGroup {
+    flex-direction: column;
+  }
+
+  .buttonGroup .primaryButton,
+  .buttonGroup .secondaryButton {
+    width: 100%;
+  }
 }

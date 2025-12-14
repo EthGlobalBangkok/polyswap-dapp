@@ -4,7 +4,18 @@ import { DatabaseMarket } from '../interfaces/Database';
 import { PolyswapOrderRecord, DatabasePolyswapOrder } from '../interfaces/PolyswapOrder';
 
 export class DatabaseService {
-  
+
+  /**
+   * Escape special characters for SQL LIKE patterns
+   * Prevents SQL injection via LIKE wildcards (% and _)
+   */
+  private static escapeLikePattern(input: string): string {
+    return input
+      .replace(/\\/g, '\\\\')  // Escape backslashes first
+      .replace(/%/g, '\\%')    // Escape percent
+      .replace(/_/g, '\\_');   // Escape underscore
+  }
+
   /**
    * Extract category from market question
    */
@@ -161,12 +172,13 @@ export class DatabaseService {
    */
   static async searchMarkets(searchTerm: string, limit: number = 100): Promise<DatabaseMarket[]> {
     const sql = `
-      SELECT * FROM markets 
-      WHERE question ILIKE $1 
-      ORDER BY volume DESC 
+      SELECT * FROM markets
+      WHERE question ILIKE $1 ESCAPE '\\'
+      ORDER BY volume DESC
       LIMIT $2
     `;
-    const result = await query(sql, [`%${searchTerm}%`, limit]);
+    const escapedTerm = this.escapeLikePattern(searchTerm);
+    const result = await query(sql, [`%${escapedTerm}%`, limit]);
     return result.rows;
   }
 
@@ -174,16 +186,16 @@ export class DatabaseService {
    * Search markets by keywords (AND search - all keywords must be present)
    */
   static async searchMarketsByKeywords(keywords: string[], limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' AND ');
+    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`).join(' AND ');
     const limitIndex = keywords.length + 1;
     const offsetIndex = keywords.length + 2;
     const sql = `
-      SELECT * FROM markets 
+      SELECT * FROM markets
       WHERE ${conditions}
-      ORDER BY volume DESC 
+      ORDER BY volume DESC
       LIMIT $${limitIndex} OFFSET $${offsetIndex}
     `;
-    const values = [...keywords.map(k => `%${k}%`), limit, offset];
+    const values = [...keywords.map(k => `%${this.escapeLikePattern(k)}%`), limit, offset];
     const result = await query(sql, values);
     return result.rows;
   }
@@ -192,16 +204,16 @@ export class DatabaseService {
    * Search markets by any keyword (OR search - any keyword can match)
    */
   static async searchMarketsByAnyKeyword(keywords: string[], limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' OR ');
+    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`).join(' OR ');
     const limitIndex = keywords.length + 1;
     const offsetIndex = keywords.length + 2;
     const sql = `
-      SELECT * FROM markets 
+      SELECT * FROM markets
       WHERE ${conditions}
-      ORDER BY volume DESC 
+      ORDER BY volume DESC
       LIMIT $${limitIndex} OFFSET $${offsetIndex}
     `;
-    const values = [...keywords.map(k => `%${k}%`), limit, offset];
+    const values = [...keywords.map(k => `%${this.escapeLikePattern(k)}%`), limit, offset];
     const result = await query(sql, values);
     return result.rows;
   }
@@ -210,17 +222,17 @@ export class DatabaseService {
    * Search markets by keywords AND category (AND search - all keywords must be present)
    */
   static async searchMarketsByKeywordsAndCategory(keywords: string[], category: string, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' AND ');
+    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`).join(' AND ');
     const categoryIndex = keywords.length + 1;
     const limitIndex = keywords.length + 2;
     const offsetIndex = keywords.length + 3;
     const sql = `
-      SELECT * FROM markets 
+      SELECT * FROM markets
       WHERE ${conditions} AND category = $${categoryIndex}
-      ORDER BY volume DESC 
+      ORDER BY volume DESC
       LIMIT $${limitIndex} OFFSET $${offsetIndex}
     `;
-    const values = [...keywords.map(k => `%${k}%`), category, limit, offset];
+    const values = [...keywords.map(k => `%${this.escapeLikePattern(k)}%`), category, limit, offset];
     const result = await query(sql, values);
     return result.rows;
   }
@@ -229,17 +241,17 @@ export class DatabaseService {
    * Search markets by any keyword AND category (OR search - any keyword can match)
    */
   static async searchMarketsByAnyKeywordAndCategory(keywords: string[], category: string, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1}`).join(' OR ');
+    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`).join(' OR ');
     const categoryIndex = keywords.length + 1;
     const limitIndex = keywords.length + 2;
     const offsetIndex = keywords.length + 3;
     const sql = `
-      SELECT * FROM markets 
+      SELECT * FROM markets
       WHERE (${conditions}) AND category = $${categoryIndex}
-      ORDER BY volume DESC 
+      ORDER BY volume DESC
       LIMIT $${limitIndex} OFFSET $${offsetIndex}
     `;
-    const values = [...keywords.map(k => `%${k}%`), category, limit, offset];
+    const values = [...keywords.map(k => `%${this.escapeLikePattern(k)}%`), category, limit, offset];
     const result = await query(sql, values);
     return result.rows;
   }
@@ -262,8 +274,9 @@ export class DatabaseService {
    * Get markets by question (partial word matching, case-insensitive)
    */
     static async getMarketsByQuestion(question: string): Promise<DatabaseMarket[]> {
-        const sql = 'SELECT * FROM markets WHERE LOWER(question) LIKE LOWER($1) ORDER BY created_at DESC';
-        const searchPattern = `%${question}%`;
+        const sql = "SELECT * FROM markets WHERE LOWER(question) LIKE LOWER($1) ESCAPE '\\' ORDER BY created_at DESC";
+        const escapedQuestion = this.escapeLikePattern(question);
+        const searchPattern = `%${escapedQuestion}%`;
         const result = await query(sql, [searchPattern]);
         return result.rows;
     }
@@ -314,11 +327,12 @@ export class DatabaseService {
    */
   static async getMarketsByClobTokenId(clobTokenId: string): Promise<DatabaseMarket[]> {
     const sql = `
-      SELECT * FROM markets 
-      WHERE clob_token_ids::text LIKE $1 
+      SELECT * FROM markets
+      WHERE clob_token_ids::text LIKE $1 ESCAPE '\\'
       ORDER BY volume DESC
     `;
-    const result = await query(sql, [`%${clobTokenId}%`]);
+    const escapedId = this.escapeLikePattern(clobTokenId);
+    const result = await query(sql, [`%${escapedId}%`]);
     return result.rows;
   }
 

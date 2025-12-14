@@ -93,8 +93,8 @@
 }
 
 .warningBox {
-  background: #fff3cd;
-  border: 1px solid #ffeaa7;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: var(--radius-md);
   padding: var(--spacing-md);
   margin-bottom: var(--spacing-lg);
@@ -102,13 +102,13 @@
 }
 
 .warningBox h4 {
-  color: #856404;
+  color: var(--accent-warning);
   margin: 0 0 var(--spacing-sm) 0;
   font-size: 1rem;
 }
 
 .warningBox ul {
-  color: #856404;
+  color: var(--text-secondary);
   margin: var(--spacing-sm) 0;
   padding-left: var(--spacing-lg);
 }
@@ -118,7 +118,7 @@
 }
 
 .warningBox p {
-  color: #856404;
+  color: var(--accent-warning);
   margin: var(--spacing-sm) 0 0 0;
   font-weight: 600;
 }
@@ -147,7 +147,7 @@
 }
 
 .confirmButton {
-  background: #dc3545;
+  background: var(--accent-danger);
   color: white;
   border: none;
   border-radius: var(--radius-md);
@@ -158,7 +158,7 @@
 }
 
 .confirmButton:hover {
-  background: #c82333;
+  background: #dc2626;
   transform: translateY(-1px);
 }
 
@@ -213,12 +213,12 @@
 }
 
 .successMessage {
-  background: #d4edda;
-  border: 1px solid #c3e6cb;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
   border-radius: var(--radius-md);
   padding: var(--spacing-md);
   margin-bottom: var(--spacing-lg);
-  color: #155724;
+  color: var(--accent-success);
 }
 
 .transactionSection {
@@ -282,8 +282,8 @@
 }
 
 .waitingNote {
-  background: #fff3cd;
-  border: 1px solid #ffeaa7;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: var(--radius-md);
   padding: var(--spacing-md);
   margin: var(--spacing-lg) 0;
@@ -291,7 +291,7 @@
 }
 
 .waitingNote p {
-  color: #856404;
+  color: var(--text-secondary);
   margin: var(--spacing-sm) 0;
   font-size: 0.9rem;
 }
@@ -299,15 +299,16 @@
 .waitingNote p:first-child {
   font-weight: 600;
   margin-top: 0;
+  color: var(--accent-warning);
 }
 
 .errorMessage {
-  background: #f8d7da;
-  border: 1px solid #f5c6cb;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: var(--radius-md);
   padding: var(--spacing-md);
   margin: var(--spacing-lg) 0;
-  color: #721c24;
+  color: var(--accent-danger);
 }
 
 .subText {

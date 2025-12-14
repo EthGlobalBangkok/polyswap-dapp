@@ -278,10 +278,6 @@ export const TransactionSignStep: React.FC<TransactionSignStepProps> = ({
             </span>
           </div>
           <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>Order Hash:</span>
-            <span className={styles.detailValue}>{polymarketOrderHash.substring(0, 10)}...{polymarketOrderHash.substring(polymarketOrderHash.length - 8)}</span>
-          </div>
-          <div className={styles.detailRow}>
             <span className={styles.detailLabel}>Polymarket Hash:</span>
             <span className={styles.detailValue}>{polymarketOrderHash.substring(0, 10)}...{polymarketOrderHash.substring(polymarketOrderHash.length - 8)}</span>
           </div>

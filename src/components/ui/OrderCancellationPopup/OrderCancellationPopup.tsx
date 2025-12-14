@@ -14,7 +14,7 @@ interface OrderCancellationPopupProps {
   order: DatabasePolyswapOrder;
 }
 
-type CancellationStep = 'confirm' | 'polymarket' | 'transaction' | 'signed' | 'success' | 'error';
+type CancellationStep = 'confirm' | 'signing' | 'polymarket' | 'transaction' | 'signed' | 'success' | 'error';
 
 interface PopupState {
   step: CancellationStep;
@@ -155,8 +155,11 @@ export default function OrderCancellationPopup({
   }, [state.step, state.transactionHash, order.order_hash]);
 
   const handleConfirmCancellation = async () => {
+    // Step 1: Show signing step
+    setState(prev => ({ ...prev, step: 'signing' }));
+
     try {
-      // Step 1: Sign message to prove ownership (EIP-191)
+      // Step 2: Sign message to prove ownership (EIP-191)
       const timestamp = Math.floor(Date.now() / 1000);
       const message = `PolySwap Action Request\nAction: cancel_order\nOrder: ${order.order_hash}\nTimestamp: ${timestamp}\nChain: ${chainId}`;
 
@@ -419,6 +422,8 @@ export default function OrderCancellationPopup({
     switch (state.step) {
       case 'confirm':
         return 'Confirm Order Cancellation';
+      case 'signing':
+        return 'Sign to Verify Ownership';
       case 'polymarket':
         return 'Canceling Polymarket Order';
       case 'transaction':
@@ -480,6 +485,22 @@ export default function OrderCancellationPopup({
             </div>
           )}
 
+          {state.step === 'signing' && (
+            <div className={styles.stepContent}>
+              <div className={styles.loadingSection}>
+                <div className={styles.spinner}></div>
+                <p>Waiting for signature...</p>
+                <p className={styles.subText}>
+                  Please check your Safe Wallet app to sign the verification message.
+                </p>
+                <div className={styles.infoBox} style={{ marginTop: '16px' }}>
+                  <p><strong>Why sign?</strong></p>
+                  <p>This signature proves you own this order and authorizes its cancellation.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {state.step === 'polymarket' && (
             <div className={styles.stepContent}>
               <div className={styles.loadingSection}>
@@ -503,12 +524,6 @@ export default function OrderCancellationPopup({
                 <p>
                   Now you need to sign the transaction to remove the conditional order from CoW Protocol.
                 </p>
-
-                <div className={styles.infoBox}>
-                  <p><strong>📱 For WalletConnect users:</strong></p>
-                  <p>• Check your Safe mobile/desktop app for the transaction request</p>
-                  <p>• The transaction will be queued if additional signatures are required</p>
-                </div>
               </div>
 
               <button

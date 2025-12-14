@@ -80,6 +80,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (errorMessage.includes('no route found')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'no_route_found',
+          message: 'No route found'
+        },
+        { status: 400 }
+      );
+    }
+
     if (errorMessage.includes('Invalid') && errorMessage.includes('address')) {
       return NextResponse.json(
         {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAccount, usePublicClient, useConnectorClient } from 'wagmi';
+import { useAccount, usePublicClient, useConnectorClient, useSignMessage } from 'wagmi';
 import { safeService } from '../../../services/safeService';
 import { walletConnectSafeService } from '../../../services/walletConnectSafeService';
 import { ethers } from 'ethers';
@@ -32,9 +32,10 @@ export default function OrderCancellationPopup({
   onClose,
   order
 }: OrderCancellationPopupProps) {
-  const { address, connector } = useAccount();
+  const { address, connector, chainId } = useAccount();
   const publicClient = usePublicClient();
   const { data: client } = useConnectorClient();
+  const { signMessageAsync } = useSignMessage();
 
   const [state, setState] = useState<PopupState>({
     step: 'confirm',
@@ -101,16 +102,17 @@ export default function OrderCancellationPopup({
         // Add 5-second delay for propagation to ensure indexing services are updated
         await new Promise(resolve => setTimeout(resolve, 5000));
 
-        // Call the same API that was used during preparation but now with the transaction hash
+        // Call the API to update order status in database
+        // Note: No signature needed here - ownership was verified in POST before Polymarket cancellation
         const response = await fetch('/api/polyswap/orders/remove', {
-          method: 'PUT', // Use PUT to update the existing cancellation
+          method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             orderHash: order.order_hash,
             transactionHash: state.transactionHash,
-            confirmed: true // Flag to indicate this is the confirmation step
+            confirmed: true
           })
         });
 
@@ -153,10 +155,38 @@ export default function OrderCancellationPopup({
   }, [state.step, state.transactionHash, order.order_hash]);
 
   const handleConfirmCancellation = async () => {
-    setState(prev => ({ ...prev, step: 'polymarket' }));
-
     try {
-      // Step 1: Cancel Polymarket order and get transaction data
+      // Step 1: Sign message to prove ownership (EIP-191)
+      const timestamp = Math.floor(Date.now() / 1000);
+      const message = `PolySwap Action Request\nAction: cancel_order\nOrder: ${order.order_hash}\nTimestamp: ${timestamp}\nChain: ${chainId}`;
+
+      let signature: string;
+      try {
+        signature = await signMessageAsync({ message });
+      } catch (signError: unknown) {
+        // User rejected signature
+        const errorMsg = signError instanceof Error ? signError.message.toLowerCase() : '';
+        if (errorMsg.includes('rejected') || errorMsg.includes('denied') || errorMsg.includes('cancelled')) {
+          setState(prev => ({
+            ...prev,
+            step: 'error',
+            error: 'signature_refused',
+            errorMessage: 'Signature was rejected. Cancellation aborted.'
+          }));
+        } else {
+          setState(prev => ({
+            ...prev,
+            step: 'error',
+            error: 'signature_error',
+            errorMessage: 'Failed to sign cancellation request'
+          }));
+        }
+        return;
+      }
+
+      setState(prev => ({ ...prev, step: 'polymarket' }));
+
+      // Step 2: Cancel Polymarket order and get transaction data (with signature proof)
       const response = await fetch('/api/polyswap/orders/remove', {
         method: 'POST',
         headers: {
@@ -164,7 +194,10 @@ export default function OrderCancellationPopup({
         },
         body: JSON.stringify({
           orderHash: order.order_hash,
-          ownerAddress: address
+          ownerAddress: address,
+          signature,
+          timestamp,
+          chainId
         })
       });
 
@@ -180,7 +213,7 @@ export default function OrderCancellationPopup({
         return;
       }
 
-      // Step 2: Move to transaction step
+      // Step 3: Move to transaction step
       setState(prev => ({
         ...prev,
         step: 'transaction',

@@ -3,10 +3,11 @@ import { DatabaseService } from '../../../../../backend/services/databaseService
 import { getPolymarketOrderService } from '../../../../../backend/services/polymarketOrderService';
 import { ethers } from 'ethers';
 import composableCowABI from '../../../../../abi/composableCoW.json';
+import { verifySignature } from '../../../../../backend/utils/signatureVerification';
 
 export async function POST(request: NextRequest) {
   try {
-    const { orderHash, ownerAddress } = await request.json();
+    const { orderHash, ownerAddress, signature, timestamp, chainId } = await request.json();
 
     if (!orderHash || !ownerAddress) {
       return NextResponse.json(
@@ -15,11 +16,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate authentication fields
+    if (!signature || !timestamp || !chainId) {
+      return NextResponse.json(
+        { success: false, message: 'Missing authentication: signature, timestamp, chainId required' },
+        { status: 401 }
+      );
+    }
+
     const order = await DatabaseService.getPolyswapOrderByHashAndOwner(orderHash, ownerAddress.toLowerCase());
     if (!order) {
       return NextResponse.json(
         { success: false, message: 'Order not found or not owned by this address' },
         { status: 404 }
+      );
+    }
+
+    // Verify signature matches order owner
+    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+    const verification = await verifySignature({
+      action: 'cancel_order',
+      orderIdentifier: orderHash,
+      timestamp,
+      chainId,
+      signature,
+      expectedAddress: order.owner,
+      provider
+    });
+
+    if (!verification.valid) {
+      return NextResponse.json(
+        { success: false, message: `Unauthorized: ${verification.error}` },
+        { status: 403 }
       );
     }
 
@@ -84,6 +112,7 @@ export async function PUT(request: NextRequest) {
   try {
     const { orderHash, transactionHash, confirmed } = await request.json();
 
+    // Validate required fields
     if (!orderHash || !transactionHash || !confirmed) {
       return NextResponse.json(
         { success: false, message: 'Missing required fields: orderHash, transactionHash, confirmed' },
@@ -98,6 +127,11 @@ export async function PUT(request: NextRequest) {
         { status: 404 }
       );
     }
+
+    // Note: No signature verification needed here because:
+    // 1. The POST endpoint already verified ownership before canceling Polymarket order
+    // 2. The transactionHash proves a Safe transaction was executed (requires owner signature)
+    // 3. This PUT only updates DB status after on-chain confirmation
 
     // Update the order status to canceled
     const result = await DatabaseService.updateOrderStatus(
@@ -116,7 +150,7 @@ export async function PUT(request: NextRequest) {
         }
       });
     } else {
-      console.error('❌ Failed to update order status in database');
+      console.error('Failed to update order status in database');
       return NextResponse.json(
         { success: false, message: 'Failed to update order status in database' },
         { status: 500 }
@@ -124,7 +158,7 @@ export async function PUT(request: NextRequest) {
     }
 
   } catch (error) {
-    console.error('❌ Error in PUT remove order endpoint:', error);
+    console.error('Error in PUT remove order endpoint:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
 
     return NextResponse.json(

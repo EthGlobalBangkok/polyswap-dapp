@@ -745,25 +745,6 @@ export class DatabaseService {
   }
 
   /**
-   * Update transaction hash for an order using order hash
-   */
-  static async updateOrderTransactionHash(orderHash: string, transactionHash: string): Promise<boolean> {
-    const sql = `
-      UPDATE polyswap_orders 
-      SET transaction_hash = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE order_hash = $2
-      RETURNING order_hash
-    `;
-    try {
-      const result = await query(sql, [transactionHash, orderHash]);
-      return result.rows.length > 0;
-    } catch (error) {
-      console.error(`❌ Error updating transaction hash for ${orderHash}:`, error);
-      return false;
-    }
-  }
-
-  /**
    * Update transaction hash for an order using numerical ID and set status to live
    */
   static async updateOrderTransactionHashById(orderId: number, transactionHash: string): Promise<boolean> {

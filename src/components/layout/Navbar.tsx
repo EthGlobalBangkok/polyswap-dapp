@@ -1,42 +1,26 @@
 'use client';
 
+import Link from 'next/link';
 import styles from './Navbar.module.css';
-import {ConnectWallet} from '../ui/Wallet';
+import { ConnectWallet } from '../ui/Wallet';
 
-interface NavbarProps {
-  onOrdersClick?: () => void;
-  onLogoClick?: () => void;
-}
-
-const Navbar = ({ onOrdersClick, onLogoClick }: NavbarProps) => {
-  const handleOrdersClick = () => {
-    if (onOrdersClick) {
-      onOrdersClick();
-    }
-  };
-
-  const handleLogoClick = () => {
-    if (onLogoClick) {
-      onLogoClick();
-    }
-  };
-
+const Navbar = () => {
   return (
     <nav className={styles.navbar}>
       <div className={`container ${styles.navContent}`}>
         {/* Logo */}
-        <div className={styles.logo} onClick={handleLogoClick}>
+        <Link href="/" className={styles.logo}>
           <span className={styles.logoIcon}>🔄</span>
           <span className={styles.logoText}>
             Poly<span className="text-gradient">Swap</span>
           </span>
-        </div>
+        </Link>
 
         {/* Navigation Items */}
         <div className={styles.navItems}>
-          <button className={styles.ordersButton} onClick={handleOrdersClick}>
+          <Link href="/orders" className={styles.ordersButton}>
             <span>My Orders</span>
-          </button>
+          </Link>
           <ConnectWallet />
         </div>
       </div>

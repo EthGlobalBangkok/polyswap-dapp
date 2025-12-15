@@ -1,17 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Market } from '../../types/market';
 import { ApiMarket, apiService, SearchResult } from '../../services/api';
 import MarketCard from './MarketCard';
 import SearchBar from './SearchBar';
 import styles from './MarketGrid.module.css';
 
-interface MarketGridProps {
-  onMarketClick?: (market: Market) => void;
-}
-
-const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
+const MarketGrid = () => {
+  const router = useRouter();
   const [markets, setMarkets] = useState<Market[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
@@ -159,10 +157,8 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
   }, [currentPage, searchActive, currentQuery, currentCategory, handleSearch]);
 
   const handleMarketClick = useCallback((market: Market) => {
-    if (onMarketClick) {
-      onMarketClick(market);
-    }
-  }, [onMarketClick]);
+    router.push(`/create/${market.id}`);
+  }, [router]);
 
   // Memoize the SearchBar to prevent unnecessary re-renders
   const searchBar = useMemo(() => (
@@ -263,7 +259,7 @@ const MarketGrid = ({ onMarketClick }: MarketGridProps) => {
             <MarketCard
               key={market.id}
               market={market}
-              onClick={handleMarketClick}
+              onClick={() => handleMarketClick(market)}
             />
           ))}
         </div>

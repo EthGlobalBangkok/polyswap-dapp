@@ -1,15 +1,14 @@
 'use client';
 
-import Navbar from '../components/layout/Navbar';
-import Footer from '../components/layout/Footer';
-import MarketGrid from '../components/ui/MarketGrid';
-import styles from './page.module.css';
-
+import Navbar from '../../components/layout/Navbar';
+import Footer from '../../components/layout/Footer';
+import OrdersView from '../../components/ui/OrdersView';
+import styles from '../page.module.css';
 import { WagmiProvider } from 'wagmi'
-import { config } from '../wagmi/config'
+import { config } from '../../wagmi/config'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-export default function Home() {
+export default function OrdersPage() {
   const queryClient = new QueryClient()
 
   return (
@@ -20,7 +19,7 @@ export default function Home() {
           
           <main className={styles.main}>
             <div className="container">
-              <MarketGrid />
+              <OrdersView onBack={() => {}} />
             </div>
           </main>
           

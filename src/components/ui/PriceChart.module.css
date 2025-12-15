@@ -1,0 +1,60 @@
+.chartContainer {
+  width: 100%;
+  background: var(--background-card);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  box-shadow: var(--shadow-medium);
+  border: 1px solid var(--border-color);
+  margin-top: var(--spacing-md);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-md);
+  font-size: 0.9rem;
+}
+
+.currentPrice {
+  color: var(--text-secondary);
+}
+
+.triggerPrice {
+  color: var(--text-primary);
+}
+
+.chartWrapper {
+  position: relative;
+  cursor: crosshair;
+}
+
+.loading,
+.error,
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  color: var(--text-muted);
+  background: var(--background-card);
+  border-radius: var(--radius-lg);
+}
+
+.error {
+  color: var(--accent-danger);
+}
+
+.overlayHint {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: var(--spacing-xs);
+  opacity: 0.7;
+}
+
+/* Remove outline on focus for accessibility/click aesthetics as requested */
+.chartContainer:focus,
+.chartContainer *:focus,
+.chartContainer *:focus-visible {
+  outline: none !important;
+}

@@ -1,16 +1,17 @@
 'use client';
 
-import Navbar from '../components/layout/Navbar';
-import Footer from '../components/layout/Footer';
-import MarketGrid from '../components/ui/MarketGrid';
-import styles from './page.module.css';
-
+import { use } from 'react';
+import Navbar from '../../../components/layout/Navbar';
+import Footer from '../../../components/layout/Footer';
+import CreateOrderView from '../../../components/ui/CreateOrderView';
+import styles from '../../page.module.css';
 import { WagmiProvider } from 'wagmi'
-import { config } from '../wagmi/config'
+import { config } from '../../../wagmi/config'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-export default function Home() {
+export default function CreateOrderPage({ params }: { params: Promise<{ marketId: string }> }) {
   const queryClient = new QueryClient()
+  const { marketId } = use(params);
 
   return (
     <WagmiProvider config={config}>
@@ -20,7 +21,7 @@ export default function Home() {
           
           <main className={styles.main}>
             <div className="container">
-              <MarketGrid />
+              <CreateOrderView marketId={marketId} onBack={() => {}} />
             </div>
           </main>
           

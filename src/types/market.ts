@@ -24,6 +24,7 @@ export interface Market {
   
   // Additional fields for Polymarket integration
   slug: string;
+  eventSlug?: string; // Parent event slug for Polymarket links (used for multi-choice markets)
   clobTokenIds: string[];
   conditionId?: string;
 }

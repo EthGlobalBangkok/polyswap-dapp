@@ -679,10 +679,10 @@ export default function CreateOrderView({ marketId, onBack }: CreateOrderViewPro
               <span className={styles.endDate}>Ends {new Date(market.endDate).toLocaleDateString()}</span>
               <span className={styles.type}>{market.type === 'binary' ? 'Binary' : 'Multi-Choice'}</span>
             </div>
-            {market.slug && (
+            {(market.eventSlug || market.slug) && (
               <div className={styles.polymarketLink}>
                 <a
-                  href={`https://polymarket.com/event/${market.slug}`}
+                  href={`https://polymarket.com/event/${market.eventSlug || market.slug}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={styles.polymarketButton}

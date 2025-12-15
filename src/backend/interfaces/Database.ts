@@ -3,6 +3,7 @@ export interface DatabaseMarket {
   question: string;
   condition_id: string;
   slug: string; // Market slug for URL-friendly identifiers
+  event_slug?: string; // Parent event slug for Polymarket links (used for multi-choice markets)
   category: string;
   start_date: Date;
   end_date: Date;

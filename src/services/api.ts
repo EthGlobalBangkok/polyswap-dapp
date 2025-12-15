@@ -11,6 +11,7 @@ export interface BackendMarket {
   category: string;
   condition_id?: string;
   slug: string;
+  event_slug?: string | null; // Parent event slug for Polymarket links
   clob_token_ids: string[];
   description?: string;
 }
@@ -56,6 +57,7 @@ export interface ApiMarket {
   options?: MarketOption[];
   conditionId?: string;
   slug: string;
+  eventSlug?: string; // Parent event slug for Polymarket links
   clobTokenIds: string[];
   description?: string;
 }
@@ -277,7 +279,7 @@ class ApiService {
     if (isTraditionalBinary) {
       const yesIndex = backendMarket.outcomes.indexOf('Yes');
       const noIndex = backendMarket.outcomes.indexOf('No');
-      
+
       return {
         id: backendMarket.id,
         title: backendMarket.question,
@@ -290,10 +292,11 @@ class ApiService {
         noOdds: Number(((backendMarket.outcome_prices[noIndex] || 0) * 100).toFixed(2)),
         conditionId: backendMarket.condition_id,
         slug: backendMarket.slug,
-        clobTokenIds: Array.isArray(backendMarket.clob_token_ids) 
-          ? backendMarket.clob_token_ids 
-          : typeof backendMarket.clob_token_ids === 'string' 
-            ? JSON.parse(backendMarket.clob_token_ids) 
+        eventSlug: backendMarket.event_slug || undefined,
+        clobTokenIds: Array.isArray(backendMarket.clob_token_ids)
+          ? backendMarket.clob_token_ids
+          : typeof backendMarket.clob_token_ids === 'string'
+            ? JSON.parse(backendMarket.clob_token_ids)
             : [],
         description: backendMarket.description
       };
@@ -315,10 +318,11 @@ class ApiService {
         options, // Include options for non-traditional binary markets
         conditionId: backendMarket.condition_id,
         slug: backendMarket.slug,
-        clobTokenIds: Array.isArray(backendMarket.clob_token_ids) 
-          ? backendMarket.clob_token_ids 
-          : typeof backendMarket.clob_token_ids === 'string' 
-            ? JSON.parse(backendMarket.clob_token_ids) 
+        eventSlug: backendMarket.event_slug || undefined,
+        clobTokenIds: Array.isArray(backendMarket.clob_token_ids)
+          ? backendMarket.clob_token_ids
+          : typeof backendMarket.clob_token_ids === 'string'
+            ? JSON.parse(backendMarket.clob_token_ids)
             : [],
         description: backendMarket.description
       };
@@ -340,10 +344,11 @@ class ApiService {
         options,
         conditionId: backendMarket.condition_id,
         slug: backendMarket.slug,
-        clobTokenIds: Array.isArray(backendMarket.clob_token_ids) 
-          ? backendMarket.clob_token_ids 
-          : typeof backendMarket.clob_token_ids === 'string' 
-            ? JSON.parse(backendMarket.clob_token_ids) 
+        eventSlug: backendMarket.event_slug || undefined,
+        clobTokenIds: Array.isArray(backendMarket.clob_token_ids)
+          ? backendMarket.clob_token_ids
+          : typeof backendMarket.clob_token_ids === 'string'
+            ? JSON.parse(backendMarket.clob_token_ids)
             : [],
         description: backendMarket.description
       };

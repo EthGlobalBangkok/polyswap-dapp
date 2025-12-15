@@ -90,15 +90,19 @@ export class DatabaseService {
       return;
     }
 
+    // Extract event slug from the events array (used for Polymarket links on multi-choice markets)
+    const eventSlug = market.events && market.events.length > 0 ? market.events[0].slug : null;
+
     const sql = `
       INSERT INTO markets (
-        id, question, condition_id, slug, category, start_date, end_date, volume, outcomes, outcome_prices, clob_token_ids
+        id, question, condition_id, slug, event_slug, category, start_date, end_date, volume, outcomes, outcome_prices, clob_token_ids
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
       )
       ON CONFLICT (condition_id) DO UPDATE SET
         question = EXCLUDED.question,
         slug = EXCLUDED.slug,
+        event_slug = EXCLUDED.event_slug,
         category = EXCLUDED.category,
         start_date = EXCLUDED.start_date,
         end_date = EXCLUDED.end_date,
@@ -108,12 +112,13 @@ export class DatabaseService {
         clob_token_ids = EXCLUDED.clob_token_ids,
         updated_at = CURRENT_TIMESTAMP
     `;
-    
+
     const values = [
       market.id,
       market.question,
       market.conditionId,
       market.slug,
+      eventSlug,
       this.extractCategory(market.question),
       new Date(market.startDate),
       new Date(market.endDate),

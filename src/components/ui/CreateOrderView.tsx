@@ -458,8 +458,19 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
            <div className={styles.marketCard}>
               <h2 className={styles.marketTitle}>{market?.title}</h2>
               <div className={styles.marketMeta}>
-                 <span className={styles.tag}>{market?.category}</span>
-                 <span>Vol: ${((market?.volume || 0)/1000000).toFixed(1)}M</span>
+                 <div className={styles.metaLeft}>
+                   <span className={styles.tag}>{market?.category}</span>
+                   <span>Vol: ${((market?.volume || 0)/1000000).toFixed(1)}M</span>
+                 </div>
+                 {/* Polymarket Link */}
+                 <a 
+                   href={`https://polymarket.com/event/${market?.eventSlug || market?.slug}`} 
+                   target="_blank" 
+                   rel="noopener noreferrer"
+                   className={styles.polymarketLink}
+                 >
+                   View on Polymarket ↗
+                 </a>
               </div>
               <p className={styles.marketDesc}>{market?.description}</p>
               

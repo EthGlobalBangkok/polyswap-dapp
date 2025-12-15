@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
+import Link from 'next/link';
 import { apiService } from '../../services/api';
 import { DatabasePolyswapOrder } from '../../backend/interfaces/PolyswapOrder';
 import OrderBroadcastPopup from './OrderBroadcastPopup/OrderBroadcastPopup';
@@ -265,9 +266,9 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
     return (
       <div className={styles.container}>
         <div className={styles.header}>
-          <button onClick={onBack} className={styles.backButton}>
+          <Link href="/" className={styles.backButton}>
             ← Back to Markets
-          </button>
+          </Link>
           <h1 className={styles.title}>My Orders</h1>
           <p className={styles.subtitle}>
             Manage your conditional swap orders
@@ -290,9 +291,9 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <button onClick={onBack} className={styles.backButton}>
+        <Link href="/" className={styles.backButton}>
           ← Back to Markets
-        </button>
+        </Link>
         <h1 className={styles.title}>My Orders</h1>
         <p className={styles.subtitle}>
           Manage your conditional swap orders

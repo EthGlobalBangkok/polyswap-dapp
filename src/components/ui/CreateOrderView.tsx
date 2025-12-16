@@ -7,6 +7,7 @@ import { apiService, ApiMarket } from '../../services/api';
 import TokenSelector from './TokenSelector';
 import TokenIcon from './TokenIcon';
 import OrderBroadcastPopup from './OrderBroadcastPopup/OrderBroadcastPopup';
+import ErrorPopup from './ErrorPopup';
 import PriceChart from './PriceChart';
 import styles from './CreateOrderView.module.css';
 
@@ -45,6 +46,7 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<number | null>(null);
   const [showBroadcastPopup, setShowBroadcastPopup] = useState(false);
+  const [showErrorPopup, setShowErrorPopup] = useState(false);
 
   // Token selector modals state
   const [showSellTokenSelector, setShowSellTokenSelector] = useState(false);
@@ -210,27 +212,52 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
     const buyTokenData = getTokenData(formData.buyToken);
     if (!sellTokenData || !buyTokenData) return;
     
-    // Simplified submission logic based on new fields
-    // We map "triggerPrice" to "betPercentage" (0-100) or similar logic expected by backend
-    // Assuming backend takes 0-1 range for probability if we want to be precise, 
-    // OR we just send the raw price as "limitPrice" if supported.
-    // For now we will map triggerPrice (0.00-1.00) to percentage (0-100) string
-    const percentage = (parseFloat(formData.triggerPrice) * 100).toFixed(0);
-
-    // Calculate timestamps
-    let start = Math.floor(new Date(formData.startDate).getTime() / 1000);
-    const now = Math.floor(Date.now() / 1000);
+    // Calculate timestamps and dates
+    const nowObj = new Date();
     
-    if (isStartNow || !formData.startDate) {
-        start = now; 
+    // Get local ISO string pattern: YYYY-MM-DDTHH:mm
+    const tzOffset = nowObj.getTimezoneOffset() * 60000;
+    const localISOTime = (new Date(nowObj.getTime() - tzOffset)).toISOString().slice(0, 16);
+    
+    let startTimestamp: number;
+    let startDateString: string;
+
+    if (isStartNow) {
+        startTimestamp = Math.floor(nowObj.getTime() / 1000);
+        startDateString = 'now';
+    } else {
+        if (!formData.startDate) {
+            setError('Please provide a Start Date');
+            setShowErrorPopup(true);
+            return;
+        }
+        startTimestamp = Math.floor(new Date(formData.startDate).getTime() / 1000);
+        startDateString = formData.startDate;
+        
+        // Validation: Start date in past
+        if (startTimestamp < Math.floor(Date.now() / 1000)) {
+             setError('Start date cannot be in the past');
+             setShowErrorPopup(true);
+             return;
+        }
     }
     
-    const end = Math.floor(new Date(formData.deadline).getTime() / 1000);
-    
-    if (!isStartNow && start < now) {
-        setError('Start date cannot be in the past');
+    if (!formData.deadline) {
+        setError('Please provide a Deadline');
+        setShowErrorPopup(true);
         return;
     }
+
+    const endTimestamp = Math.floor(new Date(formData.deadline).getTime() / 1000);
+    
+    // Validation: Deadline before start
+    if (endTimestamp <= startTimestamp) {
+        setError('Deadline must be after the Start Date');
+        setShowErrorPopup(true);
+        return;
+    }
+
+    const percentage = (parseFloat(formData.triggerPrice) * 100).toFixed(0);
 
     const sellAmountWei = BigInt(Math.floor(parseFloat(formData.sellAmount) * Math.pow(10, sellTokenData.decimals))).toString();
     const minBuyWei = BigInt(Math.floor(parseFloat(formData.minBuyAmount) * Math.pow(10, buyTokenData.decimals))).toString();
@@ -243,15 +270,15 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
         selectedOutcome: formData.selectedOutcome,
         // Backend expects percentage 0-100 usually
         betPercentage: percentage, 
-        startDate: formData.startDate,
+        startDate: startDateString, // Use the computed valid date string
         deadline: formData.deadline,
         marketId: market.id,
         marketTitle: market.title,
         marketDescription: market.description || '',
         clobTokenId: market.clobTokenIds?.[0], // First token ID for simple charts
         owner: address,
-        startTimestamp: start,
-        deadlineTimestamp: end,
+        startTimestamp: startTimestamp,
+        deadlineTimestamp: endTimestamp,
     };
 
     try {
@@ -261,10 +288,15 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
             setOrderId(result.data.orderId);
             setShowBroadcastPopup(true);
         } else {
-            setError(result.message || 'Failed');
+            // Format error message for better UX
+            let msg = result.message || 'Failed';
+            if (msg.includes('startDate')) msg = 'Invalid Start Date configuration';
+            setError(msg);
+            setShowErrorPopup(true);
         }
     } catch (e) {
-        setError('Submission failed');
+        setError('Submission failed. Please check your connection.');
+        setShowErrorPopup(true);
     } finally {
         setIsLoading(false);
     }
@@ -449,8 +481,8 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
             >
               {isLoading ? 'Creating Order...' : 'Create Order'}
            </button>
+
            
-           {error && <div className={styles.error} style={{marginTop: '1rem', color: 'red'}}>{error}</div>}
         </form>
 
         {/* Right Column: Chart */}
@@ -503,7 +535,16 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
         </div>
       </div>
 
-      {showBroadcastPopup && orderId && (
+      {/* Error Popup */}
+      <ErrorPopup 
+        isOpen={showErrorPopup} 
+        onClose={() => setShowErrorPopup(false)} 
+        title="Order Creation Failed"
+        message={error || 'An unknown error occurred.'}
+      />
+
+      {/* Order Broadcast Popup for continuing draft orders */}
+      {orderId && (
         <OrderBroadcastPopup 
           isOpen={showBroadcastPopup}
           orderId={orderId} 

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import Link from 'next/link';
-import { apiService } from '../../services/api';
+import { apiService, ApiMarket } from '../../services/api';
 import { DatabasePolyswapOrder } from '../../backend/interfaces/PolyswapOrder';
 import OrderBroadcastPopup from './OrderBroadcastPopup/OrderBroadcastPopup';
 import OrderCancellationPopup from './OrderCancellationPopup/OrderCancellationPopup';
@@ -30,6 +30,7 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [tokens, setTokens] = useState<Map<string, Token>>(new Map());
   const [tokensLoading, setTokensLoading] = useState(true);
+  const [markets, setMarkets] = useState<Map<string, ApiMarket>>(new Map());
   
   // OrderBroadcastPopup state
   const [showBroadcastPopup, setShowBroadcastPopup] = useState(false);
@@ -88,6 +89,31 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
       if (result.success && result.data) {
         setOrders(result.data);
         setError(null);
+
+        // Fetch market details for correct slugs
+        const uniqueIds = Array.from(new Set(result.data.map(o => String(o.market_id)).filter(id => !!id && id !== 'undefined' && id !== 'null')));
+        
+        // Don't block UI for market data, fetch it in background
+        Promise.all(uniqueIds.map(async (id) => {
+          try {
+            const market = await apiService.getMarketById(id);
+            return { id, market }; // Return the requested ID along with the market
+          } catch (e) {
+            console.warn(`Failed to fetch market info for ${id}`, e);
+            return null;
+          }
+        })).then(results => {
+          const newMarketsMap = new Map<string, ApiMarket>();
+          results.forEach(item => {
+            if (item && item.market) {
+              // Map the REQUESTED id to the market object.
+              // This ensures that even if the market has a different internal ID, we can look it up by the ID stored in the order.
+              newMarketsMap.set(item.id, item.market);
+            }
+          });
+          setMarkets(newMarketsMap);
+        });
+
       } else {
         setError(result.message || 'Failed to fetch orders');
         setOrders([]);
@@ -100,6 +126,7 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
       setIsLoading(false);
     }
   };
+
 
   const toggleOrderExpansion = (orderId: string) => {
     const newExpanded = new Set(expandedOrders);
@@ -253,9 +280,7 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
   };
 
   const getBlockExplorerLink = (hash: string, type: 'tx' | 'address' = 'tx') => {
-    // Using Polygon block explorer - adjust for your network
     const baseUrl = 'https://polygonscan.com';
-    // Handle empty or invalid hashes
     if (!hash || hash === 'N/A') {
       return '#';
     }
@@ -298,15 +323,6 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
         <p className={styles.subtitle}>
           Manage your conditional swap orders
         </p>
-        <div className={styles.walletInfo}>
-          <span className={styles.walletLabel}>Connected:</span>
-          <span className={styles.walletAddress}>
-            {address.slice(0, 6)}...{address.slice(-4)}
-          </span>
-          <button onClick={fetchOrders} className={styles.refreshButton} disabled={isLoading}>
-            {isLoading ? '↻' : '🔄'} Refresh
-          </button>
-        </div>
       </div>
       
       <div className={styles.content}>
@@ -352,14 +368,16 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
             
             {orders.map((order) => (
               <div key={order.id} className={styles.orderRow}>
-                <div className={styles.orderMain}>
+                <div className={styles.orderMain} onClick={() => toggleOrderExpansion(String(order.id))}>
                   <div className={styles.cell}>
                     <div className={styles.marketInfo}>
                       <div className={styles.orderHash}>
                         Order #{order.id}
                       </div>
                       <div className={styles.orderCondition}>
-                        Condition-based swap
+                        {order.outcome_selected && order.bet_percentage 
+                          ? `${order.outcome_selected} > ${order.bet_percentage}%`
+                          : 'Condition-based swap'}
                       </div>
                     </div>
                   </div>
@@ -389,11 +407,6 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
                       <div className={styles.createdDate}>
                         {formatDate(order.created_at.toString())}
                       </div>
-                      {order.end_time && (
-                        <div className={styles.endDate}>
-                          Expires: {formatDate(order.end_time.toString())}
-                        </div>
-                      )}
                     </div>
                   </div>
                   
@@ -402,7 +415,10 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
                       {order.status === 'draft' && (
                         <button
                           className={styles.continueButton}
-                          onClick={() => handleContinueCreation(order)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleContinueCreation(order);
+                          }}
                           title={getContinueButtonTitle(order)}
                         >
                           {getContinueButtonText(order)}
@@ -411,16 +427,21 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
                       {order.status === 'live' && (
                         <button
                           className={styles.removeButton}
-                          onClick={() => handleRemoveOrder(order)}
-                          title="Cancel this order on CoW Protocol"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveOrder(order);
+                          }}
+                          title="Cancel this order"
                         >
-                          Cancel Order
+                          Cancel
                         </button>
                       )}
                       <button
                         className={styles.expandButton}
-                        onClick={() => toggleOrderExpansion(String(order.id))}
-                        title={expandedOrders.has(String(order.id)) ? 'Collapse' : 'Expand details'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleOrderExpansion(String(order.id));
+                        }}
                       >
                         {expandedOrders.has(String(order.id)) ? '▲' : '▼'}
                       </button>
@@ -430,157 +451,170 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
                 
                 {expandedOrders.has(String(order.id)) && (
                   <div className={styles.orderDetails}>
-                    {order.status === 'draft' && (
-                      <div className={styles.progressSection}>
-                        <h4>Creation Progress</h4>
-                        <div className={styles.progressSteps}>
-                          <div className={styles.progressStep}>
-                            <span className={`${styles.stepIndicator} ${styles.stepCompleted}`}>✓</span>
-                            <span className={styles.stepText}>Order Created</span>
-                          </div>
-                          <div className={styles.progressStep}>
-                            <span className={`${styles.stepIndicator} ${
-                              order.polymarket_order_hash && 
-                              order.polymarket_order_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
-                                ? styles.stepCompleted 
-                                : styles.stepPending
-                            }`}>
-                              {order.polymarket_order_hash && 
-                               order.polymarket_order_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000' 
-                                ? '✓' : '○'}
-                            </span>
-                            <span className={styles.stepText}>Polymarket Order</span>
-                          </div>
-                          <div className={styles.progressStep}>
-                            <span className={`${styles.stepIndicator} ${
-                              order.transaction_hash && 
-                              order.transaction_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
-                                ? styles.stepCompleted 
-                                : styles.stepPending
-                            }`}>
-                              {order.transaction_hash && 
-                               order.transaction_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
-                                ? '✓' : '○'}
-                            </span>
-                            <span className={styles.stepText}>Transaction Signed</span>
-                          </div>
+                    <div className={styles.progressSection}>
+                      <h4>Order Progress</h4>
+                      <div className={styles.progressSteps}>
+                        {/* Step 1: Order Created */}
+                        <div className={styles.progressStep}>
+                          <span className={`${styles.stepIndicator} ${styles.stepCompleted}`}>✓</span>
+                          <span className={styles.stepText}>Order Created</span>
                         </div>
-                      </div>
-                    )}
-                    <div className={styles.detailsGrid}>
-                      <div className={styles.detailSection}>
-                        <h4>Order Details</h4>
-                        <div className={styles.detailRow}>
-                          <span>Order Hash:</span>
-                          <a
-                            href={getBlockExplorerLink(order.order_hash || '')}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={styles.hashLink}
-                          >
-                            {order.order_hash || 'N/A'}
-                          </a>
-                        </div>
-                        <div className={styles.detailRow}>
-                          <span>Owner:</span>
-                          <a
-                            href={getBlockExplorerLink(order.owner, 'address')}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={styles.addressLink}
-                          >
-                            {order.owner}
-                          </a>
-                        </div>
-                        <div className={styles.detailRow}>
-                          <span>Handler:</span>
-                          <a
-                            href={getBlockExplorerLink(order.handler, 'address')}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={styles.addressLink}
-                          >
-                            {order.handler}
-                          </a>
-                        </div>
-                        <div className={styles.detailRow}>
-                          <span>Status:</span>
-                          <span className={`${styles.status} ${getStatusDisplay(order.status).className}`}>
-                            {getStatusDisplay(order.status).label}
+                        
+                        {/* Step 2: Polymarket Order */}
+                        <div className={styles.progressStep}>
+                          <span className={`${styles.stepIndicator} ${
+                            order.polymarket_order_hash && 
+                            order.polymarket_order_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+                              ? styles.stepCompleted 
+                              : styles.stepPending
+                          }`}>
+                            {order.polymarket_order_hash && 
+                             order.polymarket_order_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000' 
+                              ? '✓' : '2'}
                           </span>
+                          <span className={styles.stepText}>Polymarket Order</span>
+                        </div>
+                        
+                        {/* Step 3: Transaction Signed */}
+                        <div className={styles.progressStep}>
+                          <span className={`${styles.stepIndicator} ${
+                            order.transaction_hash && 
+                            order.transaction_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+                              ? styles.stepCompleted 
+                              : styles.stepPending
+                          }`}>
+                            {order.transaction_hash && 
+                             order.transaction_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+                              ? '✓' : '3'}
+                          </span>
+                          <span className={styles.stepText}>Transaction Signed</span>
+                        </div>
+
+
+                        {/* Step 4: Swap Filled (Order Executed) */}
+                        <div className={styles.progressStep}>
+                          <span className={`${styles.stepIndicator} ${
+                            order.status === 'filled'
+                              ? styles.stepCompleted 
+                              : order.status === 'live' ? styles.stepPending : styles.stepPending
+                          }`}>
+                            {order.status === 'filled' ? '✓' : '4'}
+                          </span>
+                          <span className={styles.stepText}>Swap Filled</span>
                         </div>
                       </div>
-                      
-                      <div className={styles.detailSection}>
-                        <h4>Token Information</h4>
-                        <div className={styles.detailRow}>
-                          <span>Sell Token:</span>
-                          <span className={styles.tokenName}>{renderTokenName(order.sell_token)}</span>
+                    </div>
+                    
+                    
+                    <div className={styles.detailsCard}>
+                      <div className={styles.detailsGrid}>
+                        {/* 1. Compact Swap */}
+                        <div className={styles.compactSwap}>
+                          <div className={styles.tokenPair}>
+                            <span className={styles.tokenVal}>{formatTokenAmount(order.sell_amount, order.sell_token, false)}</span>
+                            <span className={styles.tokenSym}>{getTokenSymbol(order.sell_token)}</span>
+                          </div>
+                          <div className={styles.arrow}>➜</div>
+                          <div className={styles.tokenPair}>
+                            <span className={styles.tokenVal}>{formatTokenAmount(order.min_buy_amount, order.buy_token, false)}</span>
+                            <span className={styles.tokenSym}>{getTokenSymbol(order.buy_token)}</span>
+                          </div>
                         </div>
-                        <div className={styles.detailRow}>
-                          <span>Sell Amount:</span>
-                          <span>{formatTokenAmount(order.sell_amount, order.sell_token)}</span>
+
+                        {/* 2. Compact Trigger */}
+                        <div className={styles.infoBox}>
+                           <span className={styles.boxLabel}>TRIGGER</span>
+                           <div className={styles.boxValue}>
+                             {order.outcome_selected || 'Yes'} {'>'} {order.bet_percentage}%
+                           </div>
                         </div>
-                        <div className={styles.detailRow}>
-                          <span>Buy Token:</span>
-                          <span className={styles.tokenName}>{renderTokenName(order.buy_token)}</span>
+
+                        {/* 3. Current Price / Distance */}
+                        {order.market_id && markets.get(String(order.market_id)) && (
+                          (() => {
+                            const m = markets.get(String(order.market_id));
+                            let currentProb = 0;
+                            const target = order.bet_percentage || 0;
+                            const outcome = order.outcome_selected || 'Yes';
+                            
+                            if (m?.type === 'binary') {
+                              if (outcome === 'Yes') currentProb = m.yesOdds || 0;
+                              else if (outcome === 'No') currentProb = m.noOdds || 0;
+                            } else if (m?.options) {
+                              const opt = m.options.find(o => o.text === outcome);
+                              if (opt) currentProb = opt.odds;
+                            }
+
+                            const diff = currentProb - target;
+                            const isMet = currentProb > target;
+                            
+                            return (
+                              <div className={styles.infoBox}>
+                                <span className={styles.boxLabel}>CURRENT PRICE</span>
+                                <div className={styles.boxValue}>
+                                  {currentProb}% 
+                                  <span className={`${styles.diffBadge} ${diff >= 0 ? styles.diffPos : styles.diffNeg}`}>
+                                    {diff > 0 ? '+' : ''}{diff.toFixed(1)}%
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })()
+                        )}
+
+                        {/* 4. Status */}
+                        <div className={styles.infoBox}>
+                           <span className={styles.boxLabel}>STATUS</span>
+                           <span className={`${styles.statusBadge} ${getStatusDisplay(order.status).className}`}>
+                              {getStatusDisplay(order.status).label}
+                           </span>
                         </div>
-                        <div className={styles.detailRow}>
-                          <span>Min Buy Amount:</span>
-                          <span>{formatTokenAmount(order.min_buy_amount, order.buy_token)}</span>
-                        </div>
-                      </div>
-                      
-                      <div className={styles.detailSection}>
-                        <h4>Timing & Blockchain</h4>
-                        <div className={styles.detailRow}>
-                          <span>Start Time:</span>
-                          <span>{formatDate(order.start_time.toString())}</span>
-                        </div>
-                        <div className={styles.detailRow}>
-                          <span>End Time:</span>
-                          <span>{formatDate(order.end_time.toString())}</span>
-                        </div>
-                        <div className={styles.detailRow}>
-                          <span>Block Number:</span>
-                          <span>{order.block_number}</span>
-                        </div>
-                        {order.transaction_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000' && (
-                          <div className={styles.detailRow}>
-                            <span>Transaction:</span>
-                            <a
+
+                        {/* 5. Links */}
+                        <div className={styles.linksActions}>
+                          {order.transaction_hash && order.transaction_hash !== '0x' && order.transaction_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000' && (
+                            <a 
                               href={getBlockExplorerLink(order.transaction_hash)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className={styles.hashLink}
+                              className={styles.miniIconLink}
+                              title="View Transaction"
                             >
-                              {order.transaction_hash}
+                              ↗
                             </a>
-                          </div>
-                        )}
-                        <div className={styles.detailRow}>
-                          <span>Log Index:</span>
-                          <span>{order.log_index}</span>
-                        </div>
-                      </div>
-                      
-                      <div className={styles.detailSection}>
-                        <h4>Additional Data</h4>
-                        <div className={styles.detailRow}>
-                          <span>Polymarket Hash:</span>
-                          <span className={styles.hashValue}>{order.polymarket_order_hash}</span>
-                        </div>
-                        <div className={styles.detailRow}>
-                          <span>App Data:</span>
-                          <span className={styles.hashValue}>{order.app_data}</span>
-                        </div>
-                        <div className={styles.detailRow}>
-                          <span>Created:</span>
-                          <span>{formatDate(order.created_at.toString())}</span>
-                        </div>
-                        <div className={styles.detailRow}>
-                          <span>Updated:</span>
-                          <span>{formatDate(order.updated_at.toString())}</span>
+                          )}
+
+                          {order.order_hash && order.status === 'filled' && (
+                            <a 
+                              href={`https://explorer.cow.fi/pol/orders/${order.order_hash}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={styles.miniIconLink}
+                              title="View on CoW Explorer"
+                            >
+                               🐮
+                            </a>
+                          )}
+
+                          {order.market_id && (
+                            (() => {
+                              const market = markets.get(String(order.market_id));
+                              if (!market) return null;
+                              const slug = market.eventSlug || market.slug;
+                              if (!slug) return null;
+                              return (
+                                <a 
+                                  href={`https://polymarket.com/event/${slug}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={styles.miniIconLink}
+                                  title="View on Polymarket"
+                                >
+                                   📈
+                                </a>
+                              );
+                            })()
+                          )}
                         </div>
                       </div>
                     </div>

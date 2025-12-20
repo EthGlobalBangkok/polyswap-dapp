@@ -18,6 +18,8 @@ export interface BatchTransactionResult {
   needsDomainVerifier: boolean;
   domainVerifierTransaction?: BatchTransactionRequest;
   mainTransaction: BatchTransactionRequest;
+  requiresTwoStepSetup?: boolean; // NEW: Indicates fallback handler must be set first
+  setupOnlyBatch?: boolean; // NEW: This batch is just for setup, main tx should be in next batch
 }
 
 export class SafeBatchService {
@@ -61,14 +63,35 @@ export class SafeBatchService {
             value: fallbackTx.value
           };
           transactions.push(fallbackHandlerTransaction);
-
-          // Step 1.5: Add domain verifier transaction when fallback handler is being set
-          try {
-            const domainVerifierTx = await SafeDomainVerifierService.createDomainVerifierTransaction(
+          
+          // CRITICAL: Do NOT batch domain verifier with fallback handler!
+          // Even in MultiSend, the fallback handler may not be immediately active
+          // for routing calls within the same transaction.
+          // Return ONLY the fallback handler setup.
+          console.log('⚠️  Fallback handler needs to be set first. Returning setup with ONLY handler.');
+          console.log('   User will need to retry after this transaction is confirmed.');
+          
+          return {
+            transactions,
+            needsApproval: false,
+            needsFallbackHandler: true,
+            fallbackHandlerTransaction,
+            needsDomainVerifier: false, // Will be checked on next attempt
+            mainTransaction,
+            requiresTwoStepSetup: true,
+            setupOnlyBatch: true
+          };
+        } else {
+          // Fallback handler already set, check if domain verifier needs to be set
+          const { needsDomainVerifier: domainVerifierNeeded, domainVerifierTx } = 
+            await SafeDomainVerifierService.checkAndCreateDomainVerifierTransaction(
               ownerAddress,
               provider
             );
 
+          if (domainVerifierNeeded && domainVerifierTx) {
+            // Domain verifier also needs its own setup transaction
+            // Cannot be batched with order creation due to precondition checks
             needsDomainVerifier = true;
             domainVerifierTransaction = {
               to: domainVerifierTx.to,
@@ -76,8 +99,20 @@ export class SafeBatchService {
               value: domainVerifierTx.value
             };
             transactions.push(domainVerifierTransaction);
-          } catch (domainError) {
-            console.warn('Could not create domain verifier transaction:', domainError);
+            
+            console.log('⚠️  Domain verifier needs to be set. Returning setup with ONLY verifier.');
+            console.log('   User will need to retry after this transaction is confirmed.');
+            
+            return {
+              transactions,
+              needsApproval: false,
+              needsFallbackHandler: false,
+              needsDomainVerifier: true,
+              domainVerifierTransaction,
+              mainTransaction,
+              requiresTwoStepSetup: true,
+              setupOnlyBatch: true
+            };
           }
         }
       } catch (error) {
@@ -120,7 +155,9 @@ export class SafeBatchService {
         fallbackHandlerTransaction,
         needsDomainVerifier,
         domainVerifierTransaction,
-        mainTransaction
+        mainTransaction,
+        requiresTwoStepSetup: false,
+        setupOnlyBatch: false
       };
 
     } catch (error) {

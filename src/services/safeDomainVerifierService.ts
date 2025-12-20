@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { SafeFallbackHandlerService } from './safeFallbackHandlerService';
 
 export interface DomainVerifierTransaction {
   to: string;
@@ -39,21 +40,67 @@ export class SafeDomainVerifierService {
   }
 
   /**
+   * Get the current domain verifier for a Safe address
+   * Calls domainVerifiers(address safe, bytes32 domainSeparator) on the Safe's fallback handler
+   */
+  static async getCurrentDomainVerifier(
+    safeAddress: string,
+    domainSeparator: string,
+    provider: ethers.Provider
+  ): Promise<string> {
+    try {
+      // Get the actual fallback handler set on this Safe
+      const handlerAddress = await SafeFallbackHandlerService.EXPECTED_HANDLER;
+
+      // ExtensibleFallbackHandler domainVerifiers mapping signature
+      const handlerInterface = new ethers.Interface([
+        'function domainVerifiers(address, bytes32) view returns (address)'
+      ]);
+
+      const contract = new ethers.Contract(
+        handlerAddress,
+        handlerInterface,
+        provider
+      );
+
+      const verifier = await contract.domainVerifiers(safeAddress, domainSeparator);
+      return verifier;
+    } catch (error) {
+      console.error('Error reading domain verifier:', error);
+      throw new Error(`Failed to read domain verifier: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Check if the Safe has the correct domain verifier set
+   * Returns true if domain verifier is correctly set, false if it needs update
+   */
+  static async isDomainVerifierCorrect(
+    safeAddress: string,
+    domainSeparator: string,
+    provider: ethers.Provider
+  ): Promise<boolean> {
+    try {
+      const expected = this.COMPOSABLE_COW_ADDRESS.toLowerCase();
+      const current = await this.getCurrentDomainVerifier(safeAddress, domainSeparator, provider);
+
+      return current.toLowerCase() === expected;
+    } catch (error) {
+      console.error('Error checking domain verifier:', error);
+      // If we can't check, assume it needs to be set
+      return false;
+    }
+  }
+
+  /**
    * Create a transaction to set the domain verifier on the Safe
    * Calls setDomainVerifier(bytes32 domainSeparator, address verifier) on the Safe
-   *
-   * @param safeAddress - The Safe wallet address
-   * @param domainSeparator - The domain separator from ComposableCoW contract
-   * @param verifierAddress - The verifier address (ComposableCoW address)
    */
   static createSetDomainVerifierTransaction(
     safeAddress: string,
-    domainSeparator: string,
-    verifierAddress?: string
+    domainSeparator: string
   ): DomainVerifierTransaction {
     try {
-      const verifier = verifierAddress || this.COMPOSABLE_COW_ADDRESS;
-
       // Safe's setDomainVerifier function signature
       const safeInterface = new ethers.Interface([
         'function setDomainVerifier(bytes32 domainSeparator, address verifier)'
@@ -62,7 +109,7 @@ export class SafeDomainVerifierService {
       // Encode the function call
       const data = safeInterface.encodeFunctionData('setDomainVerifier', [
         domainSeparator,
-        verifier
+        this.COMPOSABLE_COW_ADDRESS
       ]);
 
       return {
@@ -77,29 +124,36 @@ export class SafeDomainVerifierService {
   }
 
   /**
-   * Create a domain verifier transaction by fetching the domain separator from ComposableCoW
+   * Check if a domain verifier transaction is needed and create it if required
+   * Returns object with needsDomainVerifier flag and transaction (if needed)
+   * 
    * This is the main method to use when adding domain verifier setup to batch transactions
-   *
-   * Since we cannot check if domain verifier is already set, this will always create the transaction
-   * when called (typically when fallback handler is not set up)
    */
-  static async createDomainVerifierTransaction(
+  static async checkAndCreateDomainVerifierTransaction(
     safeAddress: string,
-    provider: ethers.Provider,
-    verifierAddress?: string
-  ): Promise<DomainVerifierTransaction> {
+    provider: ethers.Provider
+  ): Promise<{ needsDomainVerifier: boolean; domainVerifierTx?: DomainVerifierTransaction }> {
     try {
       // Fetch domain separator from ComposableCoW contract
       const domainSeparator = await this.getDomainSeparator(provider);
 
-      return this.createSetDomainVerifierTransaction(
-        safeAddress,
-        domainSeparator,
-        verifierAddress
-      );
+      // Check if domain verifier is already set correctly
+      const isCorrect = await this.isDomainVerifierCorrect(safeAddress, domainSeparator, provider);
+
+      if (isCorrect) {
+        return { needsDomainVerifier: false };
+      }
+
+      // Create the transaction if needed
+      const domainVerifierTx = this.createSetDomainVerifierTransaction(safeAddress, domainSeparator);
+
+      return {
+        needsDomainVerifier: true,
+        domainVerifierTx
+      };
     } catch (error) {
-      console.error('Error creating domain verifier transaction:', error);
-      throw new Error(`Failed to create domain verifier transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error checking and creating domain verifier transaction:', error);
+      throw new Error(`Failed to check/create domain verifier transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }

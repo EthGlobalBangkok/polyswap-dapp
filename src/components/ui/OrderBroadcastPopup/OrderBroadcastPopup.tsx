@@ -194,16 +194,42 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
         return;
       }
 
-
       try {
-        // Wait for transaction to be confirmed on-chain
-        await walletConnectSafeService.waitForTransactionConfirmation(state.transactionHash, 60000); // 1 minute timeout
+        // Check if this was a setup-only batch
+        const isSetupOnly = state.transactionData?.setupOnlyBatch;
+        
+        if (isSetupOnly) {
+          // This was a setup transaction - wait for confirmation then check for next step
+          console.log('🔧 Setup transaction detected, waiting for confirmation...');
+          
+          // Wait for transaction to be confirmed on-chain
+          await walletConnectSafeService.waitForTransactionConfirmation(state.transactionHash, 60000);
+          
+          // Add delay for blockchain state propagation
+          console.log('⏳ Waiting for blockchain state propagation...');
+          await new Promise(resolve => setTimeout(resolve, 8000)); // Longer delay for setup txs
+          
+          // Reset to transaction step to re-fetch batch data
+          console.log('🔄 Setup complete, checking for next setup step...');
+          setState(prev => ({
+            ...prev,
+            step: 'transaction',
+            transactionHash: undefined,
+            transactionData: undefined,
+            // Keep polymarketOrderHash to continue flow
+          }));
+          
+          return; // Don't proceed to success, let it re-fetch and check next step
+        }
+        
+        // Normal order transaction - wait and update database
+        await walletConnectSafeService.waitForTransactionConfirmation(state.transactionHash, 60000);
 
         // Add 5-second delay for propagation to ensure indexing services are updated
         await new Promise(resolve => setTimeout(resolve, 5000));
 
         // Now that transaction is confirmed and propagated, update the database
-        let updateResult = await apiService.updateOrderTransactionHashById(orderId, state.transactionHash);
+        const updateResult = await apiService.updateOrderTransactionHashById(orderId, state.transactionHash);
 
         if (updateResult.success) {
           setState(prev => ({ ...prev, step: 'success' }));
@@ -237,7 +263,7 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
     };
 
     handleSignedState();
-  }, [state.step, state.transactionHash, orderId]);
+  }, [state.step, state.transactionHash, state.transactionData?.setupOnlyBatch, orderId]);
 
   // On open, fetch order to determine resume step from DB status and polymarket hash
   useEffect(() => {
@@ -361,47 +387,40 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({
           return;
         }
       } else if (isWalletConnect) {
-        // Use WalletConnect Safe service directly - simplified flow
+        // Use WalletConnect Safe service with BATCHED transaction support
+        // All transactions are encoded into a single MultiSend transaction
 
         try {
           // Get transactions array - support both batch and single transaction formats
           const transactions = isBatchTransaction ? state.transactionData.transactions : [state.transactionData];
 
+          console.log(`📦 Sending ${transactions.length} transaction(s) ${transactions.length > 1 ? 'as batched transaction via MultiSend' : 'directly'}`);
 
-          let results: any[];
+          // Use the new batched transaction method
+          // This encodes all transactions into a single MultiSend call
+          const result = await walletConnectSafeService.sendBatchedTransaction(
+            transactions,
+            (current, total, txType, txHash) => {
+              setState(prev => ({
+                ...prev,
+                transactionProgress: {
+                  current,
+                  total,
+                  currentTxType: txType
+                }
+              }));
+            }
+          );
 
-          if (transactions.length === 1) {
-            // Single transaction - use direct method
-            const result = await walletConnectSafeService.sendTransaction(transactions[0]);
-            results = [result];
-          } else {
-            // Multiple transactions - use sequential method
-            results = await walletConnectSafeService.sendMultipleTransactions(
-              transactions,
-              (current, total, txType, txHash) => {
-                setState(prev => ({
-                  ...prev,
-                  transactionProgress: {
-                    current,
-                    total,
-                    currentTxType: txType
-                  }
-                }));
-              }
-            );
-          }
-
-
-          // Get the last transaction hash (main transaction)
-          const lastResult = results[results.length - 1];
-          if (lastResult && lastResult.success) {
-            transactionHash = lastResult.transactionHash;
+          // Transaction was sent successfully
+          if (result && result.success) {
+            transactionHash = result.transactionHash;
 
             // Move to "signed" state - show success with tx hash but keep processing
             setState(prev => ({
               ...prev,
               step: 'signed',
-              transactionHash: lastResult.transactionHash
+              transactionHash: result.transactionHash
             }));
           } else {
             throw new Error('Transaction signing failed');

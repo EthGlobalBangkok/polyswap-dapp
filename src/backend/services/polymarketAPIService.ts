@@ -17,6 +17,7 @@ export class PolymarketAPIService {
     const { endDateMin, maxNb } = options;
     const baseUrl = `${this.BASE_URL}/markets`;
     const allMarkets: Market[] = [];
+    const limit = 500;
     let nextCursor = 0;
     let fetchedCount = 0;
 
@@ -27,11 +28,12 @@ export class PolymarketAPIService {
         url.searchParams.set("active", "true");
         url.searchParams.set("closed", "false");
         url.searchParams.set("end_date_min", endDateMin);
+        url.searchParams.set("limit", limit.toString());
         
         if (nextCursor) {
           url.searchParams.set("offset", nextCursor.toString());
         }
-        
+
         const response = await fetch(url.toString());
         
         if (!response.ok) {

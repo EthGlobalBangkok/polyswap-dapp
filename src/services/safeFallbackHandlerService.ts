@@ -24,7 +24,7 @@ export class SafeFallbackHandlerService {
   private static readonly FALLBACK_HANDLER_STORAGE_SLOT = '0x6c9a6c4a39284e37ed1cf53d337577d14212a4870fb976a4366c693b939918d5';
 
   // Expected PolySwap handler address
-  private static readonly EXPECTED_HANDLER = process.env.EXTENSIBLE_FALLBACK_HANDLER || '0x2f55e8b20D0B9FEFA187AA7d00B6Cbe563605bF5';
+  public static readonly EXPECTED_HANDLER = process.env.EXTENSIBLE_FALLBACK_HANDLER || '0x2f55e8b20D0B9FEFA187AA7d00B6Cbe563605bF5';
 
   /**
    * Get the current fallback handler for a Safe address

@@ -1,9 +1,11 @@
 import { ethers } from 'ethers';
+import { SafeMultiSendService } from './safeMultiSendService';
 
 export interface WalletConnectSafeTransactionRequest {
   to: string;
   data: string;
   value: string;
+  gas?: string; // Optional gas limit
 }
 
 export interface WalletConnectSafeBatchTransactionRequest {
@@ -154,12 +156,25 @@ export class WalletConnectSafeService {
 
     try {
 
-      // Prepare transaction - let Safe handle gas estimation
-      const txRequest = {
+      // Prepare transaction - include gas if provided, otherwise let Safe estimate
+      const txRequest: any = {
         to: transactionRequest.to,
         data: transactionRequest.data,
         value: transactionRequest.value,
       };
+
+      // Add gas limit if provided (with safety buffer for Safe overhead)
+      if (transactionRequest.gas) {
+        const gasLimit = BigInt(transactionRequest.gas);
+        // Add 50% buffer for Safe execution overhead
+        const gasWithBuffer = (gasLimit * 150n) / 100n;
+        txRequest.gasLimit = '0x' + gasWithBuffer.toString(16);
+        console.log('⛽ Using gas limit with buffer:', {
+          estimated: transactionRequest.gas,
+          withBuffer: gasWithBuffer.toString(),
+          bufferPercent: '50%'
+        });
+      }
 
 
       // Get signer address for logging
@@ -331,14 +346,113 @@ export class WalletConnectSafeService {
   }
 
   /**
+   * Send multiple transactions via WalletConnect to Safe
+   * 
+   * ⚠️ IMPORTANT: MultiSend doesn't work with WalletConnect because:
+   * - WalletConnect sends transactions as CALL operations
+   * - MultiSend requires DELEGATECALL to function
+   * - We don't have control over operation type via WalletConnect
+   * 
+   * Therefore, this method sends transactions SEQUENTIALLY to ensure reliability.
+   * For true atomic batching, use Safe App (not WalletConnect).
+   * 
+   * @param transactions - Array of transactions to send
+   * @param onProgress - Optional progress callback
+   * @returns Result of the last transaction (for backwards compatibility)
+   */
+  async sendBatchedTransaction(
+    transactions: WalletConnectSafeTransactionRequest[],
+    onProgress?: (current: number, total: number, txType: string, txHash?: string) => void
+  ): Promise<WalletConnectSafeTransactionResult> {
+    if (!this.signer || !this.provider) {
+      throw new Error('Service not initialized. Call initialize() first.');
+    }
+
+    if (transactions.length === 0) {
+      throw new Error('No transactions to send');
+    }
+
+    // If only one transaction, send it directly
+    if (transactions.length === 1) {
+      if (onProgress) {
+        onProgress(0, 1, 'Transaction');
+      }
+      const result = await this.sendTransaction(transactions[0]);
+      if (onProgress) {
+        onProgress(1, 1, 'Transaction', result.transactionHash);
+      }
+      return result;
+    }
+
+    console.warn('⚠️  WalletConnect does not support MultiSend batching (requires DELEGATECALL).');
+    console.log('📤 Sending', transactions.length, 'transactions sequentially...');
+
+    // Get transaction summary for logging
+    const summary = SafeMultiSendService.createTransactionSummary(transactions);
+    console.log('📋 Transaction types:', summary.types);
+
+    // Send transactions sequentially
+    let lastResult: WalletConnectSafeTransactionResult | null = null;
+    const totalTxs = transactions.length;
+
+    for (let i = 0; i < transactions.length; i++) {
+      const tx = transactions[i];
+      const currentTx = i + 1;
+      const txType = summary.types[i] || 'Transaction';
+
+      console.log(`📤 Sending ${currentTx}/${totalTxs}: ${txType}`);
+
+      // Call progress callback before starting transaction
+      if (onProgress) {
+        onProgress(currentTx - 1, totalTxs, txType);
+      }
+
+      try {
+        const result = await this.sendTransaction(tx);
+        lastResult = result;
+
+        console.log(`✅ ${txType} signed:`, result.transactionHash);
+
+        // Update progress after successful transaction signature
+        if (onProgress) {
+          onProgress(currentTx, totalTxs, txType, result.transactionHash);
+        }
+
+        // Small delay between transactions to avoid overwhelming the Safe app
+        if (i < transactions.length - 1) {
+          console.log('⏳ Waiting 2s before next transaction...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+
+      } catch (error) {
+        // Stop the process and throw the error - don't continue with remaining transactions
+        const errorMessage = `Transaction ${currentTx}/${totalTxs} (${txType}) failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        console.error('❌', errorMessage);
+        throw new Error(errorMessage);
+      }
+    }
+
+    if (!lastResult) {
+      throw new Error('No transactions were executed');
+    }
+
+    console.log('✅ All', totalTxs, 'transactions signed successfully');
+    return lastResult;
+  }
+
+  /**
    * Send multiple transactions sequentially to Safe via WalletConnect
    * Each transaction is signed individually and executed one by one
+   * 
+   * ⚠️ DEPRECATED: Use sendBatchedTransaction instead for atomic execution
+   * This method is kept for backwards compatibility only
    */
   async sendMultipleTransactions(
     transactions: WalletConnectSafeTransactionRequest[],
     onProgress?: (current: number, total: number, txType: string, txHash?: string) => void
   ): Promise<WalletConnectSafeTransactionResult[]> {
-
+    console.warn('⚠️  sendMultipleTransactions is deprecated. Use sendBatchedTransaction for atomic execution.');
+    
     if (!this.signer || !this.provider) {
       throw new Error('Service not initialized. Call initialize() first.');
     }
@@ -349,7 +463,6 @@ export class WalletConnectSafeService {
     for (let i = 0; i < transactions.length; i++) {
       const tx = transactions[i];
       const currentTx = i + 1;
-
 
       // Determine transaction type for better UX
       let txType = 'Transaction';
@@ -365,7 +478,6 @@ export class WalletConnectSafeService {
         }
       }
 
-
       // Call progress callback before starting transaction
       if (onProgress) {
         onProgress(currentTx - 1, totalTxs, txType);
@@ -373,9 +485,7 @@ export class WalletConnectSafeService {
 
       try {
         const result = await this.sendTransaction(tx);
-
         results.push(result);
-
 
         // Update progress after successful transaction signature
         if (onProgress) {
@@ -388,7 +498,6 @@ export class WalletConnectSafeService {
         }
 
       } catch (error) {
-
         // Stop the process and throw the error - don't continue with remaining transactions
         const errorMessage = `Transaction ${currentTx} (${txType}) failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
         throw new Error(errorMessage);
@@ -402,70 +511,16 @@ export class WalletConnectSafeService {
   /**
    * Send transactions sequentially for Safe wallets
    * Each transaction is signed individually and treated as successful upon signature
+   * 
+   * ⚠️ DEPRECATED: Use sendBatchedTransaction instead for atomic execution
+   * This method is kept for backwards compatibility only
    */
   async sendTransactionsSequentially(
     batchRequest: WalletConnectSafeBatchTransactionRequest,
     onProgress?: (current: number, total: number, txType: string) => void
   ): Promise<WalletConnectSafeTransactionResult[]> {
-
-    if (!this.signer || !this.provider) {
-      throw new Error('Service not initialized. Call initialize() first.');
-    }
-
-    const results: WalletConnectSafeTransactionResult[] = [];
-    const totalTxs = batchRequest.transactions.length;
-
-
-    for (let i = 0; i < batchRequest.transactions.length; i++) {
-      const tx = batchRequest.transactions[i];
-      const currentTx = i + 1;
-
-
-      // Determine transaction type for better UX
-      let txType = 'Transaction';
-      if (totalTxs > 1) {
-        if (tx.data.startsWith('0xf08a0323')) {
-          txType = 'Set Fallback Handler';
-        } else if (tx.data.startsWith('0x3365582c')) {
-          txType = 'Set Domain Verifier';
-        } else if (tx.data.startsWith('0x095ea7b3')) {
-          txType = 'Token Approval';
-        } else {
-          txType = 'Conditional Order';
-        }
-      }
-
-
-      // Call progress callback before starting transaction
-      if (onProgress) {
-        onProgress(currentTx - 1, totalTxs, txType);
-      }
-
-      try {
-        const result = await this.sendTransaction(tx);
-
-        results.push(result);
-
-
-        // Update progress after successful transaction signature
-        if (onProgress) {
-          onProgress(currentTx, totalTxs, txType);
-        }
-
-        // Small delay between transactions to avoid overwhelming the Safe app
-        if (i < batchRequest.transactions.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-
-      } catch (error) {
-
-        // Stop the process and throw the error - don't continue with remaining transactions
-        const errorMessage = `Transaction ${currentTx} (${txType}) failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-        throw new Error(errorMessage);
-      }
-    }
-
-    return results;
+    console.warn('⚠️  sendTransactionsSequentially is deprecated. Use sendBatchedTransaction instead.');
+    return this.sendMultipleTransactions(batchRequest.transactions, onProgress);
   }
 
   isInitialized(): boolean {

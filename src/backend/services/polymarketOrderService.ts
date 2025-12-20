@@ -313,13 +313,14 @@ export class PolymarketOrderService {
       // Calculate required amount: (price * size) * (10 ** decimals)
       const requiredAmount = (priceBigInt * sizeBigInt * decimalsMultiplier) / (1000000n * 1000000n);
 
+      // TODO what does this do?
       await this.clobClient?.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
 
       const ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
       if (!ok) {
-        throw new Error('Insufficient allowance for USDC');
+        throw new Error(`Insufficient on-chain allowance for USDC. Please approve ${ethers.formatUnits(requiredAmount, decimals)} USDC for ${this.POLYMARKET_CONTRACT}`);
       }
-      
+            
       try {
         const response = await this.clobClient!.createAndPostOrder({
           tokenID: config.tokenID,

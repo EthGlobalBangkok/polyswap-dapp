@@ -182,6 +182,8 @@ export async function POST(
         error: 'insufficient_balance',
         message: `Insufficient balance. Required: ${balanceValidation.formatted.required}, Available: ${balanceValidation.formatted.balance}`,
         data: {
+          sellToken,
+          ownerAddress,
           required: balanceValidation.required,
           balance: balanceValidation.balance,
           formatted: balanceValidation.formatted

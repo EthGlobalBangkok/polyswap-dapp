@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
-import { useState, useRef, useEffect } from 'react';
-import styles from './TokenIcon.module.css';
+import { useState, useRef, useEffect } from "react";
+import styles from "./TokenIcon.module.css";
 
 interface TokenIconProps {
   logoURI?: string;
   symbol: string;
-  size?: 'small' | 'medium' | 'large';
+  size?: "small" | "medium" | "large";
   className?: string;
 }
 
-export default function TokenIcon({ logoURI, symbol, size = 'medium', className }: TokenIconProps) {
+export default function TokenIcon({ logoURI, symbol, size = "medium", className }: TokenIconProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -46,14 +46,11 @@ export default function TokenIcon({ logoURI, symbol, size = 'medium', className 
   const sizeClass = {
     small: styles.small,
     medium: styles.medium,
-    large: styles.large
+    large: styles.large,
   }[size];
 
   return (
-    <div 
-      ref={imgRef} 
-      className={`${styles.tokenIcon} ${sizeClass} ${className || ''}`}
-    >
+    <div ref={imgRef} className={`${styles.tokenIcon} ${sizeClass} ${className || ""}`}>
       {isVisible && logoURI && !hasError ? (
         <>
           <img
@@ -61,18 +58,12 @@ export default function TokenIcon({ logoURI, symbol, size = 'medium', className 
             alt={symbol}
             onLoad={handleImageLoad}
             onError={handleImageError}
-            className={`${styles.image} ${isLoaded ? styles.loaded : ''}`}
+            className={`${styles.image} ${isLoaded ? styles.loaded : ""}`}
           />
-          {!isLoaded && (
-            <div className={styles.placeholder}>
-              {symbol.charAt(0)}
-            </div>
-          )}
+          {!isLoaded && <div className={styles.placeholder}>{symbol.charAt(0)}</div>}
         </>
       ) : (
-        <div className={styles.placeholder}>
-          {symbol.charAt(0)}
-        </div>
+        <div className={styles.placeholder}>{symbol.charAt(0)}</div>
       )}
     </div>
   );

@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import styles from './OrderBroadcastPopup.module.css';
+import React, { useState } from "react";
+import styles from "./OrderBroadcastPopup.module.css";
 
 interface PolymarketOrderStepProps {
   orderId: number; // Changed from orderHash to orderId
@@ -9,37 +9,37 @@ interface PolymarketOrderStepProps {
   onError: (errorMessage: string) => void;
 }
 
-export const PolymarketOrderStep: React.FC<PolymarketOrderStepProps> = ({ 
+export const PolymarketOrderStep: React.FC<PolymarketOrderStepProps> = ({
   orderId, // Changed from orderHash to orderId
-  onCreateSuccess, 
-  onError 
+  onCreateSuccess,
+  onError,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleCreatePolymarketOrder = async () => {
     setIsLoading(true);
-    
+
     try {
-      const response = await fetch('/api/polyswap/orders/polymarket', {
-        method: 'PUT',
+      const response = await fetch("/api/polyswap/orders/polymarket", {
+        method: "PUT",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ orderId }), // Changed from orderHash to orderId
       });
 
       const result = await response.json();
-      
+
       if (result.success) {
         onCreateSuccess(result.data.polymarketOrderHash);
       } else {
         // More detailed error handling
-        const errorMessage = result.message || result.error || 'Failed to create Polymarket order';
-        console.error('Polymarket order creation failed:', result);
+        const errorMessage = result.message || result.error || "Failed to create Polymarket order";
+        console.error("Polymarket order creation failed:", result);
         onError(`Polymarket order creation failed: ${errorMessage}`);
       }
     } catch (error) {
-      onError(error instanceof Error ? error.message : 'Failed to create Polymarket order');
+      onError(error instanceof Error ? error.message : "Failed to create Polymarket order");
     } finally {
       setIsLoading(false);
     }
@@ -51,7 +51,7 @@ export const PolymarketOrderStep: React.FC<PolymarketOrderStepProps> = ({
       <p className={styles.stepDescription}>
         First, we need to create your Polymarket order which will be linked to your PolySwap order.
       </p>
-      
+
       <div className={styles.infoBox}>
         <h3>What happens next:</h3>
         <ul>
@@ -60,7 +60,7 @@ export const PolymarketOrderStep: React.FC<PolymarketOrderStepProps> = ({
           <li>You'll then sign a transaction to broadcast your PolySwap order on-chain</li>
         </ul>
       </div>
-      
+
       <button
         className={styles.primaryButton}
         onClick={handleCreatePolymarketOrder}
@@ -72,7 +72,7 @@ export const PolymarketOrderStep: React.FC<PolymarketOrderStepProps> = ({
             Creating Polymarket Order...
           </>
         ) : (
-          'Create Polymarket Order'
+          "Create Polymarket Order"
         )}
       </button>
     </div>

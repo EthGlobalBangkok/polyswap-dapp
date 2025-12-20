@@ -19,11 +19,11 @@ The PolySwap backend provides:
 
 ### Core Components
 
-* **Next.js API Routes**: RESTful endpoints integrated with the frontend application
-* **Blockchain Listener**: Real-time event monitoring using ethers.js
-* **PostgreSQL Database**: Persistent storage with optimized indexing
-* **Data Services**: Market data fetching from Polymarket CLOB API
-* **Order UID Calculation**: Automatic order UID generation using PolySwap Handler contract
+- **Next.js API Routes**: RESTful endpoints integrated with the frontend application
+- **Blockchain Listener**: Real-time event monitoring using ethers.js
+- **PostgreSQL Database**: Persistent storage with optimized indexing
+- **Data Services**: Market data fetching from Polymarket CLOB API
+- **Order UID Calculation**: Automatic order UID generation using PolySwap Handler contract
 
 ### Event Processing
 
@@ -46,49 +46,49 @@ PolySwap automatically calculates and stores CoW Protocol order UIDs:
 
 ## 🧪 Stack
 
-* **Runtime**: [Node.js](https://nodejs.org/) with [TypeScript](https://www.typescriptlang.org/)
-* **Framework**: [Next.js 15](https://nextjs.org/) with App Router
-* **Blockchain**: [ethers.js v6](https://docs.ethers.org/v6/) for Polygon interaction
-* **Database**: [PostgreSQL 15](https://www.postgresql.org/) with Docker
-* **Package Manager**: [pnpm](https://pnpm.io/) for fast, efficient dependency management
+- **Runtime**: [Node.js](https://nodejs.org/) with [TypeScript](https://www.typescriptlang.org/)
+- **Framework**: [Next.js 15](https://nextjs.org/) with App Router
+- **Blockchain**: [ethers.js v6](https://docs.ethers.org/v6/) for Polygon interaction
+- **Database**: [PostgreSQL 15](https://www.postgresql.org/) with Docker
+- **Package Manager**: [pnpm](https://pnpm.io/) for fast, efficient dependency management
 
 ## 📡 API Endpoints
 
 ### Market Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/markets/top` | Top markets by volume |
-| `GET` | `/api/markets/search?q=keywords` | Search markets by keywords |
-| `GET` | `/api/markets/:id` | Get market by ID or condition ID |
-| `GET` | `/api/markets/category/:category` | Get markets by category |
-| `GET` | `/api/markets` | Get all markets with pagination |
+| Method | Endpoint                          | Description                      |
+| ------ | --------------------------------- | -------------------------------- |
+| `GET`  | `/api/markets/top`                | Top markets by volume            |
+| `GET`  | `/api/markets/search?q=keywords`  | Search markets by keywords       |
+| `GET`  | `/api/markets/:id`                | Get market by ID or condition ID |
+| `GET`  | `/api/markets/category/:category` | Get markets by category          |
+| `GET`  | `/api/markets`                    | Get all markets with pagination  |
 
 ### PolySwap Order Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/polyswap/orders/create` | Create a new draft order |
-| `GET` | `/api/polyswap/orders/:owner` | Get orders by owner address |
-| `GET` | `/api/polyswap/orders/hash/:orderHash` | Get order by hash |
-| `GET` | `/api/polyswap/orders/id/:id` | Get order by ID |
-| `PUT` | `/api/polyswap/orders/id/:id/transaction` | Update order with transaction hash |
-| `GET` | `/api/polyswap/orders/id/:id/batch-transaction` | Get batch transaction data |
-| `GET` | `/api/polyswap/orders` | Get all orders with pagination |
-| `GET` | `/api/polyswap/orders/polymarket/:hash` | Get orders by Polymarket hash |
-| `PUT` | `/api/polyswap/orders/remove` | Cancel/remove orders |
+| Method | Endpoint                                        | Description                        |
+| ------ | ----------------------------------------------- | ---------------------------------- |
+| `POST` | `/api/polyswap/orders/create`                   | Create a new draft order           |
+| `GET`  | `/api/polyswap/orders/:owner`                   | Get orders by owner address        |
+| `GET`  | `/api/polyswap/orders/hash/:orderHash`          | Get order by hash                  |
+| `GET`  | `/api/polyswap/orders/id/:id`                   | Get order by ID                    |
+| `PUT`  | `/api/polyswap/orders/id/:id/transaction`       | Update order with transaction hash |
+| `GET`  | `/api/polyswap/orders/id/:id/batch-transaction` | Get batch transaction data         |
+| `GET`  | `/api/polyswap/orders`                          | Get all orders with pagination     |
+| `GET`  | `/api/polyswap/orders/polymarket/:hash`         | Get orders by Polymarket hash      |
+| `PUT`  | `/api/polyswap/orders/remove`                   | Cancel/remove orders               |
 
 ### Token Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/tokens` | Get supported token list |
+| Method | Endpoint      | Description              |
+| ------ | ------------- | ------------------------ |
+| `GET`  | `/api/tokens` | Get supported token list |
 
 ### Utility Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/health` | Health check endpoint |
+| Method | Endpoint      | Description           |
+| ------ | ------------- | --------------------- |
+| `GET`  | `/api/health` | Health check endpoint |
 
 ## 🔍 API Examples
 
@@ -158,23 +158,23 @@ The listener extracts and stores the following order information:
 
 ```typescript
 {
-  id: number;              // Database ID
-  orderHash: string;       // Unique order identifier from event
-  orderUid: string;        // CoW Protocol order UID (calculated)
-  owner: string;           // Order creator address
-  handler: string;         // PolySwap handler contract
-  sellToken: string;       // Token to sell
-  buyToken: string;        // Token to buy
-  sellAmount: string;      // Amount to sell
-  minBuyAmount: string;    // Minimum amount to receive
-  startTime: Date;         // Order validity start
-  endTime: Date;           // Order validity end
+  id: number; // Database ID
+  orderHash: string; // Unique order identifier from event
+  orderUid: string; // CoW Protocol order UID (calculated)
+  owner: string; // Order creator address
+  handler: string; // PolySwap handler contract
+  sellToken: string; // Token to sell
+  buyToken: string; // Token to buy
+  sellAmount: string; // Amount to sell
+  minBuyAmount: string; // Minimum amount to receive
+  startTime: Date; // Order validity start
+  endTime: Date; // Order validity end
   polymarketOrderHash: string; // Related Polymarket order
-  appData: string;         // Additional order data
-  blockNumber: number;     // Block where order was created
+  appData: string; // Additional order data
+  blockNumber: number; // Block where order was created
   transactionHash: string; // Transaction hash
-  logIndex: number;        // Event log index
-  status: string;          // Order status (draft, live, filled, canceled)
+  logIndex: number; // Event log index
+  status: string; // Order status (draft, live, filled, canceled)
 }
 ```
 
@@ -265,5 +265,5 @@ src/
 
 ## 🧑‍💻 Authors
 
- | [<img src="https://github.com/Intermarch3.png?size=85" width=85><br><sub>Lucas Leclerc</sub>](https://github.com/Intermarch3) | [<img src="https://github.com/Pybast.png?size=85" width=85><br><sub>Baptiste Florentin</sub>](https://github.com/Pybast)
- | :---: | :---: |
+| [<img src="https://github.com/Intermarch3.png?size=85" width=85><br><sub>Lucas Leclerc</sub>](https://github.com/Intermarch3) | [<img src="https://github.com/Pybast.png?size=85" width=85><br><sub>Baptiste Florentin</sub>](https://github.com/Pybast) |
+| :---------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------: |

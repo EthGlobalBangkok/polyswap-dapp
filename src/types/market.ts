@@ -13,15 +13,15 @@ export interface Market {
   endDate: string;
   category: string;
   isActive: boolean;
-  type: 'binary' | 'multi-choice';
-  
+  type: "binary" | "multi-choice";
+
   // For binary markets (Yes/No)
   yesOdds?: number;
   noOdds?: number;
-  
+
   // For multi-choice markets (elections, etc.)
   options?: MarketOption[];
-  
+
   // Additional fields for Polymarket integration
   slug: string;
   eventSlug?: string; // Parent event slug for Polymarket links (used for multi-choice markets)
@@ -32,4 +32,4 @@ export interface Market {
 export interface MarketCardProps {
   market: Market;
   onClick?: (market: Market) => void;
-} 
+}

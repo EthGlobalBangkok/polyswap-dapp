@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { TokenPriceService } from '@/backend/services/tokenPriceService';
+import { NextRequest, NextResponse } from "next/server";
+import { TokenPriceService } from "@/backend/services/tokenPriceService";
 
 /**
  * @swagger
@@ -60,8 +60,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: 'missing_token_address',
-          message: 'Missing required field: tokenAddress'
+          error: "missing_token_address",
+          message: "Missing required field: tokenAddress",
         },
         { status: 400 }
       );
@@ -75,8 +75,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: 'invalid_token_address',
-          message: 'Invalid token address format'
+          error: "invalid_token_address",
+          message: "Invalid token address format",
         },
         { status: 400 }
       );
@@ -89,8 +89,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: 'price_unavailable',
-          message: 'USD price not available for this token'
+          error: "price_unavailable",
+          message: "USD price not available for this token",
         },
         { status: 404 }
       );
@@ -101,20 +101,19 @@ export async function POST(request: NextRequest) {
       data: {
         tokenAddress,
         chainId: networkChainId,
-        usdPrice: price
-      }
+        usdPrice: price,
+      },
     });
-
   } catch (error) {
-    console.error('Error in token price API:', error);
+    console.error("Error in token price API:", error);
 
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     return NextResponse.json(
       {
         success: false,
-        error: 'price_fetch_failed',
-        message: `Failed to fetch token price: ${errorMessage}`
+        error: "price_fetch_failed",
+        message: `Failed to fetch token price: ${errorMessage}`,
       },
       { status: 500 }
     );

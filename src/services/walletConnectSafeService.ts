@@ -1,5 +1,5 @@
-import { ethers } from 'ethers';
-import { SafeMultiSendService } from './safeMultiSendService';
+import { ethers } from "ethers";
+import { SafeMultiSendService } from "./safeMultiSendService";
 
 export interface WalletConnectSafeTransactionRequest {
   to: string;
@@ -37,11 +37,11 @@ export class WalletConnectSafeService {
   async checkConnection(): Promise<boolean> {
     try {
       if (!this.signer || !this.provider) return false;
-      
+
       // Try a simple call to check connection
       const address = await this.signer.getAddress();
       const balance = await this.provider.getBalance(address);
-      
+
       return true;
     } catch (error) {
       return false;
@@ -56,59 +56,54 @@ export class WalletConnectSafeService {
     retries: number = 2
   ): Promise<WalletConnectSafeTransactionResult> {
     if (!this.signer) {
-      throw new Error('Signer not initialized. Call initialize() first.');
+      throw new Error("Signer not initialized. Call initialize() first.");
     }
 
     // Check connection first
     const connectionOk = await this.checkConnection();
     if (!connectionOk) {
-      throw new Error('WalletConnect connection is not healthy. Please reconnect your wallet.');
+      throw new Error("WalletConnect connection is not healthy. Please reconnect your wallet.");
     }
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        
         const fromAddress = await this.signer.getAddress();
-        
+
         // Simplified transaction request - remove problematic fields
         const rawTxRequest = {
           from: fromAddress,
           to: transactionRequest.to,
           data: transactionRequest.data,
-          value: transactionRequest.value || '0x0',
+          value: transactionRequest.value || "0x0",
         };
-
 
         // Add small delay between retries
         if (attempt > 0) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
 
         // Send via the provider's JSON-RPC directly
-        const txHash = await (this.provider as any).send('eth_sendTransaction', [rawTxRequest]);
-        
+        const txHash = await (this.provider as any).send("eth_sendTransaction", [rawTxRequest]);
 
         return {
           transactionHash: txHash,
-          success: true
+          success: true,
         };
-
       } catch (error) {
-        
         if (attempt === retries) {
           // Last attempt failed
           throw error;
         }
-        
+
         // Check if it's a connection issue
         const connectionStillOk = await this.checkConnection();
         if (!connectionStillOk) {
-          throw new Error('WalletConnect connection lost. Please reconnect your wallet.');
+          throw new Error("WalletConnect connection lost. Please reconnect your wallet.");
         }
       }
     }
 
-    throw new Error('Transaction failed after all retries');
+    throw new Error("Transaction failed after all retries");
   }
 
   /**
@@ -119,9 +114,8 @@ export class WalletConnectSafeService {
     transactionHash: string,
     timeoutMs: number = 60000 // 1 minute default timeout
   ): Promise<any> {
-
     if (!this.provider) {
-      throw new Error('Provider not initialized. Call initialize() first.');
+      throw new Error("Provider not initialized. Call initialize() first.");
     }
 
     try {
@@ -130,10 +124,9 @@ export class WalletConnectSafeService {
       const receipt = await Promise.race([
         this.provider.waitForTransaction(transactionHash),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Transaction confirmation timeout')), timeoutMs)
-        )
+          setTimeout(() => reject(new Error("Transaction confirmation timeout")), timeoutMs)
+        ),
       ]);
-
 
       return receipt;
     } catch (error) {
@@ -149,13 +142,11 @@ export class WalletConnectSafeService {
   async sendTransaction(
     transactionRequest: WalletConnectSafeTransactionRequest
   ): Promise<WalletConnectSafeTransactionResult> {
-
     if (!this.signer) {
-      throw new Error('Signer not initialized. Call initialize() first.');
+      throw new Error("Signer not initialized. Call initialize() first.");
     }
 
     try {
-
       // Prepare transaction - include gas if provided, otherwise let Safe estimate
       const txRequest: any = {
         to: transactionRequest.to,
@@ -168,14 +159,13 @@ export class WalletConnectSafeService {
         const gasLimit = BigInt(transactionRequest.gas);
         // Add 50% buffer for Safe execution overhead
         const gasWithBuffer = (gasLimit * 150n) / 100n;
-        txRequest.gasLimit = '0x' + gasWithBuffer.toString(16);
-        console.log('⛽ Using gas limit with buffer:', {
+        txRequest.gasLimit = "0x" + gasWithBuffer.toString(16);
+        console.log("⛽ Using gas limit with buffer:", {
           estimated: transactionRequest.gas,
           withBuffer: gasWithBuffer.toString(),
-          bufferPercent: '50%'
+          bufferPercent: "50%",
         });
       }
-
 
       // Get signer address for logging
 
@@ -185,15 +175,13 @@ export class WalletConnectSafeService {
       // For Safe + WalletConnect, we treat successful signature as success
       const tx = await this.signer.sendTransaction(txRequest);
 
-
       if (!tx) {
-        throw new Error('Transaction result is null - signing may have failed');
+        throw new Error("Transaction result is null - signing may have failed");
       }
 
       if (!tx.hash) {
-        throw new Error('Transaction result missing hash - signing may have failed');
+        throw new Error("Transaction result missing hash - signing may have failed");
       }
-
 
       // For Safe wallets with WalletConnect:
       // - tx.hash indicates the transaction was successfully signed and submitted
@@ -202,60 +190,61 @@ export class WalletConnectSafeService {
 
       const result = {
         transactionHash: tx.hash,
-        success: true
+        success: true,
       };
 
-
       return result;
-
     } catch (error) {
-
       // Enhanced error handling for user rejection and common Safe errors
       if (error instanceof Error) {
         const errorMsg = error.message.toLowerCase();
 
         // User rejection patterns
-        if (errorMsg.includes('user rejected') ||
-            errorMsg.includes('denied') ||
-            errorMsg.includes('user denied') ||
-            errorMsg.includes('user cancelled') ||
-            errorMsg.includes('transaction was cancelled') ||
-            errorMsg.includes('action_rejected') ||
-            (error as any).code === 4001) {
-          throw new Error('Transaction signing was refused by user');
+        if (
+          errorMsg.includes("user rejected") ||
+          errorMsg.includes("denied") ||
+          errorMsg.includes("user denied") ||
+          errorMsg.includes("user cancelled") ||
+          errorMsg.includes("transaction was cancelled") ||
+          errorMsg.includes("action_rejected") ||
+          (error as any).code === 4001
+        ) {
+          throw new Error("Transaction signing was refused by user");
         }
 
         // Safe-specific rejection patterns
-        if (errorMsg.includes('safe transaction was rejected') ||
-            errorMsg.includes('transaction rejected by safe') ||
-            errorMsg.includes('user rejected the safe transaction')) {
-          throw new Error('Transaction signing was refused in Safe wallet');
+        if (
+          errorMsg.includes("safe transaction was rejected") ||
+          errorMsg.includes("transaction rejected by safe") ||
+          errorMsg.includes("user rejected the safe transaction")
+        ) {
+          throw new Error("Transaction signing was refused in Safe wallet");
         }
 
         // Network/technical errors
-        if (errorMsg.includes('insufficient funds')) {
-          throw new Error('Insufficient funds for transaction');
+        if (errorMsg.includes("insufficient funds")) {
+          throw new Error("Insufficient funds for transaction");
         }
-        if (errorMsg.includes('gas')) {
-          throw new Error('Gas estimation failed - check contract parameters');
+        if (errorMsg.includes("gas")) {
+          throw new Error("Gas estimation failed - check contract parameters");
         }
-        if (errorMsg.includes('nonce')) {
-          throw new Error('Transaction nonce error - please retry');
+        if (errorMsg.includes("nonce")) {
+          throw new Error("Transaction nonce error - please retry");
         }
-        if (errorMsg.includes('replacement')) {
-          throw new Error('Transaction replacement error - please wait and retry');
+        if (errorMsg.includes("replacement")) {
+          throw new Error("Transaction replacement error - please wait and retry");
         }
-        if (errorMsg.includes('network') || errorMsg.includes('connection')) {
-          throw new Error('Network connection issue - please check your connection and retry');
+        if (errorMsg.includes("network") || errorMsg.includes("connection")) {
+          throw new Error("Network connection issue - please check your connection and retry");
         }
       }
 
       // Check for error codes that indicate user rejection
-      if ((error as any)?.code === 4001 || (error as any)?.code === 'ACTION_REJECTED') {
-        throw new Error('Transaction signing was refused by user');
+      if ((error as any)?.code === 4001 || (error as any)?.code === "ACTION_REJECTED") {
+        throw new Error("Transaction signing was refused by user");
       }
 
-      throw new Error(error instanceof Error ? error.message : 'Failed to send transaction');
+      throw new Error(error instanceof Error ? error.message : "Failed to send transaction");
     }
   }
 
@@ -271,17 +260,17 @@ export class WalletConnectSafeService {
     try {
       // Check if the address has code (is a contract)
       const code = await this.provider.getCode(address);
-      
+
       // Safe wallets are smart contracts, so they have bytecode
-      if (code === '0x') {
+      if (code === "0x") {
         return false; // EOA wallet
       }
 
       // Additional check: try to call a Safe-specific method
       // This is a simple heuristic - Safe wallets typically have specific method signatures
       const safeInterface = new ethers.Interface([
-        'function getThreshold() view returns (uint256)',
-        'function getOwners() view returns (address[])'
+        "function getThreshold() view returns (uint256)",
+        "function getOwners() view returns (address[])",
       ]);
 
       try {
@@ -312,29 +301,29 @@ export class WalletConnectSafeService {
 
     try {
       const isSafe = await this.isSafeWallet(address);
-      
+
       if (!isSafe) {
         return { isSafe: false };
       }
 
       // Try to get Safe-specific information
       const safeInterface = new ethers.Interface([
-        'function getThreshold() view returns (uint256)',
-        'function getOwners() view returns (address[])'
+        "function getThreshold() view returns (uint256)",
+        "function getOwners() view returns (address[])",
       ]);
 
       const contract = new ethers.Contract(address, safeInterface, this.provider);
-      
+
       try {
         const [threshold, owners] = await Promise.all([
           contract.getThreshold(),
-          contract.getOwners()
+          contract.getOwners(),
         ]);
 
         return {
           isSafe: true,
           threshold: Number(threshold),
-          owners: owners
+          owners: owners,
         };
       } catch {
         // If we can't get Safe info, still return as Safe
@@ -347,15 +336,15 @@ export class WalletConnectSafeService {
 
   /**
    * Send multiple transactions via WalletConnect to Safe
-   * 
+   *
    * ⚠️ IMPORTANT: MultiSend doesn't work with WalletConnect because:
    * - WalletConnect sends transactions as CALL operations
    * - MultiSend requires DELEGATECALL to function
    * - We don't have control over operation type via WalletConnect
-   * 
+   *
    * Therefore, this method sends transactions SEQUENTIALLY to ensure reliability.
    * For true atomic batching, use Safe App (not WalletConnect).
-   * 
+   *
    * @param transactions - Array of transactions to send
    * @param onProgress - Optional progress callback
    * @returns Result of the last transaction (for backwards compatibility)
@@ -365,31 +354,31 @@ export class WalletConnectSafeService {
     onProgress?: (current: number, total: number, txType: string, txHash?: string) => void
   ): Promise<WalletConnectSafeTransactionResult> {
     if (!this.signer || !this.provider) {
-      throw new Error('Service not initialized. Call initialize() first.');
+      throw new Error("Service not initialized. Call initialize() first.");
     }
 
     if (transactions.length === 0) {
-      throw new Error('No transactions to send');
+      throw new Error("No transactions to send");
     }
 
     // If only one transaction, send it directly
     if (transactions.length === 1) {
       if (onProgress) {
-        onProgress(0, 1, 'Transaction');
+        onProgress(0, 1, "Transaction");
       }
       const result = await this.sendTransaction(transactions[0]);
       if (onProgress) {
-        onProgress(1, 1, 'Transaction', result.transactionHash);
+        onProgress(1, 1, "Transaction", result.transactionHash);
       }
       return result;
     }
 
-    console.warn('⚠️  WalletConnect does not support MultiSend batching (requires DELEGATECALL).');
-    console.log('📤 Sending', transactions.length, 'transactions sequentially...');
+    console.warn("⚠️  WalletConnect does not support MultiSend batching (requires DELEGATECALL).");
+    console.log("📤 Sending", transactions.length, "transactions sequentially...");
 
     // Get transaction summary for logging
     const summary = SafeMultiSendService.createTransactionSummary(transactions);
-    console.log('📋 Transaction types:', summary.types);
+    console.log("📋 Transaction types:", summary.types);
 
     // Send transactions sequentially
     let lastResult: WalletConnectSafeTransactionResult | null = null;
@@ -398,7 +387,7 @@ export class WalletConnectSafeService {
     for (let i = 0; i < transactions.length; i++) {
       const tx = transactions[i];
       const currentTx = i + 1;
-      const txType = summary.types[i] || 'Transaction';
+      const txType = summary.types[i] || "Transaction";
 
       console.log(`📤 Sending ${currentTx}/${totalTxs}: ${txType}`);
 
@@ -420,30 +409,29 @@ export class WalletConnectSafeService {
 
         // Small delay between transactions to avoid overwhelming the Safe app
         if (i < transactions.length - 1) {
-          console.log('⏳ Waiting 2s before next transaction...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          console.log("⏳ Waiting 2s before next transaction...");
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
-
       } catch (error) {
         // Stop the process and throw the error - don't continue with remaining transactions
-        const errorMessage = `Transaction ${currentTx}/${totalTxs} (${txType}) failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-        console.error('❌', errorMessage);
+        const errorMessage = `Transaction ${currentTx}/${totalTxs} (${txType}) failed: ${error instanceof Error ? error.message : "Unknown error"}`;
+        console.error("❌", errorMessage);
         throw new Error(errorMessage);
       }
     }
 
     if (!lastResult) {
-      throw new Error('No transactions were executed');
+      throw new Error("No transactions were executed");
     }
 
-    console.log('✅ All', totalTxs, 'transactions signed successfully');
+    console.log("✅ All", totalTxs, "transactions signed successfully");
     return lastResult;
   }
 
   /**
    * Send multiple transactions sequentially to Safe via WalletConnect
    * Each transaction is signed individually and executed one by one
-   * 
+   *
    * ⚠️ DEPRECATED: Use sendBatchedTransaction instead for atomic execution
    * This method is kept for backwards compatibility only
    */
@@ -451,10 +439,12 @@ export class WalletConnectSafeService {
     transactions: WalletConnectSafeTransactionRequest[],
     onProgress?: (current: number, total: number, txType: string, txHash?: string) => void
   ): Promise<WalletConnectSafeTransactionResult[]> {
-    console.warn('⚠️  sendMultipleTransactions is deprecated. Use sendBatchedTransaction for atomic execution.');
-    
+    console.warn(
+      "⚠️  sendMultipleTransactions is deprecated. Use sendBatchedTransaction for atomic execution."
+    );
+
     if (!this.signer || !this.provider) {
-      throw new Error('Service not initialized. Call initialize() first.');
+      throw new Error("Service not initialized. Call initialize() first.");
     }
 
     const results: WalletConnectSafeTransactionResult[] = [];
@@ -465,16 +455,16 @@ export class WalletConnectSafeService {
       const currentTx = i + 1;
 
       // Determine transaction type for better UX
-      let txType = 'Transaction';
+      let txType = "Transaction";
       if (totalTxs > 1) {
-        if (tx.data.startsWith('0xf08a0323')) {
-          txType = 'Set Fallback Handler';
-        } else if (tx.data.startsWith('0x3365582c')) {
-          txType = 'Set Domain Verifier';
-        } else if (tx.data.startsWith('0x095ea7b3')) {
-          txType = 'Token Approval';
+        if (tx.data.startsWith("0xf08a0323")) {
+          txType = "Set Fallback Handler";
+        } else if (tx.data.startsWith("0x3365582c")) {
+          txType = "Set Domain Verifier";
+        } else if (tx.data.startsWith("0x095ea7b3")) {
+          txType = "Token Approval";
         } else {
-          txType = 'Conditional Order';
+          txType = "Conditional Order";
         }
       }
 
@@ -494,12 +484,11 @@ export class WalletConnectSafeService {
 
         // Small delay between transactions to avoid overwhelming the Safe app
         if (i < transactions.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-
       } catch (error) {
         // Stop the process and throw the error - don't continue with remaining transactions
-        const errorMessage = `Transaction ${currentTx} (${txType}) failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        const errorMessage = `Transaction ${currentTx} (${txType}) failed: ${error instanceof Error ? error.message : "Unknown error"}`;
         throw new Error(errorMessage);
       }
     }
@@ -507,11 +496,10 @@ export class WalletConnectSafeService {
     return results;
   }
 
-
   /**
    * Send transactions sequentially for Safe wallets
    * Each transaction is signed individually and treated as successful upon signature
-   * 
+   *
    * ⚠️ DEPRECATED: Use sendBatchedTransaction instead for atomic execution
    * This method is kept for backwards compatibility only
    */
@@ -519,7 +507,9 @@ export class WalletConnectSafeService {
     batchRequest: WalletConnectSafeBatchTransactionRequest,
     onProgress?: (current: number, total: number, txType: string) => void
   ): Promise<WalletConnectSafeTransactionResult[]> {
-    console.warn('⚠️  sendTransactionsSequentially is deprecated. Use sendBatchedTransaction instead.');
+    console.warn(
+      "⚠️  sendTransactionsSequentially is deprecated. Use sendBatchedTransaction instead."
+    );
     return this.sendMultipleTransactions(batchRequest.transactions, onProgress);
   }
 

@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { CowQuoteService } from '@/backend/services/cowQuoteService';
-import { TokenPriceService } from '@/backend/services/tokenPriceService';
+import { NextRequest, NextResponse } from "next/server";
+import { CowQuoteService } from "@/backend/services/cowQuoteService";
+import { TokenPriceService } from "@/backend/services/tokenPriceService";
 
 /**
  * @swagger
@@ -85,8 +85,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: 'missing_fields',
-          message: 'Missing required fields: sellToken, buyToken, sellAmount, userAddress'
+          error: "missing_fields",
+          message: "Missing required fields: sellToken, buyToken, sellAmount, userAddress",
         },
         { status: 400 }
       );
@@ -100,8 +100,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: 'invalid_amount',
-          message: 'Sell amount must be a valid positive number'
+          error: "invalid_amount",
+          message: "Sell amount must be a valid positive number",
         },
         { status: 400 }
       );
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
         chainId: networkChainId,
       }),
       TokenPriceService.getTokenUsdPrice(sellToken, networkChainId),
-      TokenPriceService.getTokenUsdPrice(buyToken, networkChainId)
+      TokenPriceService.getTokenUsdPrice(buyToken, networkChainId),
     ]);
 
     return NextResponse.json({
@@ -132,54 +132,53 @@ export async function POST(request: NextRequest) {
         sellAmountFormatted: quote.sellAmountFormatted,
         sellTokenUsdPrice: sellTokenPrice,
         buyTokenUsdPrice: buyTokenPrice,
-      }
+      },
     });
-
   } catch (error) {
-    console.error('Error in quote API:', error);
+    console.error("Error in quote API:", error);
 
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     // Check for specific error types
-    if (errorMessage.includes('Unsupported chain')) {
+    if (errorMessage.includes("Unsupported chain")) {
       return NextResponse.json(
         {
           success: false,
-          error: 'unsupported_chain',
-          message: errorMessage
+          error: "unsupported_chain",
+          message: errorMessage,
         },
         { status: 400 }
       );
     }
 
-    if (errorMessage.includes('no route found')) {
+    if (errorMessage.includes("no route found")) {
       return NextResponse.json(
         {
           success: false,
-          error: 'no_route_found',
-          message: 'No route found'
+          error: "no_route_found",
+          message: "No route found",
         },
         { status: 400 }
       );
     }
 
-    if (errorMessage.includes('Invalid') && errorMessage.includes('address')) {
+    if (errorMessage.includes("Invalid") && errorMessage.includes("address")) {
       return NextResponse.json(
         {
           success: false,
-          error: 'invalid_address',
-          message: errorMessage
+          error: "invalid_address",
+          message: errorMessage,
         },
         { status: 400 }
       );
     }
 
-    if (errorMessage.includes('CoW API error')) {
+    if (errorMessage.includes("CoW API error")) {
       return NextResponse.json(
         {
           success: false,
-          error: 'cow_api_error',
-          message: errorMessage
+          error: "cow_api_error",
+          message: errorMessage,
         },
         { status: 502 }
       );
@@ -188,8 +187,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: 'quote_failed',
-        message: `Failed to get quote: ${errorMessage}`
+        error: "quote_failed",
+        message: `Failed to get quote: ${errorMessage}`,
       },
       { status: 500 }
     );

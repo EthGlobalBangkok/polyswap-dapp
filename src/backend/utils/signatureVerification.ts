@@ -1,7 +1,9 @@
-import { ethers } from 'ethers';
+import { ethers } from "ethers";
 
-const EIP1271_MAGIC_VALUE = '0x1626ba7e';
-const SAFE_ABI = ['function isValidSignature(bytes32 _hash, bytes memory _signature) external view returns (bytes4)'];
+const EIP1271_MAGIC_VALUE = "0x1626ba7e";
+const SAFE_ABI = [
+  "function isValidSignature(bytes32 _hash, bytes memory _signature) external view returns (bytes4)",
+];
 const MAX_TIMESTAMP_AGE_SECONDS = 300; // 5 minutes
 
 export interface SignatureVerificationParams {
@@ -45,12 +47,12 @@ function validateTimestamp(timestamp: number): { valid: boolean; error?: string 
 
   // Check if timestamp is in the future (with small tolerance for clock drift)
   if (timestamp > now + 60) {
-    return { valid: false, error: 'Timestamp is in the future' };
+    return { valid: false, error: "Timestamp is in the future" };
   }
 
   // Check if timestamp is too old
   if (now - timestamp > MAX_TIMESTAMP_AGE_SECONDS) {
-    return { valid: false, error: 'Signature expired' };
+    return { valid: false, error: "Signature expired" };
   }
 
   return { valid: true };
@@ -92,8 +94,11 @@ async function verifySafeSignature(
  * Verifies a signature from either an EOA or a Smart Contract wallet (Safe)
  * Tries EOA verification first, then falls back to EIP-1271 for contract wallets
  */
-export async function verifySignature(params: SignatureVerificationParams): Promise<VerificationResult> {
-  const { action, orderIdentifier, timestamp, chainId, signature, expectedAddress, provider } = params;
+export async function verifySignature(
+  params: SignatureVerificationParams
+): Promise<VerificationResult> {
+  const { action, orderIdentifier, timestamp, chainId, signature, expectedAddress, provider } =
+    params;
 
   // 1. Validate timestamp
   const timestampValidation = validateTimestamp(timestamp);
@@ -110,10 +115,15 @@ export async function verifySignature(params: SignatureVerificationParams): Prom
   }
 
   // 4. Try Smart Contract verification (EIP-1271) for Safe wallets
-  const isValidContractSignature = await verifySafeSignature(message, signature, expectedAddress, provider);
+  const isValidContractSignature = await verifySafeSignature(
+    message,
+    signature,
+    expectedAddress,
+    provider
+  );
   if (isValidContractSignature) {
     return { valid: true };
   }
 
-  return { valid: false, error: 'Invalid signature' };
+  return { valid: false, error: "Invalid signature" };
 }

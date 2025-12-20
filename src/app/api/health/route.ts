@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
 
 /**
  * @swagger
@@ -24,8 +24,8 @@ import { NextResponse } from 'next/server';
  *                   format: date-time
  */
 export async function GET() {
-  return NextResponse.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString() 
+  return NextResponse.json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
   });
-} 
+}

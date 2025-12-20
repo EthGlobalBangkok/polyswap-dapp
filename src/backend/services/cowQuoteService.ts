@@ -1,4 +1,4 @@
-import { ethers } from 'ethers';
+import { ethers } from "ethers";
 
 export interface CowQuoteRequest {
   sellToken: string;
@@ -43,20 +43,20 @@ export interface QuoteResult {
 export class CowQuoteService {
   // Network-specific CoW Protocol API URLs
   private static readonly NETWORK_URLS: Record<number, string> = {
-    1: 'https://api.cow.fi/mainnet',      // Ethereum Mainnet
-    100: 'https://api.cow.fi/xdai',       // Gnosis Chain
-    42161: 'https://api.cow.fi/arbitrum', // Arbitrum One
-    8453: 'https://api.cow.fi/base',      // Base
-    137: 'https://api.cow.fi/polygon',    // Polygon
+    1: "https://api.cow.fi/mainnet", // Ethereum Mainnet
+    100: "https://api.cow.fi/xdai", // Gnosis Chain
+    42161: "https://api.cow.fi/arbitrum", // Arbitrum One
+    8453: "https://api.cow.fi/base", // Base
+    137: "https://api.cow.fi/polygon", // Polygon
   };
 
   // WETH addresses per network
   private static readonly WETH_ADDRESSES: Record<number, string> = {
-    1: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',      // Ethereum Mainnet
-    100: '0x6A023CCd1ff6F2045C3309768eAd9E68F978f6e1',    // Gnosis Chain (WXDAI)
-    42161: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',  // Arbitrum One
-    8453: '0x4200000000000000000000000000000000000006',  // Base
-    137: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',   // Polygon (WMATIC)
+    1: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // Ethereum Mainnet
+    100: "0x6A023CCd1ff6F2045C3309768eAd9E68F978f6e1", // Gnosis Chain (WXDAI)
+    42161: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", // Arbitrum One
+    8453: "0x4200000000000000000000000000000000000006", // Base
+    137: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270", // Polygon (WMATIC)
   };
 
   /**
@@ -65,7 +65,9 @@ export class CowQuoteService {
   private static getApiUrl(chainId: number): string {
     const url = this.NETWORK_URLS[chainId];
     if (!url) {
-      throw new Error(`Unsupported chain ID: ${chainId}. Supported chains: ${Object.keys(this.NETWORK_URLS).join(', ')}`);
+      throw new Error(
+        `Unsupported chain ID: ${chainId}. Supported chains: ${Object.keys(this.NETWORK_URLS).join(", ")}`
+      );
     }
     return url;
   }
@@ -74,7 +76,7 @@ export class CowQuoteService {
    * Convert ETH symbol to WETH address for the specific chain
    */
   private static convertEthToWeth(tokenAddress: string, chainId: number): string {
-    const ethAddress = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+    const ethAddress = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
     if (tokenAddress.toLowerCase() === ethAddress.toLowerCase()) {
       const wethAddress = this.WETH_ADDRESSES[chainId];
       if (!wethAddress) {
@@ -115,7 +117,7 @@ export class CowQuoteService {
       // Validate sell amount
       const sellAmountValidation = BigInt(sellAmount);
       if (sellAmountValidation <= 0n) {
-        throw new Error('Sell amount must be greater than 0');
+        throw new Error("Sell amount must be greater than 0");
       }
 
       // Build request body
@@ -124,20 +126,20 @@ export class CowQuoteService {
         buyToken: buyTokenAddress,
         from: userAddress,
         receiver: userAddress,
-        kind: 'sell',
+        kind: "sell",
         sellAmountBeforeFee: sellAmount,
       };
 
-      console.log('Fetching quote from CoW Protocol:', {
+      console.log("Fetching quote from CoW Protocol:", {
         url: `${baseUrl}/api/v1/quote`,
         requestBody,
       });
 
       // Make API request
       const response = await fetch(`${baseUrl}/api/v1/quote`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(requestBody),
       });
@@ -151,7 +153,7 @@ export class CowQuoteService {
 
       // Validate response data - the quote data is nested in the 'quote' object
       if (!quoteData.quote || !quoteData.quote.buyAmount || !quoteData.quote.sellAmount) {
-        console.error('Invalid quote response:', quoteData);
+        console.error("Invalid quote response:", quoteData);
         throw new Error(`Invalid quote response: missing quote data`);
       }
 
@@ -171,15 +173,17 @@ export class CowQuoteService {
       return {
         buyAmount: quote.buyAmount,
         sellAmount: quote.sellAmount,
-        feeAmount: quote.feeAmount || '0',
+        feeAmount: quote.feeAmount || "0",
         validTo: quote.validTo || 0,
         buyAmountFormatted: buyAmountBigInt.toString(),
         sellAmountFormatted: sellAmountBigInt.toString(),
         exchangeRate: rateFormatted,
       };
     } catch (error) {
-      console.error('Error fetching CoW quote:', error);
-      throw new Error(`Failed to fetch quote: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error fetching CoW quote:", error);
+      throw new Error(
+        `Failed to fetch quote: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -194,8 +198,8 @@ export class CowQuoteService {
       const formatted = ethers.formatUnits(amountWei, decimals);
       return formatted;
     } catch (error) {
-      console.error('Error formatting token amount:', error);
-      return '0';
+      console.error("Error formatting token amount:", error);
+      return "0";
     }
   }
 
@@ -210,8 +214,8 @@ export class CowQuoteService {
       const parsed = ethers.parseUnits(amount, decimals);
       return parsed.toString();
     } catch (error) {
-      console.error('Error parsing token amount:', error);
-      return '0';
+      console.error("Error parsing token amount:", error);
+      return "0";
     }
   }
 }

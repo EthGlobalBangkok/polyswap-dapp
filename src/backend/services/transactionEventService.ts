@@ -1,5 +1,5 @@
-import { ethers } from 'ethers';
-import { ConditionalOrderParams } from '../interfaces/PolyswapOrder';
+import { ethers } from "ethers";
+import { ConditionalOrderParams } from "../interfaces/PolyswapOrder";
 
 export interface TransactionEventDetails {
   blockNumber: number;
@@ -19,7 +19,7 @@ export class TransactionEventService {
       {
         indexed: true,
         name: "owner",
-        type: "address"
+        type: "address",
       },
       {
         indexed: false,
@@ -28,21 +28,23 @@ export class TransactionEventService {
         components: [
           { name: "handler", type: "address" },
           { name: "salt", type: "bytes32" },
-          { name: "staticInput", type: "bytes" }
-        ]
-      }
+          { name: "staticInput", type: "bytes" },
+        ],
+      },
     ],
     name: "ConditionalOrderCreated",
-    type: "event"
+    type: "event",
   };
 
-  private static readonly COMPOSABLE_COW_ADDRESS = process.env.COMPOSABLE_COW || '';
-  private static readonly RPC_URL = process.env.RPC_URL || 'https://polygon-rpc.com/';
+  private static readonly COMPOSABLE_COW_ADDRESS = process.env.COMPOSABLE_COW || "";
+  private static readonly RPC_URL = process.env.RPC_URL || "https://polygon-rpc.com/";
 
   /**
    * Fetch transaction event details from a transaction hash
    */
-  static async getTransactionEventDetails(transactionHash: string): Promise<TransactionEventDetails | null> {
+  static async getTransactionEventDetails(
+    transactionHash: string
+  ): Promise<TransactionEventDetails | null> {
     try {
       const provider = new ethers.JsonRpcProvider(this.RPC_URL);
       const receipt = await provider.getTransactionReceipt(transactionHash);
@@ -68,14 +70,14 @@ export class TransactionEventService {
           // Try to parse the log as ConditionalOrderCreated event
           const parsedLog = contractInterface.parseLog({
             topics: log.topics,
-            data: log.data
+            data: log.data,
           });
 
-          if (parsedLog?.name === 'ConditionalOrderCreated') {
+          if (parsedLog?.name === "ConditionalOrderCreated") {
             conditionalOrderEvent = {
               parsedLog,
               logIndex: log.index,
-              blockNumber: receipt.blockNumber
+              blockNumber: receipt.blockNumber,
             };
             break;
           }
@@ -102,14 +104,15 @@ export class TransactionEventService {
         appData,
         orderHash,
         staticInput: params.staticInput,
-        salt: params.salt
+        salt: params.salt,
       };
 
       return eventDetails;
-
     } catch (error) {
       console.error(`Error fetching transaction event details:`, error);
-      throw new Error(`Failed to fetch transaction event details: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to fetch transaction event details: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -126,24 +129,27 @@ export class TransactionEventService {
         return "0x0000000000000000000000000000000000000000000000000000000000000000";
       } else if (fieldsCount === 9) {
         // 9 fields: full structure with appData
-        const decoded = abiCoder.decode([
-          "address", // sellToken
-          "address", // buyToken
-          "address", // receiver
-          "uint256", // sellAmount
-          "uint256", // minBuyAmount
-          "uint256", // t0
-          "uint256", // t
-          "bytes32", // polymarketOrderHash
-          "bytes32"  // appData
-        ], staticInput);
+        const decoded = abiCoder.decode(
+          [
+            "address", // sellToken
+            "address", // buyToken
+            "address", // receiver
+            "uint256", // sellAmount
+            "uint256", // minBuyAmount
+            "uint256", // t0
+            "uint256", // t
+            "bytes32", // polymarketOrderHash
+            "bytes32", // appData
+          ],
+          staticInput
+        );
 
         return decoded[8];
       } else {
         return "0x0000000000000000000000000000000000000000000000000000000000000000";
       }
     } catch (error) {
-      console.error('Error extracting app_data from staticInput:', error);
+      console.error("Error extracting app_data from staticInput:", error);
       return "0x0000000000000000000000000000000000000000000000000000000000000000";
     }
   }
@@ -154,13 +160,14 @@ export class TransactionEventService {
   private static calculateOrderHash(params: ConditionalOrderParams): string {
     try {
       const abiCoder = new ethers.AbiCoder();
-      const encoded = abiCoder.encode([
-        "tuple(address,bytes32,bytes)"
-      ], [[params.handler, params.salt, params.staticInput]]);
+      const encoded = abiCoder.encode(
+        ["tuple(address,bytes32,bytes)"],
+        [[params.handler, params.salt, params.staticInput]]
+      );
 
       return ethers.keccak256(encoded);
     } catch (error) {
-      console.error('Error calculating order hash:', error);
+      console.error("Error calculating order hash:", error);
       throw error;
     }
   }

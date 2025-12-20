@@ -3,7 +3,7 @@
  */
 export class TokenPriceService {
   // CoW Protocol BFF API base URL
-  private static readonly BFF_BASE_URL = 'https://bff.cow.fi';
+  private static readonly BFF_BASE_URL = "https://bff.cow.fi";
 
   // Cache for token prices (simple in-memory cache)
   private static priceCache: Map<string, { price: number; timestamp: number }> = new Map();
@@ -31,13 +31,15 @@ export class TokenPriceService {
       const response = await fetch(url);
 
       if (!response.ok) {
-        console.warn(`Failed to fetch price for ${tokenAddress} on chain ${chainId}: ${response.status}`);
+        console.warn(
+          `Failed to fetch price for ${tokenAddress} on chain ${chainId}: ${response.status}`
+        );
         return null;
       }
 
       const data = await response.json();
 
-      if (typeof data.price !== 'number') {
+      if (typeof data.price !== "number") {
         console.warn(`Invalid price response for ${tokenAddress}:`, data);
         return null;
       }
@@ -45,7 +47,7 @@ export class TokenPriceService {
       // Update cache
       this.priceCache.set(cacheKey, {
         price: data.price,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
 
       return data.price;

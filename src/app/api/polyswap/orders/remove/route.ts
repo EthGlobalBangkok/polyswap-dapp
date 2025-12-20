@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { DatabaseService } from '../../../../../backend/services/databaseService';
-import { getPolymarketOrderService } from '../../../../../backend/services/polymarketOrderService';
-import { ethers } from 'ethers';
-import composableCowABI from '../../../../../abi/composableCoW.json';
-import { verifySignature } from '../../../../../backend/utils/signatureVerification';
+import { NextRequest, NextResponse } from "next/server";
+import { DatabaseService } from "../../../../../backend/services/databaseService";
+import { getPolymarketOrderService } from "../../../../../backend/services/polymarketOrderService";
+import { ethers } from "ethers";
+import composableCowABI from "../../../../../abi/composableCoW.json";
+import { verifySignature } from "../../../../../backend/utils/signatureVerification";
 
 /**
  * @swagger
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
 
     if (!orderHash || !ownerAddress) {
       return NextResponse.json(
-        { success: false, message: 'Missing required fields: orderHash, ownerAddress' },
+        { success: false, message: "Missing required fields: orderHash, ownerAddress" },
         { status: 400 }
       );
     }
@@ -115,15 +115,21 @@ export async function POST(request: NextRequest) {
     // Validate authentication fields
     if (!signature || !timestamp || !chainId) {
       return NextResponse.json(
-        { success: false, message: 'Missing authentication: signature, timestamp, chainId required' },
+        {
+          success: false,
+          message: "Missing authentication: signature, timestamp, chainId required",
+        },
         { status: 401 }
       );
     }
 
-    const order = await DatabaseService.getPolyswapOrderByHashAndOwner(orderHash, ownerAddress.toLowerCase());
+    const order = await DatabaseService.getPolyswapOrderByHashAndOwner(
+      orderHash,
+      ownerAddress.toLowerCase()
+    );
     if (!order) {
       return NextResponse.json(
-        { success: false, message: 'Order not found or not owned by this address' },
+        { success: false, message: "Order not found or not owned by this address" },
         { status: 404 }
       );
     }
@@ -131,13 +137,13 @@ export async function POST(request: NextRequest) {
     // Verify signature matches order owner
     const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
     const verification = await verifySignature({
-      action: 'cancel_order',
+      action: "cancel_order",
       orderIdentifier: orderHash,
       timestamp,
       chainId,
       signature,
       expectedAddress: order.owner,
-      provider
+      provider,
     });
 
     if (!verification.valid) {
@@ -147,7 +153,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (order.status !== 'live') {
+    if (order.status !== "live") {
       return NextResponse.json(
         { success: false, message: `Cannot remove order with status: ${order.status}` },
         { status: 400 }
@@ -161,23 +167,27 @@ export async function POST(request: NextRequest) {
     const contractInterface = new ethers.Interface(composableCowABI);
 
     // Encode the remove function call
-    const removeCalldata = contractInterface.encodeFunctionData('remove', [orderHash]);
+    const removeCalldata = contractInterface.encodeFunctionData("remove", [orderHash]);
 
     const removeTransaction = {
       to: composableCowAddress,
       data: removeCalldata,
-      value: '0'
+      value: "0",
     };
 
     let polymarketCanceled = false;
-    if (order.polymarket_order_hash && order.polymarket_order_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
+    if (
+      order.polymarket_order_hash &&
+      order.polymarket_order_hash !==
+        "0x0000000000000000000000000000000000000000000000000000000000000000"
+    ) {
       try {
         const polymarketOrderService = getPolymarketOrderService();
         await polymarketOrderService.initialize();
         await polymarketOrderService.cancelOrder(order.polymarket_order_hash);
         polymarketCanceled = true;
       } catch (polymarketError) {
-        console.error('Failed to cancel Polymarket order:', polymarketError);
+        console.error("Failed to cancel Polymarket order:", polymarketError);
       }
     }
 
@@ -188,14 +198,13 @@ export async function POST(request: NextRequest) {
         transaction: removeTransaction,
         polymarketCanceled: polymarketCanceled,
         message: polymarketCanceled
-          ? 'Polymarket order canceled. Please sign the CoW Protocol removal transaction.'
-          : 'Polymarket cancellation failed or not needed. Please sign the CoW Protocol removal transaction.'
-      }
+          ? "Polymarket order canceled. Please sign the CoW Protocol removal transaction."
+          : "Polymarket cancellation failed or not needed. Please sign the CoW Protocol removal transaction.",
+      },
     });
-
   } catch (error) {
-    console.error('❌ Error in remove order endpoint:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error("❌ Error in remove order endpoint:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 
     return NextResponse.json(
       { success: false, message: `Server error: ${errorMessage}` },
@@ -211,17 +220,17 @@ export async function PUT(request: NextRequest) {
     // Validate required fields
     if (!orderHash || !transactionHash || !confirmed) {
       return NextResponse.json(
-        { success: false, message: 'Missing required fields: orderHash, transactionHash, confirmed' },
+        {
+          success: false,
+          message: "Missing required fields: orderHash, transactionHash, confirmed",
+        },
         { status: 400 }
       );
     }
 
     const order = await DatabaseService.getPolyswapOrderByHash(orderHash);
     if (!order) {
-      return NextResponse.json(
-        { success: false, message: 'Order not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, message: "Order not found" }, { status: 404 });
     }
 
     // Note: No signature verification needed here because:
@@ -230,32 +239,28 @@ export async function PUT(request: NextRequest) {
     // 3. This PUT only updates DB status after on-chain confirmation
 
     // Update the order status to canceled
-    const result = await DatabaseService.updateOrderStatus(
-      orderHash,
-      'canceled'
-    );
+    const result = await DatabaseService.updateOrderStatus(orderHash, "canceled");
 
     if (result) {
       return NextResponse.json({
         success: true,
-        message: 'Order cancellation confirmed and database updated',
+        message: "Order cancellation confirmed and database updated",
         data: {
           orderHash,
           transactionHash,
-          status: 'canceled'
-        }
+          status: "canceled",
+        },
       });
     } else {
-      console.error('Failed to update order status in database');
+      console.error("Failed to update order status in database");
       return NextResponse.json(
-        { success: false, message: 'Failed to update order status in database' },
+        { success: false, message: "Failed to update order status in database" },
         { status: 500 }
       );
     }
-
   } catch (error) {
-    console.error('Error in PUT remove order endpoint:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error("Error in PUT remove order endpoint:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 
     return NextResponse.json(
       { success: false, message: `Server error: ${errorMessage}` },

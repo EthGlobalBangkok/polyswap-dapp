@@ -1,5 +1,5 @@
 // API service for communicating with the backend
-import { DatabasePolyswapOrder } from '../backend/interfaces/PolyswapOrder';
+import { DatabasePolyswapOrder } from "../backend/interfaces/PolyswapOrder";
 
 export interface BackendMarket {
   id: string;
@@ -30,7 +30,7 @@ export interface BackendApiResponse {
 
 export interface SearchParams {
   q?: string;
-  type?: 'all' | 'any';
+  type?: "all" | "any";
   category?: string;
   page?: number;
   limit?: number;
@@ -51,7 +51,7 @@ export interface ApiMarket {
   volume: number;
   endDate: string;
   category: string;
-  type: 'binary' | 'multi-choice';
+  type: "binary" | "multi-choice";
   yesOdds?: number;
   noOdds?: number;
   options?: MarketOption[];
@@ -68,15 +68,15 @@ export interface MarketOption {
 }
 
 class ApiService {
-  private baseUrl = '/api'; // Use relative paths for Next.js API routes
+  private baseUrl = "/api"; // Use relative paths for Next.js API routes
 
   private async fetchApi(endpoint: string, params?: Record<string, string | number>): Promise<any> {
     // Build the full URL path
     const fullPath = `${this.baseUrl}${endpoint}`;
-    
+
     // Create URL with search params
     const url = new URL(fullPath, window.location.origin);
-    
+
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined && value !== null) {
@@ -92,7 +92,7 @@ class ApiService {
       }
       return await response.json();
     } catch (error) {
-      console.error('API request failed:', error);
+      console.error("API request failed:", error);
       throw error;
     }
   }
@@ -120,9 +120,9 @@ class ApiService {
   }> {
     try {
       const response = await fetch(`${this.baseUrl}/polyswap/orders/create`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(orderData),
       });
@@ -130,11 +130,11 @@ class ApiService {
       const result = await response.json();
       return result;
     } catch (error) {
-      console.error('Failed to create polyswap order:', error);
+      console.error("Failed to create polyswap order:", error);
       return {
         success: false,
-        error: 'Failed to create order',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: "Failed to create order",
+        message: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
@@ -150,9 +150,9 @@ class ApiService {
   }> {
     try {
       const response = await fetch(`${this.baseUrl}/polyswap/orders/polymarket`, {
-        method: 'PUT',
+        method: "PUT",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ orderHash }),
       });
@@ -160,11 +160,11 @@ class ApiService {
       const result = await response.json();
       return result;
     } catch (error) {
-      console.error('Failed to create polymarket order:', error);
+      console.error("Failed to create polymarket order:", error);
       return {
         success: false,
-        error: 'Failed to create polymarket order',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: "Failed to create polymarket order",
+        message: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
@@ -185,17 +185,20 @@ class ApiService {
       const result = await response.json();
       return result;
     } catch (error) {
-      console.error('Failed to fetch transaction data:', error);
+      console.error("Failed to fetch transaction data:", error);
       return {
         success: false,
-        error: 'Failed to fetch transaction data',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: "Failed to fetch transaction data",
+        message: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
 
   // Update order with transaction hash by order ID
-  async updateOrderTransactionHashById(orderId: number, transactionHash: string): Promise<{
+  async updateOrderTransactionHashById(
+    orderId: number,
+    transactionHash: string
+  ): Promise<{
     success: boolean;
     data?: any;
     message?: string;
@@ -203,9 +206,9 @@ class ApiService {
   }> {
     try {
       const response = await fetch(`${this.baseUrl}/polyswap/orders/id/${orderId}/transaction`, {
-        method: 'PUT',
+        method: "PUT",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ transactionHash }),
       });
@@ -213,19 +216,19 @@ class ApiService {
       const result = await response.json();
       return result;
     } catch (error) {
-      console.error('Failed to update transaction hash:', error);
+      console.error("Failed to update transaction hash:", error);
       return {
         success: false,
-        error: 'Failed to update transaction hash',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: "Failed to update transaction hash",
+        message: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
 
   // Get polyswap orders by owner address
   async getOrdersByOwner(
-    ownerAddress: string, 
-    limit: number = 100, 
+    ownerAddress: string,
+    limit: number = 100,
     offset: number = 0
   ): Promise<{
     success: boolean;
@@ -242,18 +245,18 @@ class ApiService {
     try {
       const params = new URLSearchParams({
         limit: limit.toString(),
-        offset: offset.toString()
+        offset: offset.toString(),
       });
-      
+
       const response = await fetch(`${this.baseUrl}/polyswap/orders/${ownerAddress}?${params}`);
       const result = await response.json();
       return result;
     } catch (error) {
-      console.error('Failed to fetch orders by owner:', error);
+      console.error("Failed to fetch orders by owner:", error);
       return {
         success: false,
-        error: 'Failed to fetch orders',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: "Failed to fetch orders",
+        message: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
@@ -262,23 +265,24 @@ class ApiService {
   private convertBackendMarket(backendMarket: BackendMarket): ApiMarket {
     // Validate that backendMarket has the required properties
     if (!backendMarket || !backendMarket.outcomes || !backendMarket.outcome_prices) {
-      throw new Error('Invalid market data structure');
+      throw new Error("Invalid market data structure");
     }
-    
+
     // Ensure outcomes and outcome_prices are arrays
     if (!Array.isArray(backendMarket.outcomes) || !Array.isArray(backendMarket.outcome_prices)) {
-      throw new Error('Invalid outcomes or outcome_prices format');
+      throw new Error("Invalid outcomes or outcome_prices format");
     }
-    
+
     // For binary markets, we still check if it's a traditional Yes/No market
     // but we also create options for non-traditional binary markets
-    const isTraditionalBinary = backendMarket.outcomes.length === 2 && 
-                                backendMarket.outcomes.includes('Yes') && 
-                                backendMarket.outcomes.includes('No');
+    const isTraditionalBinary =
+      backendMarket.outcomes.length === 2 &&
+      backendMarket.outcomes.includes("Yes") &&
+      backendMarket.outcomes.includes("No");
 
     if (isTraditionalBinary) {
-      const yesIndex = backendMarket.outcomes.indexOf('Yes');
-      const noIndex = backendMarket.outcomes.indexOf('No');
+      const yesIndex = backendMarket.outcomes.indexOf("Yes");
+      const noIndex = backendMarket.outcomes.indexOf("No");
 
       return {
         id: backendMarket.id,
@@ -286,7 +290,7 @@ class ApiService {
         volume: parseFloat(backendMarket.volume) || 0,
         endDate: backendMarket.end_date,
         category: backendMarket.category,
-        type: 'binary',
+        type: "binary",
         // Convert decimal odds to percentages (multiply by 100) and round to 2 decimals
         yesOdds: Number(((backendMarket.outcome_prices[yesIndex] || 0) * 100).toFixed(2)),
         noOdds: Number(((backendMarket.outcome_prices[noIndex] || 0) * 100).toFixed(2)),
@@ -295,17 +299,17 @@ class ApiService {
         eventSlug: backendMarket.event_slug || undefined,
         clobTokenIds: Array.isArray(backendMarket.clob_token_ids)
           ? backendMarket.clob_token_ids
-          : typeof backendMarket.clob_token_ids === 'string'
+          : typeof backendMarket.clob_token_ids === "string"
             ? JSON.parse(backendMarket.clob_token_ids)
             : [],
-        description: backendMarket.description
+        description: backendMarket.description,
       };
     } else if (backendMarket.outcomes.length === 2) {
       // Non-traditional binary market - create options instead of hardcoding yes/no
       const options: MarketOption[] = backendMarket.outcomes.map((outcome, index) => ({
         text: outcome,
         // Convert decimal odds to percentages (multiply by 100) and round to 2 decimals
-        odds: Number(((backendMarket.outcome_prices[index] || 0) * 100).toFixed(2))
+        odds: Number(((backendMarket.outcome_prices[index] || 0) * 100).toFixed(2)),
       }));
 
       return {
@@ -314,24 +318,24 @@ class ApiService {
         volume: parseFloat(backendMarket.volume) || 0,
         endDate: backendMarket.end_date,
         category: backendMarket.category,
-        type: 'binary', // Still mark as binary for UI purposes
+        type: "binary", // Still mark as binary for UI purposes
         options, // Include options for non-traditional binary markets
         conditionId: backendMarket.condition_id,
         slug: backendMarket.slug,
         eventSlug: backendMarket.event_slug || undefined,
         clobTokenIds: Array.isArray(backendMarket.clob_token_ids)
           ? backendMarket.clob_token_ids
-          : typeof backendMarket.clob_token_ids === 'string'
+          : typeof backendMarket.clob_token_ids === "string"
             ? JSON.parse(backendMarket.clob_token_ids)
             : [],
-        description: backendMarket.description
+        description: backendMarket.description,
       };
     } else {
       // Multi-choice market
       const options: MarketOption[] = backendMarket.outcomes.map((outcome, index) => ({
         text: outcome,
         // Convert decimal odds to percentages (multiply by 100) and round to 2 decimals
-        odds: Number(((backendMarket.outcome_prices[index] || 0) * 100).toFixed(2))
+        odds: Number(((backendMarket.outcome_prices[index] || 0) * 100).toFixed(2)),
       }));
 
       return {
@@ -340,67 +344,69 @@ class ApiService {
         volume: parseFloat(backendMarket.volume) || 0,
         endDate: backendMarket.end_date,
         category: backendMarket.category,
-        type: 'multi-choice',
+        type: "multi-choice",
         options,
         conditionId: backendMarket.condition_id,
         slug: backendMarket.slug,
         eventSlug: backendMarket.event_slug || undefined,
         clobTokenIds: Array.isArray(backendMarket.clob_token_ids)
           ? backendMarket.clob_token_ids
-          : typeof backendMarket.clob_token_ids === 'string'
+          : typeof backendMarket.clob_token_ids === "string"
             ? JSON.parse(backendMarket.clob_token_ids)
             : [],
-        description: backendMarket.description
+        description: backendMarket.description,
       };
     }
   }
 
   async getTopMarkets(): Promise<ApiMarket[]> {
-    const response = await this.fetchApi('/markets/top');
+    const response = await this.fetchApi("/markets/top");
     if (response.success && response.data) {
       return response.data.map((market: BackendMarket) => this.convertBackendMarket(market));
     }
-    throw new Error(response.message || 'Failed to fetch top markets');
+    throw new Error(response.message || "Failed to fetch top markets");
   }
 
   async searchMarkets(params: SearchParams): Promise<SearchResult> {
     const queryParams: Record<string, string | number> = {};
-    
+
     if (params.q) {
       queryParams.q = params.q;
     }
-    
+
     if (params.type) {
       queryParams.type = params.type;
     }
-    
+
     if (params.category) {
       queryParams.category = params.category;
     }
-    
+
     if (params.limit) {
       queryParams.limit = params.limit;
     }
-    
+
     if (params.page && params.limit) {
       queryParams.offset = (params.page - 1) * params.limit;
     }
 
-    const response = await this.fetchApi('/markets/search', queryParams);
-    
+    const response = await this.fetchApi("/markets/search", queryParams);
+
     if (response.success && response.data) {
-      const markets = response.data.map((market: BackendMarket) => this.convertBackendMarket(market));
+      const markets = response.data.map((market: BackendMarket) =>
+        this.convertBackendMarket(market)
+      );
       return {
         markets,
         pagination: response.pagination || {
           limit: params.limit || 100,
           offset: params.page ? (params.page - 1) * (params.limit || 100) : 0,
-          hasMore: false
-        }
+          hasMore: false,
+        },
       };
     }
-    
-    throw new Error(response.message || 'Failed to search markets');
+
+    throw new Error(response.message || "Failed to search markets");
   }
 
   async getMarketById(id: string): Promise<ApiMarket> {
@@ -408,32 +414,43 @@ class ApiService {
     if (response.success && response.data) {
       return this.convertBackendMarket(response.data);
     }
-    throw new Error(response.message || 'Failed to fetch market');
+    throw new Error(response.message || "Failed to fetch market");
   }
 
-  async getMarketsByCategory(category: string, page: number = 1, limit: number = 100): Promise<SearchResult> {
+  async getMarketsByCategory(
+    category: string,
+    page: number = 1,
+    limit: number = 100
+  ): Promise<SearchResult> {
     const offset = (page - 1) * limit;
     const response = await this.fetchApi(`/markets/category/${category}`, { limit, offset });
-    
+
     if (response.success && response.data) {
-      const markets = response.data.map((market: BackendMarket) => this.convertBackendMarket(market));
+      const markets = response.data.map((market: BackendMarket) =>
+        this.convertBackendMarket(market)
+      );
       return {
         markets,
         pagination: response.pagination || {
           limit,
           offset,
-          hasMore: false
-        }
+          hasMore: false,
+        },
       };
     }
-    
-    throw new Error(response.message || 'Failed to fetch markets by category');
+
+    throw new Error(response.message || "Failed to fetch markets by category");
   }
 
   async getMarketBySlug(slug: string): Promise<ApiMarket | null> {
     const response = await this.fetchApi(`/markets/search?q=${slug}&type=slug`);
 
-    if (response.success && response.data && Array.isArray(response.data) && response.data.length > 0) {
+    if (
+      response.success &&
+      response.data &&
+      Array.isArray(response.data) &&
+      response.data.length > 0
+    ) {
       const marketData = response.data[0];
       return this.convertBackendMarket(marketData);
     }
@@ -466,9 +483,9 @@ class ApiService {
   }> {
     try {
       const response = await fetch(`${this.baseUrl}/polyswap/quote`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(params),
       });
@@ -476,11 +493,11 @@ class ApiService {
       const result = await response.json();
       return result;
     } catch (error) {
-      console.error('Failed to fetch quote:', error);
+      console.error("Failed to fetch quote:", error);
       return {
         success: false,
-        error: 'Failed to fetch quote',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: "Failed to fetch quote",
+        message: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }

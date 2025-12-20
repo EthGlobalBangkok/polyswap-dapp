@@ -14,8 +14,6 @@
   gap: var(--spacing-sm);
 }
 
-
-
 .backButton {
   align-self: flex-start;
   color: var(--text-muted);
@@ -412,7 +410,7 @@
 }
 
 .toggleSwitch::after {
-  content: '';
+  content: "";
   position: absolute;
   left: 2px;
   top: 2px;
@@ -526,12 +524,14 @@
   gap: 12px;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 /* Subtle gradient background effect */
 .conditionCard::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;

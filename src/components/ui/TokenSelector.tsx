@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useState, useMemo } from 'react';
-import TokenIcon from './TokenIcon';
-import styles from './TokenSelector.module.css';
+import { useState, useMemo } from "react";
+import TokenIcon from "./TokenIcon";
+import styles from "./TokenSelector.module.css";
 
 interface Token {
   chainId: number;
@@ -28,31 +28,32 @@ export default function TokenSelector({
   onSelect,
   tokens,
   selectedToken,
-  title
+  title,
 }: TokenSelectorProps) {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Popular tokens that should appear at the top
-  const popularSymbols = ['USDC', 'WETH', 'DAI', 'WBTC', 'WMATIC', 'WPOL'];
-  
+  const popularSymbols = ["USDC", "WETH", "DAI", "WBTC", "WMATIC", "WPOL"];
+
   const { popularTokens, otherTokens } = useMemo(() => {
-    const filtered = tokens.filter(token =>
-      token.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      token.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      token.address.toLowerCase().includes(searchTerm.toLowerCase())
+    const filtered = tokens.filter(
+      (token) =>
+        token.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        token.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        token.address.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const popular = filtered.filter(token => 
-      popularSymbols.includes(token.symbol)
-    ).sort((a, b) => {
-      const aIndex = popularSymbols.indexOf(a.symbol);
-      const bIndex = popularSymbols.indexOf(b.symbol);
-      return aIndex - bIndex;
-    });
+    const popular = filtered
+      .filter((token) => popularSymbols.includes(token.symbol))
+      .sort((a, b) => {
+        const aIndex = popularSymbols.indexOf(a.symbol);
+        const bIndex = popularSymbols.indexOf(b.symbol);
+        return aIndex - bIndex;
+      });
 
-    const other = filtered.filter(token => 
-      !popularSymbols.includes(token.symbol)
-    ).sort((a, b) => a.symbol.localeCompare(b.symbol));
+    const other = filtered
+      .filter((token) => !popularSymbols.includes(token.symbol))
+      .sort((a, b) => a.symbol.localeCompare(b.symbol));
 
     return { popularTokens: popular, otherTokens: other };
   }, [tokens, searchTerm]);
@@ -60,7 +61,7 @@ export default function TokenSelector({
   const handleTokenSelect = (token: Token) => {
     onSelect(token);
     onClose();
-    setSearchTerm('');
+    setSearchTerm("");
   };
 
   const handleBackdropClick = (e: React.MouseEvent) => {
@@ -99,7 +100,7 @@ export default function TokenSelector({
                 <button
                   key={token.address}
                   className={`${styles.favoriteToken} ${
-                    selectedToken?.address === token.address ? styles.selected : ''
+                    selectedToken?.address === token.address ? styles.selected : ""
                   }`}
                   onClick={() => handleTokenSelect(token)}
                 >
@@ -123,16 +124,12 @@ export default function TokenSelector({
                 <div
                   key={token.address}
                   className={`${styles.tokenItem} ${
-                    selectedToken?.address === token.address ? styles.selected : ''
+                    selectedToken?.address === token.address ? styles.selected : ""
                   }`}
                   onClick={() => handleTokenSelect(token)}
                 >
                   <div className={styles.tokenInfo}>
-                    <TokenIcon
-                      logoURI={token.logoURI}
-                      symbol={token.symbol}
-                      size="medium"
-                    />
+                    <TokenIcon logoURI={token.logoURI} symbol={token.symbol} size="medium" />
                     <div className={styles.tokenDetails}>
                       <div className={styles.tokenSymbol}>{token.symbol}</div>
                       <div className={styles.tokenName}>{token.name}</div>
@@ -147,16 +144,12 @@ export default function TokenSelector({
             <div
               key={token.address}
               className={`${styles.tokenItem} ${
-                selectedToken?.address === token.address ? styles.selected : ''
+                selectedToken?.address === token.address ? styles.selected : ""
               }`}
               onClick={() => handleTokenSelect(token)}
             >
               <div className={styles.tokenInfo}>
-                <TokenIcon
-                  logoURI={token.logoURI}
-                  symbol={token.symbol}
-                  size="medium"
-                />
+                <TokenIcon logoURI={token.logoURI} symbol={token.symbol} size="medium" />
                 <div className={styles.tokenDetails}>
                   <div className={styles.tokenSymbol}>{token.symbol}</div>
                   <div className={styles.tokenName}>{token.name}</div>
@@ -169,9 +162,7 @@ export default function TokenSelector({
           ))}
 
           {popularTokens.length + otherTokens.length === 0 && (
-            <div className={styles.noResults}>
-              No tokens found for "{searchTerm}"
-            </div>
+            <div className={styles.noResults}>No tokens found for "{searchTerm}"</div>
           )}
         </div>
       </div>

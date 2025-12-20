@@ -1,4 +1,4 @@
-import { ethers } from 'ethers';
+import { ethers } from "ethers";
 
 export interface FallbackHandlerCheck {
   currentHandler: string;
@@ -21,10 +21,12 @@ export interface FallbackHandlerTransaction {
  */
 export class SafeFallbackHandlerService {
   // Storage slot for fallback handler in Safe contracts
-  private static readonly FALLBACK_HANDLER_STORAGE_SLOT = '0x6c9a6c4a39284e37ed1cf53d337577d14212a4870fb976a4366c693b939918d5';
+  private static readonly FALLBACK_HANDLER_STORAGE_SLOT =
+    "0x6c9a6c4a39284e37ed1cf53d337577d14212a4870fb976a4366c693b939918d5";
 
   // Expected PolySwap handler address
-  public static readonly EXPECTED_HANDLER = process.env.EXTENSIBLE_FALLBACK_HANDLER || '0x2f55e8b20D0B9FEFA187AA7d00B6Cbe563605bF5';
+  public static readonly EXPECTED_HANDLER =
+    process.env.EXTENSIBLE_FALLBACK_HANDLER || "0x2f55e8b20D0B9FEFA187AA7d00B6Cbe563605bF5";
 
   /**
    * Get the current fallback handler for a Safe address
@@ -41,11 +43,13 @@ export class SafeFallbackHandlerService {
       );
 
       // Parse the bytes32 value to get the address
-      const fallbackHandler = ethers.getAddress('0x' + storageValue.slice(-40));
+      const fallbackHandler = ethers.getAddress("0x" + storageValue.slice(-40));
       return fallbackHandler;
     } catch (error) {
-      console.error('Error reading fallback handler storage:', error);
-      throw new Error(`Failed to read fallback handler: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error reading fallback handler storage:", error);
+      throw new Error(
+        `Failed to read fallback handler: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -72,11 +76,13 @@ export class SafeFallbackHandlerService {
         currentHandler: current,
         expectedHandler: expected,
         isCorrect,
-        needsUpdate
+        needsUpdate,
       };
     } catch (error) {
-      console.error('Error checking fallback handler:', error);
-      throw new Error(`Failed to check fallback handler: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error checking fallback handler:", error);
+      throw new Error(
+        `Failed to check fallback handler: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -92,23 +98,23 @@ export class SafeFallbackHandlerService {
       const handler = handlerAddress || this.EXPECTED_HANDLER;
 
       // Safe's setFallbackHandler function signature
-      const safeInterface = new ethers.Interface([
-        'function setFallbackHandler(address handler)'
-      ]);
+      const safeInterface = new ethers.Interface(["function setFallbackHandler(address handler)"]);
 
       // Encode the function call
-      const data = safeInterface.encodeFunctionData('setFallbackHandler', [handler]);
+      const data = safeInterface.encodeFunctionData("setFallbackHandler", [handler]);
 
       const transaction: FallbackHandlerTransaction = {
         to: safeAddress,
         data: data,
-        value: '0'
+        value: "0",
       };
 
       return transaction;
     } catch (error) {
-      console.error('Error creating setFallbackHandler transaction:', error);
-      throw new Error(`Failed to create transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error creating setFallbackHandler transaction:", error);
+      throw new Error(
+        `Failed to create transaction: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -129,8 +135,10 @@ export class SafeFallbackHandlerService {
       }
       return null;
     } catch (error) {
-      console.error('Error checking and creating fallback handler transaction:', error);
-      throw new Error(`Failed to check/create fallback handler transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error checking and creating fallback handler transaction:", error);
+      throw new Error(
+        `Failed to check/create fallback handler transaction: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -145,13 +153,13 @@ export class SafeFallbackHandlerService {
       // Check if the address has code (is a contract)
       const code = await provider.getCode(safeAddress);
 
-      if (code === '0x') {
+      if (code === "0x") {
         return false;
       }
 
       // Try to call a Safe-specific method to confirm it's a Safe
       const safeInterface = new ethers.Interface([
-        'function getThreshold() view returns (uint256)'
+        "function getThreshold() view returns (uint256)",
       ]);
 
       const contract = new ethers.Contract(safeAddress, safeInterface, provider);
@@ -163,7 +171,7 @@ export class SafeFallbackHandlerService {
         return false;
       }
     } catch (error) {
-      console.error('Error validating Safe contract:', error);
+      console.error("Error validating Safe contract:", error);
       return false;
     }
   }
@@ -191,21 +199,21 @@ export class SafeFallbackHandlerService {
       if (isValidSafe) {
         try {
           const safeInterface = new ethers.Interface([
-            'function getThreshold() view returns (uint256)',
-            'function getOwners() view returns (address[])'
+            "function getThreshold() view returns (uint256)",
+            "function getOwners() view returns (address[])",
           ]);
 
           const contract = new ethers.Contract(safeAddress, safeInterface, provider);
 
           const [thresholdResult, ownersResult] = await Promise.all([
             contract.getThreshold(),
-            contract.getOwners()
+            contract.getOwners(),
           ]);
 
           threshold = Number(thresholdResult);
           owners = ownersResult;
         } catch (error) {
-          console.warn('Could not get Safe threshold/owners:', error);
+          console.warn("Could not get Safe threshold/owners:", error);
         }
       }
 
@@ -214,11 +222,13 @@ export class SafeFallbackHandlerService {
         threshold,
         owners,
         fallbackHandler: fallbackHandlerCheck.currentHandler,
-        fallbackHandlerCheck
+        fallbackHandlerCheck,
       };
     } catch (error) {
-      console.error('Error getting Safe info:', error);
-      throw new Error(`Failed to get Safe info: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error getting Safe info:", error);
+      throw new Error(
+        `Failed to get Safe info: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 }

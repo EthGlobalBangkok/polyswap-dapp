@@ -1,8 +1,8 @@
-import { createConfig, http } from 'wagmi'
-import { polygon } from 'wagmi/chains'
-import { walletConnect, safe } from 'wagmi/connectors'
+import { createConfig, http } from "wagmi";
+import { polygon } from "wagmi/chains";
+import { walletConnect, safe } from "wagmi/connectors";
 
-const projectId = '939b6191396abf894a6b94010d6c177b'
+const projectId = "939b6191396abf894a6b94010d6c177b";
 
 export const config = createConfig({
   chains: [polygon],
@@ -14,23 +14,23 @@ export const config = createConfig({
     safe({
       // Improved Safe connector configuration for better detection
       allowedDomains: [/app\.safe\.global$/, /gnosis-safe\.io$/],
-      debug: process.env.NODE_ENV === 'development'
+      debug: process.env.NODE_ENV === "development",
     }),
     walletConnect({
       projectId,
       // Configuration for Safe Mobile connection
       metadata: {
-        name: 'Polyswap',
-        description: 'Conditional orders with Polymarket predictions',
-        url: typeof window !== 'undefined' ? window.location.origin : '',
-        icons: [typeof window !== 'undefined' ? `${window.location.origin}/favicon.ico` : '']
+        name: "Polyswap",
+        description: "Conditional orders with Polymarket predictions",
+        url: typeof window !== "undefined" ? window.location.origin : "",
+        icons: [typeof window !== "undefined" ? `${window.location.origin}/favicon.ico` : ""],
       },
       qrModalOptions: {
         enableExplorer: false, // Disable other wallets in QR modal
         explorerRecommendedWalletIds: [], // Only show Safe mobile
         desktopWallets: [], // Remove desktop wallet options
-        mobileWallets: [] // Let WalletConnect handle Safe mobile detection
-      }
-    })
+        mobileWallets: [], // Let WalletConnect handle Safe mobile detection
+      },
+    }),
   ],
-})
+});

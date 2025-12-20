@@ -24,7 +24,7 @@
 }
 
 .marketCard::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
@@ -236,31 +236,31 @@
     padding: var(--spacing-md);
     gap: var(--spacing-sm);
   }
-  
+
   .title {
     font-size: 1rem;
   }
-  
+
   .description {
     font-size: 0.85rem;
     -webkit-line-clamp: 2;
   }
-  
+
   .oddsContainer {
     gap: var(--spacing-sm);
   }
-  
+
   .footer {
     flex-direction: column;
     align-items: flex-start;
     gap: var(--spacing-xs);
   }
-  
+
   .optionLabel {
     font-size: 0.8rem;
   }
-  
+
   .optionOdds {
     font-size: 0.85rem;
   }
-} 
+}

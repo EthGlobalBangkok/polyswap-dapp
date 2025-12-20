@@ -1,11 +1,11 @@
-import { ethers } from 'ethers';
+import { ethers } from "ethers";
 
 // Standard ERC20 ABI for allowance and approve functions
 const ERC20_ABI = [
-  'function allowance(address owner, address spender) view returns (uint256)',
-  'function approve(address spender, uint256 amount) returns (bool)',
-  'function balanceOf(address account) view returns (uint256)',
-  'function decimals() view returns (uint8)'
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function balanceOf(address account) view returns (uint256)",
+  "function decimals() view returns (uint8)",
 ];
 
 export interface ApprovalCheck {
@@ -22,8 +22,8 @@ export interface ApprovalTransaction {
 }
 
 export class ERC20ApprovalService {
-  private static readonly SPENDER_ADDRESS = process.env.SPENDER || process.env.COMPOSABLE_COW || '';
-  
+  private static readonly SPENDER_ADDRESS = process.env.SPENDER || process.env.COMPOSABLE_COW || "";
+
   /**
    * Check if approval is needed for a token transfer
    */
@@ -35,23 +35,23 @@ export class ERC20ApprovalService {
   ): Promise<ApprovalCheck> {
     try {
       if (!this.SPENDER_ADDRESS) {
-        throw new Error('SPENDER address not configured in environment variables');
+        throw new Error("SPENDER address not configured in environment variables");
       }
 
       const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
       const currentAllowance = await tokenContract.allowance(ownerAddress, this.SPENDER_ADDRESS);
       const requiredAmount = BigInt(amount);
       const needsApproval = currentAllowance < requiredAmount;
-      
+
       let approvalData: string | undefined;
       if (needsApproval) {
         // Create approval transaction data for the required amount
         // Use MAX_UINT256 for unlimited approval to avoid future approval transactions
         const approvalAmount = ethers.MaxUint256;
         const tokenInterface = new ethers.Interface(ERC20_ABI);
-        approvalData = tokenInterface.encodeFunctionData('approve', [
+        approvalData = tokenInterface.encodeFunctionData("approve", [
           this.SPENDER_ADDRESS,
-          approvalAmount
+          approvalAmount,
         ]);
       }
 
@@ -59,39 +59,37 @@ export class ERC20ApprovalService {
         needsApproval,
         currentAllowance: currentAllowance.toString(),
         requiredAmount: requiredAmount.toString(),
-        approvalData
+        approvalData,
       };
-
     } catch (error) {
-      console.error('Error checking ERC20 approval:', error);
-      throw new Error(`Failed to check approval: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error checking ERC20 approval:", error);
+      throw new Error(
+        `Failed to check approval: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
   /**
    * Create an approval transaction
    */
-  static createApprovalTransaction(
-    tokenAddress: string,
-    amount?: string
-  ): ApprovalTransaction {
+  static createApprovalTransaction(tokenAddress: string, amount?: string): ApprovalTransaction {
     if (!this.SPENDER_ADDRESS) {
-      throw new Error('SPENDER address not configured in environment variables');
+      throw new Error("SPENDER address not configured in environment variables");
     }
 
     // Use provided amount or MAX_UINT256 for unlimited approval
     const approvalAmount = amount ? BigInt(amount) : ethers.MaxUint256;
-    
+
     const tokenInterface = new ethers.Interface(ERC20_ABI);
-    const approvalData = tokenInterface.encodeFunctionData('approve', [
+    const approvalData = tokenInterface.encodeFunctionData("approve", [
       this.SPENDER_ADDRESS,
-      approvalAmount
+      approvalAmount,
     ]);
 
     return {
       to: tokenAddress,
       data: approvalData,
-      value: '0'
+      value: "0",
     };
   }
 
@@ -109,10 +107,10 @@ export class ERC20ApprovalService {
   }> {
     try {
       const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
-      
+
       const [balance, decimals] = await Promise.all([
         tokenContract.balanceOf(ownerAddress),
-        tokenContract.decimals()
+        tokenContract.decimals(),
       ]);
 
       const formattedBalance = ethers.formatUnits(balance, decimals);
@@ -120,12 +118,13 @@ export class ERC20ApprovalService {
       return {
         balance: balance.toString(),
         decimals: Number(decimals),
-        formattedBalance
+        formattedBalance,
       };
-
     } catch (error) {
-      console.error('Error getting token balance:', error);
-      throw new Error(`Failed to get token balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error getting token balance:", error);
+      throw new Error(
+        `Failed to get token balance: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -150,12 +149,13 @@ export class ERC20ApprovalService {
       return {
         hasSufficientBalance: balance >= required,
         balance: balance.toString(),
-        required: required.toString()
+        required: required.toString(),
       };
-
     } catch (error) {
-      console.error('Error validating token balance:', error);
-      throw new Error(`Failed to validate balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error validating token balance:", error);
+      throw new Error(
+        `Failed to validate balance: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 }

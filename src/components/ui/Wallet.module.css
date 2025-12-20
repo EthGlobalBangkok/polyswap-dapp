@@ -72,7 +72,7 @@
 }
 
 .address {
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 0.8rem;
   color: var(--text-secondary);
 }
@@ -145,8 +145,12 @@
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 /* Mobile Responsive */
@@ -156,20 +160,20 @@
     min-width: 120px;
     font-size: 0.85rem;
   }
-  
+
   .accountContainer {
     padding: var(--spacing-xs) var(--spacing-sm);
     min-width: 160px;
   }
-  
+
   .ensName {
     font-size: 0.8rem;
   }
-  
+
   .address {
     font-size: 0.75rem;
   }
-  
+
   .avatar {
     width: 24px;
     height: 24px;
@@ -180,7 +184,7 @@
   .accountContainer {
     min-width: 140px;
   }
-  
+
   .connectButton {
     min-width: 100px;
     font-size: 0.8rem;

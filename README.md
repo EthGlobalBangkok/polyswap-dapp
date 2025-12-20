@@ -17,18 +17,18 @@ PolySwap allows you to:
 
 ### Example Use Case
 
-> *"I believe if Trump wins the 2024 election, crypto market will go up. If my Polymarket bet gets filled, I want to automatically swap 1000 USDC for ETH at current market rates."*
+> _"I believe if Trump wins the 2024 election, crypto market will go up. If my Polymarket bet gets filled, I want to automatically swap 1000 USDC for ETH at current market rates."_
 
 With PolySwap, you can create this conditional order that will only execute if the condition is met, eliminating the need to manually monitor the prediction market outcome and execute the trade yourself.
 
 > 🎥 **[Watch the PolySwap demo video](./public/polyswap_demo.mp4)**
-
 
 ## 🏗️ Architecture Overview
 
 PolySwap consists of integrated frontend and backend components:
 
 ### 🖥️ Frontend (Next.js)
+
 - **Modern React Interface**: Built with Next.js 15 and React 19
 - **Market Browser**: Search and explore Polymarket prediction markets
 - **Order Creation Flow**: Intuitive interface for setting up conditional swaps with Polymarket integration
@@ -37,6 +37,7 @@ PolySwap consists of integrated frontend and backend components:
 - **Real-time Updates**: Live order status and market data synchronization
 
 ### ⚙️ Backend (Node.js + TypeScript)
+
 - **Next.js API Routes**: Integrated API serving market data and order information
 - **Blockchain Listener**: Monitors Polygon for PolySwap order events and trade executions
 - **PostgreSQL Database**: Stores market data, order history, and order UIDs
@@ -66,17 +67,20 @@ cp .env.sample .env
 ### Running the Application
 
 1. **Start the database**:
+
    ```bash
    pnpm db:up
    ```
 
 2. **Start the backend services**:
+
    ```bash
    # Start blockchain listener + market updater
    pnpm start:listener
    ```
 
 3. **Start the frontend**:
+
    ```bash
    pnpm dev
    ```
@@ -87,6 +91,7 @@ cp .env.sample .env
 ## 🔧 Available Scripts
 
 ### Frontend Development
+
 ```bash
 pnpm dev          # Start Next.js development server (port 3000)
 pnpm build        # Build production frontend
@@ -95,6 +100,7 @@ pnpm lint         # Run ESLint
 ```
 
 ### Backend Services
+
 ```bash
 pnpm start:listener               # Start blockchain listener + market updater
 pnpm start:listener-only          # Start only blockchain listener
@@ -103,12 +109,14 @@ pnpm start:market-updater-standalone # Start standalone market updater
 ```
 
 ### Market Data Management
+
 ```bash
 pnpm saveMarkets   # Fetch markets from Polymarket API to data.json
 pnpm db:import     # Import markets from data.json to database
 ```
 
 ### Database Management
+
 ```bash
 pnpm db:up         # Start PostgreSQL container
 pnpm db:down       # Stop PostgreSQL container
@@ -116,6 +124,7 @@ pnpm db:logs       # View database logs
 ```
 
 ### Utility Scripts
+
 ```bash
 pnpm get-polymarket-creds         # Get Polymarket credentials
 pnpm cancel-polymarket-orders     # Cancel all Polymarket orders
@@ -129,6 +138,7 @@ PolySwap includes an automatic market update service that keeps your database sy
 ### Configuration
 
 Set the update interval in your `.env` file:
+
 ```bash
 MARKET_UPDATE_INTERVAL_MINUTES=5  # Update every 5 minutes (default)
 AUTO_REMOVE_CLOSED_MARKETS=true   # Remove closed markets automatically
@@ -137,11 +147,13 @@ AUTO_REMOVE_CLOSED_MARKETS=true   # Remove closed markets automatically
 ### Running Options
 
 1. **Full Service** (Recommended for production):
+
    ```bash
    pnpm start:listener  # Runs both blockchain listener and market updater
    ```
 
 2. **Market Updater Only**:
+
    ```bash
    pnpm start:market-updater  # Market updates via listener with --market-update-only flag
    # OR
@@ -166,6 +178,7 @@ AUTO_REMOVE_CLOSED_MARKETS=true   # Remove closed markets automatically
 Key environment variables (see `.env.sample`):
 
 ### Database
+
 ```bash
 DB_HOST=localhost
 DB_PORT=5432
@@ -175,18 +188,21 @@ DB_PASSWORD=your_password
 ```
 
 ### Polymarket API
+
 ```bash
 CLOB_API_KEY=your_api_key
 CLOB_SECRET=your_secret
 CLOB_PASS_PHRASE=your_passphrase
 ```
+
 > **ℹ️ Info:** You can generate these Polymarket API credentials with the script:
+>
 > ```
 > pnpm get-polymarket-creds
 > ```
 
-
 ### Blockchain Configuration
+
 ```bash
 RPC_URL=https://polygon-rpc.com/
 STARTING_BLOCK=76437998
@@ -219,13 +235,13 @@ end
   Note over User, Safe: Phase 1: Order Setup & Fund Preparation
   User->>Dapp: Choose market & configure order (sellAmount, buyAmount)
   Dapp->>User: Check wallet balance for sellAmount
-  
+
   alt Insufficient Balance
     Dapp-->>User: Error: Insufficient funds
   else Sufficient Balance
     Dapp-->>PO: Create Polymarket limit order (condition trigger)
     PO-->>Dapp: Return polymarket order hash
-    
+
     Note over Safe, SellToken: Phase 2: Token Approval & Transaction Batch
     Dapp->>Safe: Check current token allowance for ComposableCoW
     alt Insufficient Allowance
@@ -235,11 +251,11 @@ end
     else Sufficient Allowance
       Dapp->>Safe: Prepare single TX: [CreateOrder TX]
     end
-    
+
     User->>Safe: Sign transaction batch
     Safe->>CC: createWithContext(orderParams, valueFactory, data)
     Note over Safe: ✅ Funds still remain in user's Safe wallet
-    
+
     CC->>CC: Store conditional order parameters
     CC-->>WT: Emit ConditionalOrderCreated(owner, params)
     WT-->>CP: Register conditional order in orderbook
@@ -252,7 +268,7 @@ end
     CC->>PH: Call verify(order) to check condition
     PH->>Polymarket: getOrderStatus(polymarket_order_hash)
     Polymarket-->>PH: Return order status (filled/remaining)
-    
+
     alt Polymarket Order Not Filled
       PH-->>CC: Condition NOT met - revert with POLL_TRY_NEXT_BLOCK
       CC-->>Safe: Order invalid (condition not met)
@@ -272,15 +288,15 @@ end
     CS->>Safe: Execute delegatecall for fund transfer
     Safe->>SellToken: transfer(CoW Settlement, sellAmount)
     Note over SellToken: 💰 User funds leave Safe wallet
-    
+
     CS->>CS: Execute swap logic internally
     CS->>BuyToken: transfer(Safe, buyAmount)
     Note over BuyToken: 💰 User receives buy tokens in Safe
-    
+
     CS->>CS: Emit Trade(owner, sellToken, buyToken, sellAmount, buyAmount, feeAmount, orderUid)
     CS-->>Dapp: Trade event notification
     Dapp->>Dapp: Update order status to "executed"
-    
+
     Note over User: ✅ Swap completed: User exchanged sellAmount for buyAmount
   else Condition Never Met (Order Expires)
     Note over Safe: 💰 Funds remain safely in user's Safe wallet
@@ -295,6 +311,7 @@ end
     Note over User: Final State: User retains original sellTokens (no loss)
   end
 ```
+
 > **Note:** If the diagram does not display correctly, here is the diagram as a PNG:  
 > [polyswap_mermaid.png](./public/polyswap_mermaid.png)
 
@@ -303,10 +320,11 @@ end
 PolySwap is designed to work exclusively with Gnosis Safe wallets for enhanced security:
 
 ### Supported Connection Methods
+
 - **Safe Apps (TODO)**: Run PolySwap directly inside the Safe interface
 - **WalletConnect**: Connect external Safe wallets via WalletConnect protocol
 
 ## 🧑‍💻 Authors
 
 | [<img src="https://github.com/Intermarch3.png?size=85" width=85><br><sub>Lucas Leclerc</sub>](https://github.com/Intermarch3) | [<img src="https://github.com/Pybast.png?size=85" width=85><br><sub>Baptiste Florentin</sub>](https://github.com/Pybast) |
-| :---: | :---: |
+| :---------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------: |

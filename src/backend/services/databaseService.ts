@@ -1,19 +1,18 @@
-import { query } from '../db/database';
-import { Market } from '../interfaces/Market';
-import { DatabaseMarket } from '../interfaces/Database';
-import { PolyswapOrderRecord, DatabasePolyswapOrder } from '../interfaces/PolyswapOrder';
+import { query } from "../db/database";
+import { Market } from "../interfaces/Market";
+import { DatabaseMarket } from "../interfaces/Database";
+import { PolyswapOrderRecord, DatabasePolyswapOrder } from "../interfaces/PolyswapOrder";
 
 export class DatabaseService {
-
   /**
    * Escape special characters for SQL LIKE patterns
    * Prevents SQL injection via LIKE wildcards (% and _)
    */
   private static escapeLikePattern(input: string): string {
     return input
-      .replace(/\\/g, '\\\\')  // Escape backslashes first
-      .replace(/%/g, '\\%')    // Escape percent
-      .replace(/_/g, '\\_');   // Escape underscore
+      .replace(/\\/g, "\\\\") // Escape backslashes first
+      .replace(/%/g, "\\%") // Escape percent
+      .replace(/_/g, "\\_"); // Escape underscore
   }
 
   /**
@@ -21,23 +20,62 @@ export class DatabaseService {
    */
   private static extractCategory(question: string): string {
     const lowerQuestion = question.toLowerCase();
-    
-    if (lowerQuestion.includes('bitcoin') || lowerQuestion.includes('ethereum') || lowerQuestion.includes('crypto') || lowerQuestion.includes('eth') || lowerQuestion.includes('btc')) {
-      return 'crypto';
-    } else if (lowerQuestion.includes('trump') || lowerQuestion.includes('biden') || lowerQuestion.includes('election') || lowerQuestion.includes('president') || lowerQuestion.includes('politics')) {
-      return 'politics';
-    } else if (lowerQuestion.includes('fed') || lowerQuestion.includes('interest') || lowerQuestion.includes('recession') || lowerQuestion.includes('economy') || lowerQuestion.includes('inflation')) {
-      return 'economics';
-    } else if (lowerQuestion.includes('champion') || lowerQuestion.includes('series') || lowerQuestion.includes('sport') || lowerQuestion.includes('f1') || lowerQuestion.includes('football') || lowerQuestion.includes('basketball')) {
-      return 'sports';
-    } else if (lowerQuestion.includes('movie') || lowerQuestion.includes('film') || lowerQuestion.includes('entertainment')) {
-      return 'entertainment';
-    } else if (lowerQuestion.includes('china') || lowerQuestion.includes('russia') || lowerQuestion.includes('ukraine') || lowerQuestion.includes('iran') || lowerQuestion.includes('war')) {
-      return 'world';
-    } else if (lowerQuestion.includes('ai') || lowerQuestion.includes('artificial intelligence') || lowerQuestion.includes('technology')) {
-      return 'technology';
+
+    if (
+      lowerQuestion.includes("bitcoin") ||
+      lowerQuestion.includes("ethereum") ||
+      lowerQuestion.includes("crypto") ||
+      lowerQuestion.includes("eth") ||
+      lowerQuestion.includes("btc")
+    ) {
+      return "crypto";
+    } else if (
+      lowerQuestion.includes("trump") ||
+      lowerQuestion.includes("biden") ||
+      lowerQuestion.includes("election") ||
+      lowerQuestion.includes("president") ||
+      lowerQuestion.includes("politics")
+    ) {
+      return "politics";
+    } else if (
+      lowerQuestion.includes("fed") ||
+      lowerQuestion.includes("interest") ||
+      lowerQuestion.includes("recession") ||
+      lowerQuestion.includes("economy") ||
+      lowerQuestion.includes("inflation")
+    ) {
+      return "economics";
+    } else if (
+      lowerQuestion.includes("champion") ||
+      lowerQuestion.includes("series") ||
+      lowerQuestion.includes("sport") ||
+      lowerQuestion.includes("f1") ||
+      lowerQuestion.includes("football") ||
+      lowerQuestion.includes("basketball")
+    ) {
+      return "sports";
+    } else if (
+      lowerQuestion.includes("movie") ||
+      lowerQuestion.includes("film") ||
+      lowerQuestion.includes("entertainment")
+    ) {
+      return "entertainment";
+    } else if (
+      lowerQuestion.includes("china") ||
+      lowerQuestion.includes("russia") ||
+      lowerQuestion.includes("ukraine") ||
+      lowerQuestion.includes("iran") ||
+      lowerQuestion.includes("war")
+    ) {
+      return "world";
+    } else if (
+      lowerQuestion.includes("ai") ||
+      lowerQuestion.includes("artificial intelligence") ||
+      lowerQuestion.includes("technology")
+    ) {
+      return "technology";
     } else {
-      return 'other';
+      return "other";
     }
   }
 
@@ -46,47 +84,64 @@ export class DatabaseService {
    */
   static async insertMarket(market: Market): Promise<void> {
     // Validate required fields first - skip market if any required field is null/invalid
-    if (!market.id || !market.question || !market.conditionId || !market.startDate || !market.endDate) {
-      console.warn(`Skipping market ${market.id || 'unknown'}: Missing required basic fields`);
+    if (
+      !market.id ||
+      !market.question ||
+      !market.conditionId ||
+      !market.startDate ||
+      !market.endDate
+    ) {
+      console.warn(`Skipping market ${market.id || "unknown"}: Missing required basic fields`);
       return;
     }
 
     // Validate outcomes and outcomePrices are not null and are valid
     if (!market.outcomes || !market.outcomePrices) {
-      console.warn(`Skipping market ${market.id}: Missing required outcomes or outcomePrices (outcomes: ${!!market.outcomes}, outcomePrices: ${!!market.outcomePrices})`);
+      console.warn(
+        `Skipping market ${market.id}: Missing required outcomes or outcomePrices (outcomes: ${!!market.outcomes}, outcomePrices: ${!!market.outcomePrices})`
+      );
       return;
     }
 
     let outcomesData;
     let pricesData;
-    
+
     try {
       // Parse outcomes data
-      outcomesData = typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes;
-      
+      outcomesData =
+        typeof market.outcomes === "string" ? JSON.parse(market.outcomes) : market.outcomes;
+
       // Parse outcome prices data
-      pricesData = typeof market.outcomePrices === 'string' ? JSON.parse(market.outcomePrices) : market.outcomePrices;
+      pricesData =
+        typeof market.outcomePrices === "string"
+          ? JSON.parse(market.outcomePrices)
+          : market.outcomePrices;
 
       // Validate parsed data
       if (!Array.isArray(outcomesData) || outcomesData.length === 0) {
         console.warn(`Skipping market ${market.id}: Invalid outcomes data - not a valid array`);
         return;
       }
-      
+
       if (!Array.isArray(pricesData) || pricesData.length === 0) {
-        console.warn(`Skipping market ${market.id}: Invalid outcomePrices data - not a valid array`);
+        console.warn(
+          `Skipping market ${market.id}: Invalid outcomePrices data - not a valid array`
+        );
         return;
       }
 
       // Ensure prices array matches outcomes array length
       if (pricesData.length !== outcomesData.length) {
-        console.warn(`Skipping market ${market.id}: Mismatched outcomes/prices lengths (outcomes: ${outcomesData.length}, prices: ${pricesData.length})`);
+        console.warn(
+          `Skipping market ${market.id}: Mismatched outcomes/prices lengths (outcomes: ${outcomesData.length}, prices: ${pricesData.length})`
+        );
         return;
       }
-
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.warn(`Skipping market ${market.id}: Error parsing outcomes or prices data - ${errorMessage}`);
+      console.warn(
+        `Skipping market ${market.id}: Error parsing outcomes or prices data - ${errorMessage}`
+      );
       return;
     }
 
@@ -125,7 +180,7 @@ export class DatabaseService {
       parseFloat(market.volume) || 0,
       JSON.stringify(outcomesData),
       JSON.stringify(pricesData),
-      JSON.stringify(market.clobTokenIds)
+      JSON.stringify(market.clobTokenIds),
     ];
 
     try {
@@ -140,7 +195,7 @@ export class DatabaseService {
    * Get market by condition ID
    */
   static async getMarketByConditionId(conditionId: string): Promise<DatabaseMarket | null> {
-    const sql = 'SELECT * FROM markets WHERE condition_id = $1';
+    const sql = "SELECT * FROM markets WHERE condition_id = $1";
     const result = await query(sql, [conditionId]);
     return result.rows[0] || null;
   }
@@ -149,7 +204,7 @@ export class DatabaseService {
    * Get market by ID
    */
   static async getMarketById(id: string): Promise<DatabaseMarket | null> {
-    const sql = 'SELECT * FROM markets WHERE id = $1';
+    const sql = "SELECT * FROM markets WHERE id = $1";
     const result = await query(sql, [id]);
     return result.rows[0] || null;
   }
@@ -158,7 +213,7 @@ export class DatabaseService {
    * Get all markets from the database with pagination
    */
   static async getAllMarkets(limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const sql = 'SELECT * FROM markets ORDER BY created_at DESC LIMIT $1 OFFSET $2';
+    const sql = "SELECT * FROM markets ORDER BY created_at DESC LIMIT $1 OFFSET $2";
     const result = await query(sql, [limit, offset]);
     return result.rows;
   }
@@ -167,7 +222,7 @@ export class DatabaseService {
    * Get top markets by volume
    */
   static async getTopMarkets(limit: number = 50): Promise<DatabaseMarket[]> {
-    const sql = 'SELECT * FROM markets ORDER BY volume DESC LIMIT $1';
+    const sql = "SELECT * FROM markets ORDER BY volume DESC LIMIT $1";
     const result = await query(sql, [limit]);
     return result.rows;
   }
@@ -190,8 +245,14 @@ export class DatabaseService {
   /**
    * Search markets by keywords (AND search - all keywords must be present)
    */
-  static async searchMarketsByKeywords(keywords: string[], limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`).join(' AND ');
+  static async searchMarketsByKeywords(
+    keywords: string[],
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<DatabaseMarket[]> {
+    const conditions = keywords
+      .map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`)
+      .join(" AND ");
     const limitIndex = keywords.length + 1;
     const offsetIndex = keywords.length + 2;
     const sql = `
@@ -200,7 +261,7 @@ export class DatabaseService {
       ORDER BY volume DESC
       LIMIT $${limitIndex} OFFSET $${offsetIndex}
     `;
-    const values = [...keywords.map(k => `%${this.escapeLikePattern(k)}%`), limit, offset];
+    const values = [...keywords.map((k) => `%${this.escapeLikePattern(k)}%`), limit, offset];
     const result = await query(sql, values);
     return result.rows;
   }
@@ -208,8 +269,14 @@ export class DatabaseService {
   /**
    * Search markets by any keyword (OR search - any keyword can match)
    */
-  static async searchMarketsByAnyKeyword(keywords: string[], limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`).join(' OR ');
+  static async searchMarketsByAnyKeyword(
+    keywords: string[],
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<DatabaseMarket[]> {
+    const conditions = keywords
+      .map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`)
+      .join(" OR ");
     const limitIndex = keywords.length + 1;
     const offsetIndex = keywords.length + 2;
     const sql = `
@@ -218,7 +285,7 @@ export class DatabaseService {
       ORDER BY volume DESC
       LIMIT $${limitIndex} OFFSET $${offsetIndex}
     `;
-    const values = [...keywords.map(k => `%${this.escapeLikePattern(k)}%`), limit, offset];
+    const values = [...keywords.map((k) => `%${this.escapeLikePattern(k)}%`), limit, offset];
     const result = await query(sql, values);
     return result.rows;
   }
@@ -226,8 +293,15 @@ export class DatabaseService {
   /**
    * Search markets by keywords AND category (AND search - all keywords must be present)
    */
-  static async searchMarketsByKeywordsAndCategory(keywords: string[], category: string, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`).join(' AND ');
+  static async searchMarketsByKeywordsAndCategory(
+    keywords: string[],
+    category: string,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<DatabaseMarket[]> {
+    const conditions = keywords
+      .map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`)
+      .join(" AND ");
     const categoryIndex = keywords.length + 1;
     const limitIndex = keywords.length + 2;
     const offsetIndex = keywords.length + 3;
@@ -237,7 +311,12 @@ export class DatabaseService {
       ORDER BY volume DESC
       LIMIT $${limitIndex} OFFSET $${offsetIndex}
     `;
-    const values = [...keywords.map(k => `%${this.escapeLikePattern(k)}%`), category, limit, offset];
+    const values = [
+      ...keywords.map((k) => `%${this.escapeLikePattern(k)}%`),
+      category,
+      limit,
+      offset,
+    ];
     const result = await query(sql, values);
     return result.rows;
   }
@@ -245,8 +324,15 @@ export class DatabaseService {
   /**
    * Search markets by any keyword AND category (OR search - any keyword can match)
    */
-  static async searchMarketsByAnyKeywordAndCategory(keywords: string[], category: string, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const conditions = keywords.map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`).join(' OR ');
+  static async searchMarketsByAnyKeywordAndCategory(
+    keywords: string[],
+    category: string,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<DatabaseMarket[]> {
+    const conditions = keywords
+      .map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`)
+      .join(" OR ");
     const categoryIndex = keywords.length + 1;
     const limitIndex = keywords.length + 2;
     const offsetIndex = keywords.length + 3;
@@ -256,7 +342,12 @@ export class DatabaseService {
       ORDER BY volume DESC
       LIMIT $${limitIndex} OFFSET $${offsetIndex}
     `;
-    const values = [...keywords.map(k => `%${this.escapeLikePattern(k)}%`), category, limit, offset];
+    const values = [
+      ...keywords.map((k) => `%${this.escapeLikePattern(k)}%`),
+      category,
+      limit,
+      offset,
+    ];
     const result = await query(sql, values);
     return result.rows;
   }
@@ -264,7 +355,11 @@ export class DatabaseService {
   /**
    * Get markets by volume threshold
    */
-  static async getMarketsByVolume(minVolume: number, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
+  static async getMarketsByVolume(
+    minVolume: number,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<DatabaseMarket[]> {
     const sql = `
       SELECT * FROM markets 
       WHERE volume >= $1 
@@ -278,19 +373,20 @@ export class DatabaseService {
   /**
    * Get markets by question (partial word matching, case-insensitive)
    */
-    static async getMarketsByQuestion(question: string): Promise<DatabaseMarket[]> {
-        const sql = "SELECT * FROM markets WHERE LOWER(question) LIKE LOWER($1) ESCAPE '\\' ORDER BY created_at DESC";
-        const escapedQuestion = this.escapeLikePattern(question);
-        const searchPattern = `%${escapedQuestion}%`;
-        const result = await query(sql, [searchPattern]);
-        return result.rows;
-    }
+  static async getMarketsByQuestion(question: string): Promise<DatabaseMarket[]> {
+    const sql =
+      "SELECT * FROM markets WHERE LOWER(question) LIKE LOWER($1) ESCAPE '\\' ORDER BY created_at DESC";
+    const escapedQuestion = this.escapeLikePattern(question);
+    const searchPattern = `%${escapedQuestion}%`;
+    const result = await query(sql, [searchPattern]);
+    return result.rows;
+  }
 
   /**
    * Get market by slug
    */
   static async getMarketBySlug(slug: string): Promise<DatabaseMarket | null> {
-    const sql = 'SELECT * FROM markets WHERE slug = $1';
+    const sql = "SELECT * FROM markets WHERE slug = $1";
     const result = await query(sql, [slug]);
     if (result.rows.length > 0) {
       return result.rows[0];
@@ -302,7 +398,11 @@ export class DatabaseService {
   /**
    * Get markets ending after a specific date with pagination
    */
-  static async getMarketsEndingAfter(endDate: Date, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
+  static async getMarketsEndingAfter(
+    endDate: Date,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<DatabaseMarket[]> {
     const sql = `
       SELECT * FROM markets 
       WHERE end_date > $1 
@@ -316,7 +416,11 @@ export class DatabaseService {
   /**
    * Get markets by category
    */
-  static async getMarketsByCategory(category: string, limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
+  static async getMarketsByCategory(
+    category: string,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<DatabaseMarket[]> {
     const sql = `
       SELECT * FROM markets 
       WHERE category = $1 
@@ -345,7 +449,7 @@ export class DatabaseService {
    * Delete a market by condition ID
    */
   static async deleteMarket(conditionId: string): Promise<boolean> {
-    const sql = 'DELETE FROM markets WHERE condition_id = $1';
+    const sql = "DELETE FROM markets WHERE condition_id = $1";
     const result = await query(sql, [conditionId]);
     return result.rowCount > 0;
   }
@@ -354,7 +458,7 @@ export class DatabaseService {
    * Remove all markets that have ended (past their end_date)
    */
   static async removeClosedMarkets(): Promise<number> {
-    const sql = 'DELETE FROM markets WHERE end_date < CURRENT_TIMESTAMP';
+    const sql = "DELETE FROM markets WHERE end_date < CURRENT_TIMESTAMP";
     const result = await query(sql);
     return result.rowCount || 0;
   }
@@ -363,7 +467,7 @@ export class DatabaseService {
    * Remove markets that ended before a specific date
    */
   static async removeMarketsEndedBefore(beforeDate: Date): Promise<number> {
-    const sql = 'DELETE FROM markets WHERE end_date < $1';
+    const sql = "DELETE FROM markets WHERE end_date < $1";
     const result = await query(sql, [beforeDate]);
     return result.rowCount || 0;
   }
@@ -404,12 +508,12 @@ export class DatabaseService {
     `;
     const result = await query(sql);
     const row = result.rows[0];
-    
+
     return {
       totalMarkets: parseInt(row.total_markets),
       totalVolume: parseFloat(row.total_volume),
       avgVolume: parseFloat(row.avg_volume),
-      marketsEndingToday: parseInt(row.markets_ending_today)
+      marketsEndingToday: parseInt(row.markets_ending_today),
     };
   }
 
@@ -417,17 +521,17 @@ export class DatabaseService {
    * Insert a polyswap order from frontend form
    */
   static async insertPolyswapOrderFromForm(orderData: {
-    sellToken: string; 
-    buyToken: string; 
-    sellAmount: string; 
-    minBuyAmount: string; 
+    sellToken: string;
+    buyToken: string;
+    sellAmount: string;
+    minBuyAmount: string;
     selectedOutcome: string;
-    startDate: string; 
-    deadline: string; 
-    marketId: string; 
-    owner: string; 
-    outcomeSelected: number; 
-    betPercentageValue: number; 
+    startDate: string;
+    deadline: string;
+    marketId: string;
+    owner: string;
+    outcomeSelected: number;
+    betPercentageValue: number;
   }): Promise<number> {
     const sql = `
       INSERT INTO polyswap_orders (
@@ -447,11 +551,11 @@ export class DatabaseService {
       orderData.sellAmount,
       orderData.minBuyAmount,
       new Date(orderData.startDate), // startDate is now ISO string from backend
-      new Date(orderData.deadline),  // Use the date string directly
+      new Date(orderData.deadline), // Use the date string directly
       orderData.marketId, // Market ID linking the order to the market
       orderData.outcomeSelected, // Outcome selected index
       orderData.betPercentageValue, // Bet percentage
-      'draft' // Default status for frontend-created orders
+      "draft", // Default status for frontend-created orders
     ];
 
     try {
@@ -501,7 +605,7 @@ export class DatabaseService {
     // Validate required numeric fields
     const blockNumber = Number(order.blockNumber);
     const logIndex = Number(order.logIndex);
-    
+
     if (isNaN(blockNumber) || isNaN(logIndex)) {
       throw new Error(`Invalid numeric values: blockNumber=${blockNumber}, logIndex=${logIndex}`);
     }
@@ -515,7 +619,7 @@ export class DatabaseService {
       order.sellAmount,
       order.minBuyAmount,
       new Date(order.startTime * 1000), // Convert Unix timestamp to Date
-      new Date(order.endTime * 1000),   // Convert Unix timestamp to Date
+      new Date(order.endTime * 1000), // Convert Unix timestamp to Date
       order.polymarketOrderHash,
       order.appData,
       blockNumber,
@@ -524,18 +628,18 @@ export class DatabaseService {
       null, // market_id - not available from blockchain events
       null, // outcome_selected - not available from blockchain events
       null, // bet_percentage - not available from blockchain events
-      'live' // Blockchain events indicate live orders
+      "live", // Blockchain events indicate live orders
     ];
 
     try {
       await query(sql, values);
     } catch (error) {
       console.error(`❌ Database error inserting order ${order.orderHash}:`, error);
-      console.error('Order data:', {
+      console.error("Order data:", {
         orderHash: order.orderHash,
         blockNumber,
         logIndex,
-        transactionHash: order.transactionHash
+        transactionHash: order.transactionHash,
       });
       throw error;
     }
@@ -544,11 +648,15 @@ export class DatabaseService {
   /**
    * Get polyswap orders by owner address
    */
-  static async getPolyswapOrdersByOwner(ownerAddress: string, limit: number = 100, offset: number = 0): Promise<DatabasePolyswapOrder[]> {
+  static async getPolyswapOrdersByOwner(
+    ownerAddress: string,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<DatabasePolyswapOrder[]> {
     let sql: string;
     let params: any[];
-    
-    if (ownerAddress && ownerAddress.trim() !== '') {
+
+    if (ownerAddress && ownerAddress.trim() !== "") {
       sql = `
         SELECT * FROM polyswap_orders 
         WHERE owner = $1 
@@ -565,7 +673,7 @@ export class DatabaseService {
       `;
       params = [limit, offset];
     }
-    
+
     const result = await query(sql, params);
     return result.rows;
   }
@@ -574,7 +682,7 @@ export class DatabaseService {
    * Get polyswap order by order hash
    */
   static async getPolyswapOrderByHash(orderHash: string): Promise<DatabasePolyswapOrder | null> {
-    const sql = 'SELECT * FROM polyswap_orders WHERE order_hash = $1';
+    const sql = "SELECT * FROM polyswap_orders WHERE order_hash = $1";
     const result = await query(sql, [orderHash]);
     return result.rows[0] || null;
   }
@@ -583,7 +691,7 @@ export class DatabaseService {
    * Get polyswap order by numerical ID
    */
   static async getPolyswapOrderById(id: number): Promise<DatabasePolyswapOrder | null> {
-    const sql = 'SELECT * FROM polyswap_orders WHERE id = $1';
+    const sql = "SELECT * FROM polyswap_orders WHERE id = $1";
     const result = await query(sql, [id]);
     return result.rows[0] || null;
   }
@@ -592,7 +700,7 @@ export class DatabaseService {
    * Get the latest processed block number for the listener
    */
   static async getLatestProcessedBlock(): Promise<number> {
-    const sql = 'SELECT MAX(block_number) as latest_block FROM polyswap_orders';
+    const sql = "SELECT MAX(block_number) as latest_block FROM polyswap_orders";
     const result = await query(sql);
     return result.rows[0].latest_block || 0;
   }
@@ -600,7 +708,10 @@ export class DatabaseService {
   /**
    * Get polyswap orders by block range
    */
-  static async getPolyswapOrdersByBlockRange(fromBlock: number, toBlock: number): Promise<DatabasePolyswapOrder[]> {
+  static async getPolyswapOrdersByBlockRange(
+    fromBlock: number,
+    toBlock: number
+  ): Promise<DatabasePolyswapOrder[]> {
     const sql = `
       SELECT * FROM polyswap_orders 
       WHERE block_number >= $1 AND block_number <= $2 
@@ -613,7 +724,9 @@ export class DatabaseService {
   /**
    * Get polyswap orders by polymarket order hash
    */
-  static async getPolyswapOrdersByPolymarketHash(polymarketHash: string): Promise<DatabasePolyswapOrder[]> {
+  static async getPolyswapOrdersByPolymarketHash(
+    polymarketHash: string
+  ): Promise<DatabasePolyswapOrder[]> {
     const sql = `
       SELECT * FROM polyswap_orders 
       WHERE polymarket_order_hash = $1 
@@ -626,7 +739,10 @@ export class DatabaseService {
   /**
    * Update order status
    */
-  static async updateOrderStatus(orderHash: string, status: 'draft' | 'live' | 'filled' | 'canceled'): Promise<boolean> {
+  static async updateOrderStatus(
+    orderHash: string,
+    status: "draft" | "live" | "filled" | "canceled"
+  ): Promise<boolean> {
     const sql = `
       UPDATE polyswap_orders
       SET status = $1, updated_at = CURRENT_TIMESTAMP
@@ -645,15 +761,19 @@ export class DatabaseService {
   /**
    * Update order status by ID with optional fill details
    */
-  static async updateOrderStatusById(orderId: number, status: 'draft' | 'live' | 'filled' | 'canceled', fillDetails?: {
-    filledAt?: Date;
-    fillTransactionHash?: string;
-    fillBlockNumber?: number;
-    fillLogIndex?: number;
-    actualSellAmount?: string;
-    actualBuyAmount?: string;
-    feeAmount?: string;
-  }): Promise<boolean> {
+  static async updateOrderStatusById(
+    orderId: number,
+    status: "draft" | "live" | "filled" | "canceled",
+    fillDetails?: {
+      filledAt?: Date;
+      fillTransactionHash?: string;
+      fillBlockNumber?: number;
+      fillLogIndex?: number;
+      actualSellAmount?: string;
+      actualBuyAmount?: string;
+      feeAmount?: string;
+    }
+  ): Promise<boolean> {
     let sql = `
       UPDATE polyswap_orders
       SET status = $1, updated_at = CURRENT_TIMESTAMP
@@ -714,7 +834,10 @@ export class DatabaseService {
   /**
    * Update Polymarket order hash for a draft order using order hash
    */
-  static async updateOrderPolymarketHash(orderHash: string, polymarketOrderHash: string): Promise<boolean> {
+  static async updateOrderPolymarketHash(
+    orderHash: string,
+    polymarketOrderHash: string
+  ): Promise<boolean> {
     const sql = `
       UPDATE polyswap_orders 
       SET polymarket_order_hash = $1, updated_at = CURRENT_TIMESTAMP
@@ -733,7 +856,10 @@ export class DatabaseService {
   /**
    * Update Polymarket order hash for a draft order using numerical ID
    */
-  static async updateOrderPolymarketHashById(orderId: number, polymarketOrderHash: string): Promise<boolean> {
+  static async updateOrderPolymarketHashById(
+    orderId: number,
+    polymarketOrderHash: string
+  ): Promise<boolean> {
     const sql = `
       UPDATE polyswap_orders
       SET polymarket_order_hash = $1, updated_at = CURRENT_TIMESTAMP
@@ -752,7 +878,10 @@ export class DatabaseService {
   /**
    * Update transaction hash for an order using numerical ID and set status to live
    */
-  static async updateOrderTransactionHashById(orderId: number, transactionHash: string): Promise<boolean> {
+  static async updateOrderTransactionHashById(
+    orderId: number,
+    transactionHash: string
+  ): Promise<boolean> {
     const sql = `
       UPDATE polyswap_orders
       SET transaction_hash = $1, status = 'live', updated_at = CURRENT_TIMESTAMP
@@ -771,7 +900,11 @@ export class DatabaseService {
   /**
    * Get orders by status
    */
-  static async getOrdersByStatus(status: 'draft' | 'live' | 'filled' | 'canceled', limit: number = 100, offset: number = 0): Promise<DatabasePolyswapOrder[]> {
+  static async getOrdersByStatus(
+    status: "draft" | "live" | "filled" | "canceled",
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<DatabasePolyswapOrder[]> {
     const sql = `
       SELECT * FROM polyswap_orders
       WHERE status = $1
@@ -785,8 +918,11 @@ export class DatabaseService {
   /**
    * Get polyswap order by order hash and owner address
    */
-  static async getPolyswapOrderByHashAndOwner(orderHash: string, ownerAddress: string): Promise<DatabasePolyswapOrder | null> {
-    const sql = 'SELECT * FROM polyswap_orders WHERE order_hash = $1 AND owner = $2';
+  static async getPolyswapOrderByHashAndOwner(
+    orderHash: string,
+    ownerAddress: string
+  ): Promise<DatabasePolyswapOrder | null> {
+    const sql = "SELECT * FROM polyswap_orders WHERE order_hash = $1 AND owner = $2";
     const result = await query(sql, [orderHash, ownerAddress.toLowerCase()]);
     return result.rows[0] || null;
   }
@@ -828,7 +964,7 @@ export class DatabaseService {
         appData,
         orderHash,
         orderUid || null,
-        orderId
+        orderId,
       ]);
       return result.rows.length > 0;
     } catch (error) {
@@ -886,7 +1022,7 @@ export class DatabaseService {
       const result = await query(sql);
       return result.rows;
     } catch (error) {
-      console.error('❌ Error fetching live orders without UID:', error);
+      console.error("❌ Error fetching live orders without UID:", error);
       return [];
     }
   }
@@ -904,7 +1040,7 @@ export class DatabaseService {
       const result = await query(sql);
       return result.rows;
     } catch (error) {
-      console.error('❌ Error fetching live orders:', error);
+      console.error("❌ Error fetching live orders:", error);
       return [];
     }
   }
@@ -921,7 +1057,7 @@ export class DatabaseService {
       const result = await query(sql);
       return result.rows;
     } catch (error) {
-      console.error('❌ Error fetching all orders:', error);
+      console.error("❌ Error fetching all orders:", error);
       return [];
     }
   }

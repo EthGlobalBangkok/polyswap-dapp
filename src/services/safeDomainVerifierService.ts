@@ -1,5 +1,5 @@
-import { ethers } from 'ethers';
-import { SafeFallbackHandlerService } from './safeFallbackHandlerService';
+import { ethers } from "ethers";
+import { SafeFallbackHandlerService } from "./safeFallbackHandlerService";
 
 export interface DomainVerifierTransaction {
   to: string;
@@ -14,7 +14,8 @@ export interface DomainVerifierTransaction {
  */
 export class SafeDomainVerifierService {
   // ComposableCoW contract address
-  private static readonly COMPOSABLE_COW_ADDRESS = process.env.NEXT_PUBLIC_COMPOSABLE_COW || '0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74';
+  private static readonly COMPOSABLE_COW_ADDRESS =
+    process.env.NEXT_PUBLIC_COMPOSABLE_COW || "0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74";
 
   /**
    * Fetch the domain separator from the ComposableCoW contract
@@ -23,7 +24,7 @@ export class SafeDomainVerifierService {
     try {
       // ComposableCoW domainSeparator() function signature
       const composableCowInterface = new ethers.Interface([
-        'function domainSeparator() view returns (bytes32)'
+        "function domainSeparator() view returns (bytes32)",
       ]);
 
       const contract = new ethers.Contract(
@@ -34,8 +35,10 @@ export class SafeDomainVerifierService {
 
       return await contract.domainSeparator();
     } catch (error) {
-      console.error('Error fetching domain separator from ComposableCoW:', error);
-      throw new Error(`Failed to fetch domain separator: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error fetching domain separator from ComposableCoW:", error);
+      throw new Error(
+        `Failed to fetch domain separator: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -54,20 +57,18 @@ export class SafeDomainVerifierService {
 
       // ExtensibleFallbackHandler domainVerifiers mapping signature
       const handlerInterface = new ethers.Interface([
-        'function domainVerifiers(address, bytes32) view returns (address)'
+        "function domainVerifiers(address, bytes32) view returns (address)",
       ]);
 
-      const contract = new ethers.Contract(
-        handlerAddress,
-        handlerInterface,
-        provider
-      );
+      const contract = new ethers.Contract(handlerAddress, handlerInterface, provider);
 
       const verifier = await contract.domainVerifiers(safeAddress, domainSeparator);
       return verifier;
     } catch (error) {
-      console.error('Error reading domain verifier:', error);
-      throw new Error(`Failed to read domain verifier: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error reading domain verifier:", error);
+      throw new Error(
+        `Failed to read domain verifier: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -86,7 +87,7 @@ export class SafeDomainVerifierService {
 
       return current.toLowerCase() === expected;
     } catch (error) {
-      console.error('Error checking domain verifier:', error);
+      console.error("Error checking domain verifier:", error);
       // If we can't check, assume it needs to be set
       return false;
     }
@@ -103,30 +104,32 @@ export class SafeDomainVerifierService {
     try {
       // Safe's setDomainVerifier function signature
       const safeInterface = new ethers.Interface([
-        'function setDomainVerifier(bytes32 domainSeparator, address verifier)'
+        "function setDomainVerifier(bytes32 domainSeparator, address verifier)",
       ]);
 
       // Encode the function call
-      const data = safeInterface.encodeFunctionData('setDomainVerifier', [
+      const data = safeInterface.encodeFunctionData("setDomainVerifier", [
         domainSeparator,
-        this.COMPOSABLE_COW_ADDRESS
+        this.COMPOSABLE_COW_ADDRESS,
       ]);
 
       return {
         to: safeAddress,
         data: data,
-        value: '0'
+        value: "0",
       };
     } catch (error) {
-      console.error('Error creating setDomainVerifier transaction:', error);
-      throw new Error(`Failed to create transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error creating setDomainVerifier transaction:", error);
+      throw new Error(
+        `Failed to create transaction: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
   /**
    * Check if a domain verifier transaction is needed and create it if required
    * Returns object with needsDomainVerifier flag and transaction (if needed)
-   * 
+   *
    * This is the main method to use when adding domain verifier setup to batch transactions
    */
   static async checkAndCreateDomainVerifierTransaction(
@@ -145,15 +148,20 @@ export class SafeDomainVerifierService {
       }
 
       // Create the transaction if needed
-      const domainVerifierTx = this.createSetDomainVerifierTransaction(safeAddress, domainSeparator);
+      const domainVerifierTx = this.createSetDomainVerifierTransaction(
+        safeAddress,
+        domainSeparator
+      );
 
       return {
         needsDomainVerifier: true,
-        domainVerifierTx
+        domainVerifierTx,
       };
     } catch (error) {
-      console.error('Error checking and creating domain verifier transaction:', error);
-      throw new Error(`Failed to check/create domain verifier transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error checking and creating domain verifier transaction:", error);
+      throw new Error(
+        `Failed to check/create domain verifier transaction: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 }

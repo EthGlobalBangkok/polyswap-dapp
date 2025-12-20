@@ -1,6 +1,6 @@
-import Safe from '@safe-global/protocol-kit';
-import { MetaTransactionData, SafeTransactionDataPartial } from '@safe-global/types-kit';
-import { ethers } from 'ethers';
+import Safe from "@safe-global/protocol-kit";
+import { MetaTransactionData, SafeTransactionDataPartial } from "@safe-global/types-kit";
+import { ethers } from "ethers";
 
 export interface SafeTransactionRequest {
   to: string;
@@ -19,7 +19,11 @@ export class SafeService {
   private provider: ethers.Provider | null = null;
   private signer: ethers.Signer | null = null;
 
-  async initialize(safeAddress: string, provider: ethers.Provider, signer?: ethers.Signer): Promise<void> {
+  async initialize(
+    safeAddress: string,
+    provider: ethers.Provider,
+    signer?: ethers.Signer
+  ): Promise<void> {
     this.provider = provider;
     this.signer = signer || null;
 
@@ -30,8 +34,10 @@ export class SafeService {
         safeAddress: safeAddress,
       });
     } catch (error) {
-      console.error('Safe initialization failed:', error);
-      throw new Error(`Failed to initialize Safe: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Safe initialization failed:", error);
+      throw new Error(
+        `Failed to initialize Safe: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -39,7 +45,7 @@ export class SafeService {
     transactionRequest: SafeTransactionRequest
   ): Promise<SafeTransactionResult> {
     if (!this.safe) {
-      throw new Error('Safe not initialized. Call initialize() first.');
+      throw new Error("Safe not initialized. Call initialize() first.");
     }
 
     // Create transaction data
@@ -52,7 +58,7 @@ export class SafeService {
     try {
       // Create the Safe transaction
       const safeTransaction = await this.safe.createTransaction({
-        transactions: [safeTransactionData]
+        transactions: [safeTransactionData],
       });
 
       // Get the Safe transaction hash
@@ -64,21 +70,21 @@ export class SafeService {
       // Check if we can execute immediately (single owner or threshold met)
       const threshold = await this.safe.getThreshold();
       const signatures = signedSafeTransaction.signatures;
-      
+
       let transactionHash: string | undefined;
       let executed = false;
 
       // Count valid signatures
       const signatureCount = Object.keys(signatures).length;
-      
+
       if (signatureCount >= threshold) {
         // Execute the transaction
         const executeTxResponse = await this.safe.executeTransaction(signedSafeTransaction);
         transactionHash = executeTxResponse.hash;
         executed = true;
-        
+
         // Wait for transaction confirmation
-        if (this.provider && 'waitForTransaction' in this.provider) {
+        if (this.provider && "waitForTransaction" in this.provider) {
           await (this.provider as any).waitForTransaction(transactionHash);
         }
       }
@@ -86,12 +92,11 @@ export class SafeService {
       return {
         safeTxHash,
         transactionHash,
-        executed
+        executed,
       };
-
     } catch (error) {
-      console.error('Error creating Safe transaction:', error);
-      throw new Error(error instanceof Error ? error.message : 'Failed to create Safe transaction');
+      console.error("Error creating Safe transaction:", error);
+      throw new Error(error instanceof Error ? error.message : "Failed to create Safe transaction");
     }
   }
 
@@ -99,11 +104,11 @@ export class SafeService {
     transactionRequests: SafeTransactionRequest[]
   ): Promise<SafeTransactionResult> {
     if (!this.safe) {
-      throw new Error('Safe not initialized. Call initialize() first.');
+      throw new Error("Safe not initialized. Call initialize() first.");
     }
 
     // Convert requests to MetaTransactionData format
-    const transactions: MetaTransactionData[] = transactionRequests.map(request => ({
+    const transactions: MetaTransactionData[] = transactionRequests.map((request) => ({
       to: request.to,
       data: request.data,
       value: request.value,
@@ -113,7 +118,7 @@ export class SafeService {
     try {
       // Create batch transaction
       const safeTransaction = await this.safe.createTransaction({
-        transactions
+        transactions,
       });
 
       // Get the Safe transaction hash
@@ -125,20 +130,20 @@ export class SafeService {
       // Check if we can execute immediately
       const threshold = await this.safe.getThreshold();
       const signatures = signedSafeTransaction.signatures;
-      
+
       let transactionHash: string | undefined;
       let executed = false;
 
       const signatureCount = Object.keys(signatures).length;
-      
+
       if (signatureCount >= threshold) {
         // Execute the batch transaction
         const executeTxResponse = await this.safe.executeTransaction(signedSafeTransaction);
         transactionHash = executeTxResponse.hash;
         executed = true;
-        
+
         // Wait for transaction confirmation
-        if (this.provider && 'waitForTransaction' in this.provider) {
+        if (this.provider && "waitForTransaction" in this.provider) {
           await (this.provider as any).waitForTransaction(transactionHash);
         }
       }
@@ -146,18 +151,19 @@ export class SafeService {
       return {
         safeTxHash,
         transactionHash,
-        executed
+        executed,
       };
-
     } catch (error) {
-      console.error('Error creating batch Safe transaction:', error);
-      throw new Error(error instanceof Error ? error.message : 'Failed to create batch Safe transaction');
+      console.error("Error creating batch Safe transaction:", error);
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to create batch Safe transaction"
+      );
     }
   }
 
   async getSafeInfo() {
     if (!this.safe) {
-      throw new Error('Safe not initialized');
+      throw new Error("Safe not initialized");
     }
 
     const safeAddress = await this.safe.getAddress();
@@ -169,7 +175,7 @@ export class SafeService {
       address: safeAddress,
       owners,
       threshold,
-      nonce
+      nonce,
     };
   }
 

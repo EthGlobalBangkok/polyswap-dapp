@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import styles from './Navbar.module.css';
-import { ConnectWallet } from '../ui/Wallet';
+import Link from "next/link";
+import styles from "./Navbar.module.css";
+import { ConnectWallet } from "../ui/Wallet";
 
 const Navbar = () => {
   return (
@@ -28,4 +28,4 @@ const Navbar = () => {
   );
 };
 
-export default Navbar; 
+export default Navbar;

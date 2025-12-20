@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
 
 /**
  * @swagger
@@ -55,9 +55,9 @@ interface TokenList {
 }
 
 const TOKEN_LIST_URLS = [
-    'https://files.cow.fi/tokens/CowSwap.json',
-  'https://raw.githubusercontent.com/cowprotocol/token-lists/main/src/public/CoinGecko.137.json',
-  'https://raw.githubusercontent.com/cowprotocol/token-lists/main/src/public/Uniswap.137.json'
+  "https://files.cow.fi/tokens/CowSwap.json",
+  "https://raw.githubusercontent.com/cowprotocol/token-lists/main/src/public/CoinGecko.137.json",
+  "https://raw.githubusercontent.com/cowprotocol/token-lists/main/src/public/Uniswap.137.json",
 ];
 
 // Cache configuration
@@ -68,8 +68,8 @@ let tokenCache: {
 } | null = null;
 
 async function fetchTokensFromSources(): Promise<Token[]> {
-  console.log('Fetching fresh token data from sources...');
-  
+  console.log("Fetching fresh token data from sources...");
+
   // Fetch all token lists in parallel
   const responses = await Promise.all(
     TOKEN_LIST_URLS.map(async (url) => {
@@ -79,7 +79,7 @@ async function fetchTokensFromSources(): Promise<Token[]> {
           console.warn(`Failed to fetch from ${url}: ${response.status}`);
           return null;
         }
-        return await response.json() as TokenList;
+        return (await response.json()) as TokenList;
       } catch (error) {
         console.warn(`Error fetching from ${url}:`, error);
         return null;
@@ -96,17 +96,19 @@ async function fetchTokensFromSources(): Promise<Token[]> {
         // Filter for Polygon network (chainId 137)
         if (token.chainId === 137) {
           const addressKey = token.address.toLowerCase();
-          
+
           // Only add if we haven't seen this address before, or if this version has more complete data
-          if (!tokenMap.has(addressKey) || 
-              (tokenMap.get(addressKey) && !tokenMap.get(addressKey)!.logoURI && token.logoURI)) {
+          if (
+            !tokenMap.has(addressKey) ||
+            (tokenMap.get(addressKey) && !tokenMap.get(addressKey)!.logoURI && token.logoURI)
+          ) {
             tokenMap.set(addressKey, {
               chainId: token.chainId,
               address: token.address,
               name: token.name,
               symbol: token.symbol,
               decimals: token.decimals,
-              logoURI: token.logoURI
+              logoURI: token.logoURI,
             });
           }
         }
@@ -117,32 +119,32 @@ async function fetchTokensFromSources(): Promise<Token[]> {
   // Convert map to array and sort
   const allTokens = Array.from(tokenMap.values());
   allTokens.sort((a, b) => a.symbol.localeCompare(b.symbol));
-  
+
   return allTokens;
 }
 
 export async function GET() {
   try {
     const now = Date.now();
-    
+
     // Check if we have valid cached data
-    if (tokenCache && (now - tokenCache.lastUpdated) < CACHE_DURATION) {
-      console.log('Returning cached token data');
+    if (tokenCache && now - tokenCache.lastUpdated < CACHE_DURATION) {
+      console.log("Returning cached token data");
       return NextResponse.json({
         success: true,
         tokens: tokenCache.tokens,
         count: tokenCache.tokens.length,
-        cached: true
+        cached: true,
       });
     }
 
     // Fetch fresh data
     const tokens = await fetchTokensFromSources();
-    
+
     // Update cache
     tokenCache = {
       tokens,
-      lastUpdated: now
+      lastUpdated: now,
     };
 
     console.log(`Fetched and cached ${tokens.length} unique tokens on Polygon`);
@@ -151,30 +153,29 @@ export async function GET() {
       success: true,
       tokens,
       count: tokens.length,
-      cached: false
+      cached: false,
     });
-
   } catch (error) {
-    console.error('Error fetching token lists:', error);
-    
+    console.error("Error fetching token lists:", error);
+
     // If we have cached data, return it even if it's expired
     if (tokenCache) {
-      console.log('Error occurred, returning stale cached data');
+      console.log("Error occurred, returning stale cached data");
       return NextResponse.json({
         success: true,
         tokens: tokenCache.tokens,
         count: tokenCache.tokens.length,
         cached: true,
-        stale: true
+        stale: true,
       });
     }
-    
+
     return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to fetch token lists',
+      {
+        success: false,
+        error: "Failed to fetch token lists",
         tokens: [],
-        count: 0
+        count: 0,
       },
       { status: 500 }
     );

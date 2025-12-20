@@ -1,5 +1,5 @@
-import { PolymarketAPIService } from './polymarketAPIService.js';
-import { DatabaseService } from './databaseService.js';
+import { PolymarketAPIService } from "./polymarketAPIService.js";
+import { DatabaseService } from "./databaseService.js";
 
 export class MarketUpdateService {
   private static updateInterval: NodeJS.Timeout | null = null;
@@ -30,7 +30,7 @@ export class MarketUpdateService {
     if (this.updateInterval) {
       clearInterval(this.updateInterval);
       this.updateInterval = null;
-      console.log('Market update routine stopped');
+      console.log("Market update routine stopped");
     }
   }
 
@@ -73,20 +73,21 @@ export class MarketUpdateService {
         }
 
         if (i + batchSize < markets.length) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
       }
 
-      const shouldRemoveClosed = process.env.AUTO_REMOVE_CLOSED_MARKETS?.toLowerCase() === 'true';
+      const shouldRemoveClosed = process.env.AUTO_REMOVE_CLOSED_MARKETS?.toLowerCase() === "true";
       if (shouldRemoveClosed) {
         await DatabaseService.removeClosedMarkets();
       }
 
       const duration = (Date.now() - startTime) / 1000;
-      console.log(`Market update completed: ${successCount} processed, ${errorCount} errors (${duration.toFixed(1)}s)`);
-
+      console.log(
+        `Market update completed: ${successCount} processed, ${errorCount} errors (${duration.toFixed(1)}s)`
+      );
     } catch (error) {
-      console.error('Market update failed:', error);
+      console.error("Market update failed:", error);
     } finally {
       this.isUpdating = false;
     }
@@ -99,7 +100,7 @@ export class MarketUpdateService {
     return {
       isRunning: this.updateInterval !== null,
       isUpdating: this.isUpdating,
-      nextUpdate: this.updateInterval ? 'Scheduled' : 'Not scheduled'
+      nextUpdate: this.updateInterval ? "Scheduled" : "Not scheduled",
     };
   }
 }

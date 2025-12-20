@@ -12,13 +12,13 @@
 
 /* Add some visual interest with a subtle background pattern */
 .page::before {
-  content: '';
+  content: "";
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background-image: 
+  background-image:
     radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.05) 0%, transparent 50%),
     radial-gradient(circle at 80% 20%, rgba(29, 78, 216, 0.05) 0%, transparent 50%);
   pointer-events: none;
@@ -31,5 +31,3 @@
     padding: var(--spacing-xl) 0;
   }
 }
-
-

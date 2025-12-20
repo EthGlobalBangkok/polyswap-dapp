@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import React, { useState, useRef, useCallback } from 'react';
-import styles from './SearchBar.module.css';
+import React, { useState, useRef, useCallback } from "react";
+import styles from "./SearchBar.module.css";
 
 interface SearchBarProps {
   onSearch: (query: string, category?: string, isSlug?: boolean) => void;
@@ -11,20 +11,25 @@ interface SearchBarProps {
 }
 
 const CATEGORIES = [
-  { value: '', label: 'All Categories' },
-  { value: 'politics', label: 'Politics' },
-  { value: 'crypto', label: 'Crypto' },
-  { value: 'economics', label: 'Economics' },
-  { value: 'sports', label: 'Sports' },
-  { value: 'entertainment', label: 'Entertainment' },
-  { value: 'world', label: 'World' },
-  { value: 'technology', label: 'Technology' },
-  { value: 'other', label: 'Other' },
+  { value: "", label: "All Categories" },
+  { value: "politics", label: "Politics" },
+  { value: "crypto", label: "Crypto" },
+  { value: "economics", label: "Economics" },
+  { value: "sports", label: "Sports" },
+  { value: "entertainment", label: "Entertainment" },
+  { value: "world", label: "World" },
+  { value: "technology", label: "Technology" },
+  { value: "other", label: "Other" },
 ];
 
-const SearchBar = ({ onSearch, onClear, placeholder = "Search markets...", isLoading = false }: SearchBarProps) => {
-  const [query, setQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
+const SearchBar = ({
+  onSearch,
+  onClear,
+  placeholder = "Search markets...",
+  isLoading = false,
+}: SearchBarProps) => {
+  const [query, setQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [isSlug, setIsSlug] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -38,26 +43,32 @@ const SearchBar = ({ onSearch, onClear, placeholder = "Search markets...", isLoa
     return slugPattern.test(trimmed) && trimmed.length > 0;
   }, []);
 
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setQuery(value);
-    setIsSlug(detectSlug(value));
-  }, [detectSlug]);
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value;
+      setQuery(value);
+      setIsSlug(detectSlug(value));
+    },
+    [detectSlug]
+  );
 
   const handleCategoryChange = useCallback((category: string) => {
     setSelectedCategory(category);
     setShowCategoryDropdown(false);
   }, []);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      onSearch(query.trim(), selectedCategory || undefined, isSlug);
-    }
-  }, [onSearch, query, selectedCategory, isSlug]);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") {
+        onSearch(query.trim(), selectedCategory || undefined, isSlug);
+      }
+    },
+    [onSearch, query, selectedCategory, isSlug]
+  );
 
   const handleClear = useCallback(() => {
-    setQuery('');
-    setSelectedCategory('');
+    setQuery("");
+    setSelectedCategory("");
     onClear();
     setTimeout(() => {
       inputRef.current?.focus();
@@ -77,20 +88,19 @@ const SearchBar = ({ onSearch, onClear, placeholder = "Search markets...", isLoa
 
   // Add/remove event listener
   React.useEffect(() => {
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [handleClickOutside]);
 
-  const selectedCategoryLabel = CATEGORIES.find(cat => cat.value === selectedCategory)?.label || 'All Categories';
+  const selectedCategoryLabel =
+    CATEGORIES.find((cat) => cat.value === selectedCategory)?.label || "All Categories";
 
   return (
     <div className={styles.searchContainer}>
       <div className={styles.searchInputWrapper}>
-        <div className={styles.searchIcon}>
-          🔍
-        </div>
+        <div className={styles.searchIcon}>🔍</div>
         <input
           ref={inputRef}
           type="text"
@@ -101,9 +111,7 @@ const SearchBar = ({ onSearch, onClear, placeholder = "Search markets...", isLoa
           className={styles.searchInput}
           disabled={isLoading}
         />
-        
 
-        
         {/* Category Filter Button */}
         <button
           type="button"
@@ -123,7 +131,7 @@ const SearchBar = ({ onSearch, onClear, placeholder = "Search markets...", isLoa
                 key={category.value}
                 type="button"
                 onClick={() => handleCategoryChange(category.value)}
-                className={`${styles.categoryOption} ${selectedCategory === category.value ? styles.selected : ''}`}
+                className={`${styles.categoryOption} ${selectedCategory === category.value ? styles.selected : ""}`}
               >
                 {category.label}
               </button>
@@ -142,11 +150,7 @@ const SearchBar = ({ onSearch, onClear, placeholder = "Search markets...", isLoa
 
         {/* Clear Button */}
         {(query || selectedCategory) && (
-          <button
-            onClick={handleClear}
-            className={styles.clearButton}
-            disabled={isLoading}
-          >
+          <button onClick={handleClear} className={styles.clearButton} disabled={isLoading}>
             ✕
           </button>
         )}
@@ -162,4 +166,4 @@ const SearchBar = ({ onSearch, onClear, placeholder = "Search markets...", isLoa
   );
 };
 
-export default SearchBar; 
+export default SearchBar;

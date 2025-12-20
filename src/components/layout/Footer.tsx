@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import styles from './Footer.module.css';
+import styles from "./Footer.module.css";
 
 const Footer = () => {
   return (
@@ -17,13 +17,21 @@ const Footer = () => {
             Automated DeFi swaps triggered by prediction market outcomes on Polygon
           </p>
         </div>
-        
+
         <div className={styles.right}>
           <div className={styles.links}>
-            <a href="#" className={styles.link}>About</a>
-            <a href="#" className={styles.link}>Docs</a>
-            <a href="#" className={styles.link}>GitHub</a>
-            <a href="#" className={styles.link}>Support</a>
+            <a href="#" className={styles.link}>
+              About
+            </a>
+            <a href="#" className={styles.link}>
+              Docs
+            </a>
+            <a href="#" className={styles.link}>
+              GitHub
+            </a>
+            <a href="#" className={styles.link}>
+              Support
+            </a>
           </div>
           <div className={styles.copyright}>
             <span>© 2024 PolySwap. All rights reserved.</span>
@@ -34,4 +42,4 @@ const Footer = () => {
   );
 };
 
-export default Footer; 
+export default Footer;

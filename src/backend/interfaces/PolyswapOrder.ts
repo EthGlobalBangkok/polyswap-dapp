@@ -1,19 +1,18 @@
-
 export interface PolyswapOrderData {
-  sellToken: string;           // hex address
-  buyToken: string;            // hex address  
-  receiver: string;            // hex address
-  sellAmount: string;          // uint256 as string
-  minBuyAmount: string;        // uint256 as string
-  t0: string;                 // uint256 timestamp as string
-  t: string;                  // uint256 timestamp as string
+  sellToken: string; // hex address
+  buyToken: string; // hex address
+  receiver: string; // hex address
+  sellAmount: string; // uint256 as string
+  minBuyAmount: string; // uint256 as string
+  t0: string; // uint256 timestamp as string
+  t: string; // uint256 timestamp as string
   polymarketOrderHash: string; // bytes32 hex string
-  appData: string;            // bytes32 hex string
+  appData: string; // bytes32 hex string
 }
 
 export interface ConditionalOrderParams {
-  handler: string;    // address
-  salt: string;       // bytes32
+  handler: string; // address
+  salt: string; // bytes32
   staticInput: string; // bytes (ABI-encoded)
 }
 
@@ -64,7 +63,7 @@ export interface DatabasePolyswapOrder {
   market_id: string | null;
   outcome_selected: string | null; // Selected outcome index
   bet_percentage: number | null; // Bet percentage (0-100)
-  status: 'draft' | 'live' | 'filled' | 'canceled';
+  status: "draft" | "live" | "filled" | "canceled";
   created_at: Date;
   updated_at: Date;
 }

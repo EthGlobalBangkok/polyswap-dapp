@@ -1,7 +1,7 @@
-import { ethers } from 'ethers';
-import { ERC20ApprovalService } from './erc20ApprovalService';
-import { SafeFallbackHandlerService } from './safeFallbackHandlerService';
-import { SafeDomainVerifierService } from './safeDomainVerifierService';
+import { ethers } from "ethers";
+import { ERC20ApprovalService } from "./erc20ApprovalService";
+import { SafeFallbackHandlerService } from "./safeFallbackHandlerService";
+import { SafeDomainVerifierService } from "./safeDomainVerifierService";
 
 export interface BatchTransactionRequest {
   to: string;
@@ -23,7 +23,6 @@ export interface BatchTransactionResult {
 }
 
 export class SafeBatchService {
-  
   /**
    * Prepare a batch of transactions including fallback handler, approval, and main transaction
    */
@@ -35,11 +34,11 @@ export class SafeBatchService {
     provider: ethers.Provider
   ): Promise<BatchTransactionResult> {
     try {
-      console.log('Preparing batch transaction with fallback handler and approval checks:', {
+      console.log("Preparing batch transaction with fallback handler and approval checks:", {
         tokenAddress,
         ownerAddress,
         sellAmount,
-        mainTransaction
+        mainTransaction,
       });
 
       const transactions: BatchTransactionRequest[] = [];
@@ -50,27 +49,30 @@ export class SafeBatchService {
 
       // Step 1: Check if Safe fallback handler needs to be set
       try {
-        const fallbackTx = await SafeFallbackHandlerService.checkAndCreateFallbackHandlerTransaction(
-          ownerAddress,
-          provider
-        );
+        const fallbackTx =
+          await SafeFallbackHandlerService.checkAndCreateFallbackHandlerTransaction(
+            ownerAddress,
+            provider
+          );
 
         if (fallbackTx) {
           needsFallbackHandler = true;
           fallbackHandlerTransaction = {
             to: fallbackTx.to,
             data: fallbackTx.data,
-            value: fallbackTx.value
+            value: fallbackTx.value,
           };
           transactions.push(fallbackHandlerTransaction);
-          
+
           // CRITICAL: Do NOT batch domain verifier with fallback handler!
           // Even in MultiSend, the fallback handler may not be immediately active
           // for routing calls within the same transaction.
           // Return ONLY the fallback handler setup.
-          console.log('⚠️  Fallback handler needs to be set first. Returning setup with ONLY handler.');
-          console.log('   User will need to retry after this transaction is confirmed.');
-          
+          console.log(
+            "⚠️  Fallback handler needs to be set first. Returning setup with ONLY handler."
+          );
+          console.log("   User will need to retry after this transaction is confirmed.");
+
           return {
             transactions,
             needsApproval: false,
@@ -79,11 +81,11 @@ export class SafeBatchService {
             needsDomainVerifier: false, // Will be checked on next attempt
             mainTransaction,
             requiresTwoStepSetup: true,
-            setupOnlyBatch: true
+            setupOnlyBatch: true,
           };
         } else {
           // Fallback handler already set, check if domain verifier needs to be set
-          const { needsDomainVerifier: domainVerifierNeeded, domainVerifierTx } = 
+          const { needsDomainVerifier: domainVerifierNeeded, domainVerifierTx } =
             await SafeDomainVerifierService.checkAndCreateDomainVerifierTransaction(
               ownerAddress,
               provider
@@ -96,13 +98,13 @@ export class SafeBatchService {
             domainVerifierTransaction = {
               to: domainVerifierTx.to,
               data: domainVerifierTx.data,
-              value: domainVerifierTx.value
+              value: domainVerifierTx.value,
             };
             transactions.push(domainVerifierTransaction);
-            
-            console.log('⚠️  Domain verifier needs to be set. Returning setup with ONLY verifier.');
-            console.log('   User will need to retry after this transaction is confirmed.');
-            
+
+            console.log("⚠️  Domain verifier needs to be set. Returning setup with ONLY verifier.");
+            console.log("   User will need to retry after this transaction is confirmed.");
+
             return {
               transactions,
               needsApproval: false,
@@ -111,7 +113,7 @@ export class SafeBatchService {
               domainVerifierTransaction,
               mainTransaction,
               requiresTwoStepSetup: true,
-              setupOnlyBatch: true
+              setupOnlyBatch: true,
             };
           }
         }
@@ -127,7 +129,7 @@ export class SafeBatchService {
         provider
       );
 
-      console.log('Approval check result:', approvalCheck);
+      console.log("Approval check result:", approvalCheck);
 
       let needsApproval = false;
       let approvalTransaction: BatchTransactionRequest | undefined;
@@ -138,7 +140,7 @@ export class SafeBatchService {
         approvalTransaction = {
           to: tokenAddress,
           data: approvalCheck.approvalData,
-          value: '0'
+          value: "0",
         };
 
         transactions.push(approvalTransaction);
@@ -157,12 +159,13 @@ export class SafeBatchService {
         domainVerifierTransaction,
         mainTransaction,
         requiresTwoStepSetup: false,
-        setupOnlyBatch: false
+        setupOnlyBatch: false,
       };
-
     } catch (error) {
-      console.error('Error preparing batch transaction:', error);
-      throw new Error(`Failed to prepare batch transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error preparing batch transaction:", error);
+      throw new Error(
+        `Failed to prepare batch transaction: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -203,13 +206,14 @@ export class SafeBatchService {
         required: required.toString(),
         formatted: {
           balance: balanceInfo.formattedBalance,
-          required: formattedRequired
-        }
+          required: formattedRequired,
+        },
       };
-
     } catch (error) {
-      console.error('Error validating user balance:', error);
-      throw new Error(`Failed to validate balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error validating user balance:", error);
+      throw new Error(
+        `Failed to validate balance: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -248,7 +252,7 @@ export class SafeBatchService {
       hasApproval: batchResult.needsApproval,
       hasFallbackHandler: batchResult.needsFallbackHandler,
       hasDomainVerifier: batchResult.needsDomainVerifier,
-      summary
+      summary,
     };
   }
 
@@ -266,12 +270,12 @@ export class SafeBatchService {
   }> {
     try {
       const estimates: bigint[] = [];
-      
+
       for (const tx of batchResult.transactions) {
         // Skip gas estimation for setDomainVerifier when fallback handler is being set in the same batch
         // The transaction is valid but gas estimation fails because fallback handler isn't set yet
-        const isSetDomainVerifier = tx.data.startsWith('0x3365582c');
-        const isSetFallbackHandler = tx.data.startsWith('0xf08a0323');
+        const isSetDomainVerifier = tx.data.startsWith("0x3365582c");
+        const isSetFallbackHandler = tx.data.startsWith("0xf08a0323");
 
         if (isSetDomainVerifier && batchResult.needsFallbackHandler) {
           estimates.push(BigInt(100000));
@@ -283,14 +287,14 @@ export class SafeBatchService {
             to: tx.to,
             data: tx.data,
             value: tx.value,
-            from: fromAddress
+            from: fromAddress,
           });
           estimates.push(gasEstimate);
         } catch (error) {
-          console.warn('Gas estimation failed for transaction, using default:', error);
+          console.warn("Gas estimation failed for transaction, using default:", error);
           // Use reasonable defaults for different transaction types
           let defaultGas: bigint;
-          if (tx.data.startsWith('0xa9059cbb')) {
+          if (tx.data.startsWith("0xa9059cbb")) {
             defaultGas = BigInt(65000); // ERC20 transfer
           } else if (isSetFallbackHandler) {
             defaultGas = BigInt(750000); // setFallbackHandler
@@ -304,27 +308,26 @@ export class SafeBatchService {
       }
 
       const totalGasEstimate = estimates.reduce((sum, gas) => sum + gas, BigInt(0));
-      
+
       // Get current gas price for cost estimation
       const gasPrice = await provider.getFeeData();
       const effectiveGasPrice = gasPrice.gasPrice || BigInt(20000000000); // 20 gwei fallback
-      
+
       const estimatedCost = ethers.formatEther(totalGasEstimate * effectiveGasPrice);
 
       return {
         totalGasEstimate,
         individualEstimates: estimates,
-        estimatedCost
+        estimatedCost,
       };
-
     } catch (error) {
-      console.error('Error estimating batch gas:', error);
+      console.error("Error estimating batch gas:", error);
       // Return conservative estimates
       const defaultTotal = BigInt(batchResult.transactions.length * 200000);
       return {
         totalGasEstimate: defaultTotal,
         individualEstimates: batchResult.transactions.map(() => BigInt(200000)),
-        estimatedCost: '0.01' // Conservative estimate
+        estimatedCost: "0.01", // Conservative estimate
       };
     }
   }
@@ -357,11 +360,13 @@ export class SafeBatchService {
         owners: safeInfo.owners,
         fallbackHandler: safeInfo.fallbackHandler,
         fallbackHandlerCheck: safeInfo.fallbackHandlerCheck,
-        needsFallbackHandlerUpdate: safeInfo.fallbackHandlerCheck.needsUpdate
+        needsFallbackHandlerUpdate: safeInfo.fallbackHandlerCheck.needsUpdate,
       };
     } catch (error) {
-      console.error('Error getting Safe wallet info:', error);
-      throw new Error(`Failed to get Safe wallet info: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error getting Safe wallet info:", error);
+      throw new Error(
+        `Failed to get Safe wallet info: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }
 
@@ -376,7 +381,7 @@ export class SafeBatchService {
       const safeInfo = await this.getSafeWalletInfo(walletAddress, provider);
       return safeInfo.isValidSafe && safeInfo.needsFallbackHandlerUpdate;
     } catch (error) {
-      console.warn('Could not check fallback handler requirements:', error);
+      console.warn("Could not check fallback handler requirements:", error);
       return false; // Assume no setup needed if we can't check
     }
   }

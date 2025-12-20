@@ -72,17 +72,17 @@
     font-size: 1.25rem;
     gap: var(--spacing-xs);
   }
-  
+
   .logoIcon {
     font-size: 1.5rem;
   }
-  
+
   .navItems {
     gap: var(--spacing-md);
   }
-  
+
   .ordersButton {
     padding: var(--spacing-xs) var(--spacing-md);
     font-size: 0.85rem;
   }
-} 
+}

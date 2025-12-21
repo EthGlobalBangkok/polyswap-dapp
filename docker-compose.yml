@@ -19,6 +19,44 @@ services:
       timeout: 5s
       retries: 5
 
+  app:
+    container_name: polyswap-app
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    ports:
+      - "3000:3000"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=polyswap
+      - DB_USER=polyswap_user
+      - DB_PASSWORD=polyswap_password
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  listener:
+    container_name: polyswap-listener
+    build:
+      context: .
+      dockerfile: Dockerfile.listener
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=polyswap
+      - DB_USER=polyswap_user
+      - DB_PASSWORD=polyswap_password
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
     driver: local

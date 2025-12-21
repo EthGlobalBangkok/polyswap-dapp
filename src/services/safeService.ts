@@ -30,7 +30,7 @@ export class SafeService {
     // Initialize Safe SDK v6.1.1 using the correct API
     try {
       this.safe = await Safe.init({
-        provider: signer || provider,
+        provider: (signer || provider) as any,
         safeAddress: safeAddress,
       });
     } catch (error) {

@@ -74,6 +74,12 @@ class PolyswapBlockchainListener {
 
       for (const order of ordersWithoutUid) {
         try {
+          // Skip if order_hash is missing
+          if (!order.order_hash) {
+            console.warn(`Skipping UID calculation for order without hash (ID: ${order.id})`);
+            continue;
+          }
+
           const polyswapOrderData =
             OrderUidCalculationService.createPolyswapOrderDataFromDbOrder(order);
           const orderUid = await OrderUidCalculationService.calculateCompleteOrderUidOnChain(

@@ -40,6 +40,8 @@ export interface PopupState {
   safeInfo?: {
     threshold?: number;
     owners?: string[];
+    isSafe?: boolean;
+    isOwner?: boolean;
   };
   transactionProgress?: {
     current: number;

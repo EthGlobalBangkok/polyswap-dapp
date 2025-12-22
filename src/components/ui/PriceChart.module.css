@@ -58,3 +58,34 @@
 .chartContainer *:focus-visible {
   outline: none !important;
 }
+
+.priceInput {
+  background: var(--background-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  width: 60px;
+  text-align: right;
+  margin-left: 8px;
+}
+
+.priceInput:focus {
+  border-color: var(--accent-primary);
+  outline: none;
+}
+
+/* Hide spin buttons */
+.priceInput::-webkit-outer-spin-button,
+.priceInput::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.priceInput {
+  -moz-appearance: textfield;
+  appearance: textfield;
+  /* Standard */
+}

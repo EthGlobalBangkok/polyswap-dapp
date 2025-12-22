@@ -139,6 +139,19 @@ export default function PriceChart({
     return `${(tickItem * 100).toFixed(0)}%`;
   };
 
+  const handleManualInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    // Allow empty string for typing
+    if (val === "") {
+      onPriceSelect(0);
+      return;
+    }
+    const num = parseFloat(val);
+    if (!isNaN(num) && num >= 0 && num <= 100) {
+      onPriceSelect(num / 100);
+    }
+  };
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
@@ -184,9 +197,19 @@ export default function PriceChart({
         {/* Removed Current Price as requested */}
         <div style={{ flex: 1 }}></div>
         {selectedPrice !== null && selectedPrice !== undefined && (
-          <span className={styles.triggerPrice}>
-            Trigger: <strong>{(selectedPrice * 100).toFixed(1)}%</strong>
-          </span>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <span className={styles.triggerPrice}>Trigger:</span>
+            <input
+              type="number"
+              className={styles.priceInput}
+              value={(selectedPrice * 100).toFixed(1)}
+              onChange={handleManualInput}
+              step="0.1"
+              min="0"
+              max="100"
+            />
+            <span className={styles.triggerPrice}>%</span>
+          </div>
         )}
       </div>
 
@@ -201,7 +224,7 @@ export default function PriceChart({
         }}
       >
         <ResponsiveContainer width="100%" height={350}>
-          <AreaChart data={chartData} margin={{ top: 20, right: 0, left: 0, bottom: 20 }}>
+          <AreaChart data={chartData} margin={{ top: 20, right: 0, left: 10, bottom: 20 }}>
             <defs>
               <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={chartColor} stopOpacity={0.3} />
@@ -242,17 +265,30 @@ export default function PriceChart({
                 label={({ viewBox }) => {
                   const { x, y, width } = viewBox;
                   return (
-                    <text
-                      x={width - 10}
-                      y={y - 10}
-                      fill="white"
-                      textAnchor="end"
-                      fontSize="14"
-                      fontWeight="bold"
-                      style={{ filter: "drop-shadow(0px 2px 2px rgba(0,0,0,0.8))" }}
-                    >
-                      {`${(selectedPrice * 100).toFixed(1)}%`}
-                    </text>
+                    <g>
+                      {/* Handle Dot */}
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r="6"
+                        fill="white"
+                        stroke={chartColor}
+                        strokeWidth="2"
+                        style={{ cursor: "ns-resize" }}
+                      />
+                      {/* Label Text */}
+                      <text
+                        x={width - 10}
+                        y={y - 10}
+                        fill="white"
+                        textAnchor="end"
+                        fontSize="14"
+                        fontWeight="bold"
+                        style={{ filter: "drop-shadow(0px 2px 2px rgba(0,0,0,0.8))" }}
+                      >
+                        {`${(selectedPrice * 100).toFixed(1)}%`}
+                      </text>
+                    </g>
                   );
                 }}
               />

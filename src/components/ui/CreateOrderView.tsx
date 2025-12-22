@@ -457,25 +457,15 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
             {/* Buy Token Row */}
             <div className={styles.tokenRow}>
               <div className={styles.tokenRowHeader}>
-                <span>Receive (Min)</span>
-                <span className={styles.usdValue}>
-                  {quote?.buyTokenUsdPrice
-                    ? `$${(quote.buyTokenUsdPrice * parseFloat(formData.minBuyAmount || "0")).toFixed(2)}`
-                    : "~"}
-                </span>
+                <span>Receive</span>
+                {/* USD Value hidden as per request */}
               </div>
-              <div className={styles.tokenInputRow}>
-                <input
-                  type="number"
-                  className={styles.amountInput}
-                  placeholder="0"
-                  value={formData.minBuyAmount}
-                  onChange={(e) => handleInputChange("minBuyAmount", e.target.value)}
-                />
+              <div className={styles.tokenInputRow} style={{ justifyContent: "center" }}>
                 <button
                   type="button"
                   className={styles.tokenSelector}
                   onClick={() => setShowBuyTokenSelector(true)}
+                  style={{ width: "60%", justifyContent: "center" }}
                 >
                   <TokenIcon
                     symbol={formData.buyToken}
@@ -520,8 +510,8 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
             </div>
           </div>
 
-          {/* Time Configuration */}
-          <div className={styles.dateRow}>
+          {/* Time Configuration (Hidden as per request) */}
+          {/* <div className={styles.dateRow}>
             <div className={styles.dateGroup}>
               <div className={styles.labelRow}>
                 <label>Start Date</label>
@@ -551,6 +541,37 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
                 onChange={(e) => handleInputChange("deadline", e.target.value)}
                 min={isStartNow ? new Date().toISOString().slice(0, 16) : formData.startDate}
               />
+            </div>
+          </div> */}
+          <div className={styles.conditionCard} style={{ marginBottom: "20px" }}>
+            <div className={styles.conditionLabel}>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+              </svg>
+              Execution Condition
+            </div>
+            <div className={styles.conditionText}>
+              Execute order when
+              <span
+                className={`${styles.highlight} ${isYes ? styles.highlightYes : styles.highlightNo}`}
+              >
+                {formData.selectedOutcome}
+              </span>
+              probability is above
+              <span className={styles.highlight}>
+                {formData.triggerPrice
+                  ? `${(parseFloat(formData.triggerPrice) * 100).toFixed(1)}%`
+                  : "..."}
+              </span>
             </div>
           </div>
           <button
@@ -590,37 +611,7 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
               isYesOutcome={isYes}
             />
 
-            <div className={styles.conditionCard}>
-              <div className={styles.conditionLabel}>
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-                </svg>
-                Execution Condition
-              </div>
-              <div className={styles.conditionText}>
-                Execute order when
-                <span
-                  className={`${styles.highlight} ${isYes ? styles.highlightYes : styles.highlightNo}`}
-                >
-                  {formData.selectedOutcome}
-                </span>
-                probability is above
-                <span className={styles.highlight}>
-                  {formData.triggerPrice
-                    ? `${(parseFloat(formData.triggerPrice) * 100).toFixed(1)}%`
-                    : "..."}
-                </span>
-              </div>
-            </div>
+            {/* Condition Card Moved to Left Column */}
           </div>
         </div>
       </div>

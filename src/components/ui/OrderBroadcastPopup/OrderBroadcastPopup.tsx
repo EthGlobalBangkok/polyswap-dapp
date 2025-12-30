@@ -231,8 +231,13 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({ isOpen, onClo
           return; // Don't proceed to success, let it re-fetch and check next step
         }
 
-        // Normal order transaction - wait and update database
-        await walletConnectSafeService.waitForTransactionConfirmation(state.transactionHash, 60000);
+        // Normal order transaction
+        // Wait for confirmation with INCREASED timeout (180s = 3 mins)
+        console.log("⏳ Waiting for transaction confirmation...");
+        await walletConnectSafeService.waitForTransactionConfirmation(
+          state.transactionHash,
+          180000
+        );
 
         // Add 5-second delay for propagation to ensure indexing services are updated
         await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -255,14 +260,15 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({ isOpen, onClo
           }));
         }
       } catch (error) {
-        // Check if it's a timeout vs other error
+        // Check if it's a timeout vs other error, but since we already updated the DB,
+        // we can be more lenient about marking it as "success" for the UI flow
         if (error instanceof Error && error.message.includes("timeout")) {
           // Transaction confirmation timeout - still mark as success but with warning
           setState((prev) => ({
             ...prev,
             step: "success",
             errorMessage:
-              "Transaction signed successfully but confirmation took longer than expected. Order should be live shortly.",
+              "Transaction broadcasted successfully but confirmation is taking longer than usual (3+ mins). Order should be live shortly.",
           }));
         } else {
           // Other errors - still mark as success since transaction was signed
@@ -270,7 +276,7 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({ isOpen, onClo
             ...prev,
             step: "success",
             errorMessage:
-              "Transaction signed successfully but there was an issue updating the order status. Order should be live shortly.",
+              "Transaction was broadcasted but there was an issue verifying confirmation. Order should be live soon.",
           }));
         }
       }

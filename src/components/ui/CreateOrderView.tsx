@@ -282,12 +282,23 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
 
     const percentage = (parseFloat(formData.triggerPrice) * 100).toFixed(0);
 
+    if (!formData.sellAmount || isNaN(parseFloat(formData.sellAmount))) {
+      setError("Please enter a valid Sell Amount");
+      setShowErrorPopup(true);
+      return;
+    }
+
     const sellAmountWei = BigInt(
       Math.floor(parseFloat(formData.sellAmount) * Math.pow(10, sellTokenData.decimals))
     ).toString();
-    const minBuyWei = BigInt(
-      Math.floor(parseFloat(formData.minBuyAmount) * Math.pow(10, buyTokenData.decimals))
-    ).toString();
+
+    // Default to 1 wei (smallest unit) if no specific min buy amount is set
+    const minBuyWei =
+      formData.minBuyAmount && !isNaN(parseFloat(formData.minBuyAmount))
+        ? BigInt(
+            Math.floor(parseFloat(formData.minBuyAmount) * Math.pow(10, buyTokenData.decimals))
+          ).toString()
+        : "1";
 
     const orderPayload = {
       sellToken: sellTokenData.address,

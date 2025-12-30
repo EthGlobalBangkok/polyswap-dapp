@@ -634,9 +634,9 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
                               </a>
                             )}
 
-                          {order.order_hash && order.status === "filled" && (
+                          {order.order_uid && order.status === "filled" && (
                             <a
-                              href={`https://explorer.cow.fi/pol/orders/${order.order_hash}`}
+                              href={`https://explorer.cow.fi/pol/orders/${order.order_uid}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className={styles.miniIconLink}

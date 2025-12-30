@@ -118,6 +118,57 @@ async function sellAllPositions() {
 
     console.log("✅ Service initialized successfully");
 
+    // --- Approval Logic Start ---
+    const CONDITIONAL_TOKEN_ADDRESS = process.env.CONDITIONAL_TOKEN;
+    const POLYMARKET_EXCHANGE_ADDRESS =
+      process.env.POLYMARKET_CONTRACT_ADDRESS || "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
+
+    if (!CONDITIONAL_TOKEN_ADDRESS) {
+      console.warn(
+        "⚠️ CONDITIONAL_TOKEN not found in env. Skipping approval check (might fail if not approved)."
+      );
+    } else {
+      console.log(
+        `🔍 Checking approval for Operator: ${POLYMARKET_EXCHANGE_ADDRESS} on CT: ${CONDITIONAL_TOKEN_ADDRESS}`
+      );
+
+      const ctAbi = [
+        "function setApprovalForAll(address operator, bool approved) external",
+        "function isApprovedForAll(address owner, address operator) external view returns (bool)",
+      ];
+
+      // Use the wallet connected to the provider (created inside the service or create a new one)
+      // Since we have the private key here (pk), we can create a connected wallet
+      const provider = new ethers.JsonRpcProvider(process.env.RPC_URL || "https://polygon-rpc.com");
+      const signer = new ethers.Wallet(privateKey, provider);
+
+      const ctContract = new ethers.Contract(CONDITIONAL_TOKEN_ADDRESS, ctAbi, signer);
+
+      try {
+        const isApproved = await ctContract.isApprovedForAll(
+          ownerAddress,
+          POLYMARKET_EXCHANGE_ADDRESS
+        );
+        console.log(`   Current Approval Status: ${isApproved}`);
+
+        if (!isApproved) {
+          console.log("   📝 Sending setApprovalForAll(true) transaction...");
+          const tx = await ctContract.setApprovalForAll(POLYMARKET_EXCHANGE_ADDRESS, true);
+          console.log(`   🚀 Transaction sent: ${tx.hash}`);
+
+          console.log("   ⏳ Waiting for confirmation...");
+          await tx.wait();
+          console.log("   ✅ Approval confirmed!");
+        } else {
+          console.log("   ✅ Already approved.");
+        }
+      } catch (err) {
+        console.error("   ❌ Failed to check/set approval:", err);
+        // We continue, as it might be approved already or we might want to try selling anyway
+      }
+    }
+    // --- Approval Logic End ---
+
     // Sell each position
     console.log(`🧾 Processing ${positions.length} positions...`);
 

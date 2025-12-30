@@ -91,11 +91,11 @@ export async function POST(request: NextRequest) {
       "sellToken",
       "buyToken",
       "sellAmount",
-      "minBuyAmount",
+      // "minBuyAmount", // Optional, defaults to 1
       "selectedOutcome",
       "betPercentage",
-      "startDate",
-      "deadline",
+      // "startDate", // Optional, defaults to now
+      // "deadline", // Optional, defaults to 2 weeks
       "marketId",
       "owner",
     ];
@@ -111,6 +111,15 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+
+    // Set defaults for optional fields
+    if (!body.minBuyAmount) {
+      body.minBuyAmount = "1";
+    }
+
+    if (!body.startDate) {
+      body.startDate = "now";
     }
 
     // Validate token addresses and owner address (should be valid Ethereum addresses)
@@ -165,16 +174,26 @@ export async function POST(request: NextRequest) {
 
     // Validate and process dates
     let startDate: Date;
+    const now = new Date();
+
     if (body.startDate === "now") {
       startDate = new Date();
     } else {
       startDate = new Date(body.startDate);
     }
 
-    const deadline = new Date(body.deadline);
-    const now = new Date();
+    // Handle deadline default (2 weeks from startDate)
+    let deadline: Date;
+    if (!body.deadline) {
+      deadline = new Date(startDate);
+      deadline.setDate(deadline.getDate() + 14); // Add 14 days
+    } else {
+      deadline = new Date(body.deadline);
+    }
 
-    if (startDate < now) {
+    // Check strict past dates only if not "now" and considering a small grace period (e.g. 1 minute)
+    // If user sent "now", we accept it even if execution time shifted by ms.
+    if (body.startDate !== "now" && startDate < new Date(now.getTime() - 60000)) {
       return NextResponse.json(
         {
           success: false,

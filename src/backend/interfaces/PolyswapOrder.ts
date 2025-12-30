@@ -64,6 +64,7 @@ export interface DatabasePolyswapOrder {
   outcome_selected: string | null; // Selected outcome index
   bet_percentage: number | null; // Bet percentage (0-100)
   status: "draft" | "live" | "filled" | "canceled";
+  order_uid: string | null; // CoW Protocol order UID
   created_at: Date;
   updated_at: Date;
 }

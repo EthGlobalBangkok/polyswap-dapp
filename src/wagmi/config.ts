@@ -2,7 +2,11 @@ import { createConfig, http } from "wagmi";
 import { polygon } from "wagmi/chains";
 import { walletConnect, safe } from "wagmi/connectors";
 
-const projectId = process.env.WC_PROJECT_ID;
+const projectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID;
+console.log(projectId);
+if (!projectId) {
+  throw new Error("WC_PROJECT_ID is not defined");
+}
 
 export const config = createConfig({
   chains: [polygon],

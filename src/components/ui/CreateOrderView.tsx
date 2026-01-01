@@ -168,13 +168,9 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
 
         if (result.success && result.data) {
           setQuote(result.data);
-          // Auto-fill buy val if empty
-          if (!formData.minBuyAmount) {
-            const buyVal = (
-              parseFloat(result.data.buyAmount) / Math.pow(10, buyToken.decimals)
-            ).toFixed(6);
-            setFormData((prev) => ({ ...prev, minBuyAmount: buyVal }));
-          }
+          // Note: We intentionally do NOT auto-fill minBuyAmount here.
+          // CoW Protocol provides MEV protection through solver competition,
+          // so we use 1 wei as the minimum to avoid blocking execution.
         }
       } catch (e) {
         console.error(e);
@@ -184,14 +180,7 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [
-    formData.sellAmount,
-    formData.sellToken,
-    formData.buyToken,
-    address,
-    tokens,
-    formData.minBuyAmount,
-  ]);
+  }, [formData.sellAmount, formData.sellToken, formData.buyToken, address, tokens]);
 
   const handleSwapTokens = () => {
     setFormData((prev) => ({
@@ -292,13 +281,10 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
       Math.floor(parseFloat(formData.sellAmount) * Math.pow(10, sellTokenData.decimals))
     ).toString();
 
-    // Default to 1 wei (smallest unit) if no specific min buy amount is set
-    const minBuyWei =
-      formData.minBuyAmount && !isNaN(parseFloat(formData.minBuyAmount))
-        ? BigInt(
-            Math.floor(parseFloat(formData.minBuyAmount) * Math.pow(10, buyTokenData.decimals))
-          ).toString()
-        : "1";
+    // Always use 1 wei as minimum buy amount to leverage CoW's MEV protection
+    // through solver competition. This prevents blocking order execution
+    // while still ensuring users get the best price from solvers.
+    const minBuyWei = "1";
 
     const orderPayload = {
       sellToken: sellTokenData.address,

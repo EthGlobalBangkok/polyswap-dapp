@@ -242,6 +242,40 @@ export class PolymarketOrderService {
   }
 
   /**
+   * Get all open orders for the authenticated user
+   * @param params - Optional filter parameters (market, asset_id, etc.)
+   */
+  async getOpenOrders(params?: any) {
+    this.checkInitialization();
+    try {
+      const orders = await this.clobClient!.getOpenOrders(params || {});
+      return orders;
+    } catch (error) {
+      console.error("Failed to fetch open orders:", error);
+      throw new Error("Failed to fetch open orders");
+    }
+  }
+
+  /**
+   * Get all active BUY orders
+   * @param marketId - Optional market ID to filter
+   */
+  async getActiveBuyOrders(marketId?: string) {
+    this.checkInitialization();
+    try {
+      const params = marketId ? { market: marketId } : {};
+      const orders = await this.getOpenOrders(params);
+
+      // Filter for BUY orders only
+      const buyOrders = orders.filter((order: any) => order.side === "BUY");
+      return buyOrders;
+    } catch (error) {
+      console.error("Failed to fetch active BUY orders:", error);
+      throw new Error("Failed to fetch active BUY orders");
+    }
+  }
+
+  /**
    * Create a Good Till Cancelled (GTC) order
    */
   async postGTCOrder(config: PolymarketOrderConfig) {
@@ -252,23 +286,30 @@ export class PolymarketOrderService {
         throw new Error("Price must be greater than 0");
       }
 
-      // Ensure order notional (price * size) is at least $1
-      const minSizeForOneDollar = Math.ceil((1 / config.price) * 1_000_000) / 1_000_000; // 6-decimal precision
-      const sizeToUse = config.size < minSizeForOneDollar ? minSizeForOneDollar : config.size;
+      // For BUY orders: ensure order notional (price * size) is at least $1
+      // For SELL orders: use the exact size provided (no minimum)
+      let sizeToUse = config.size;
+      if (config.side === "BUY") {
+        const minSizeForOneDollar = Math.ceil((1 / config.price) * 1_000_000) / 1_000_000; // 6-decimal precision
+        sizeToUse = config.size < minSizeForOneDollar ? minSizeForOneDollar : config.size;
+      }
 
-      const decimals = await this.getTokenDecimals(this.USDC);
-      // Convert all values to BigInt for arithmetic operations in ethers v6
-      const priceBigInt = BigInt(Math.floor(config.price * 1000000));
-      const sizeBigInt = BigInt(Math.floor(sizeToUse * 1000000));
-      const decimalsMultiplier = BigInt(10) ** BigInt(decimals);
-      // Calculate required amount: (price * size) * (10 ** decimals)
-      // We need to be careful with the precision here
-      const requiredAmount =
-        (priceBigInt * sizeBigInt * decimalsMultiplier) / (1000000n * 1000000n);
+      // Only check USDC allowance for BUY orders (SELL orders don't need USDC)
+      if (config.side === "BUY") {
+        const decimals = await this.getTokenDecimals(this.USDC);
+        // Convert all values to BigInt for arithmetic operations in ethers v6
+        const priceBigInt = BigInt(Math.floor(config.price * 1000000));
+        const sizeBigInt = BigInt(Math.floor(sizeToUse * 1000000));
+        const decimalsMultiplier = BigInt(10) ** BigInt(decimals);
+        // Calculate required amount: (price * size) * (10 ** decimals)
+        // We need to be careful with the precision here
+        const requiredAmount =
+          (priceBigInt * sizeBigInt * decimalsMultiplier) / (1000000n * 1000000n);
 
-      const ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
-      if (!ok) {
-        throw new Error("Insufficient allowance for USDC");
+        const ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
+        if (!ok) {
+          throw new Error("Insufficient allowance for USDC");
+        }
       }
 
       try {

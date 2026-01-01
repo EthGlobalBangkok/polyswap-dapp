@@ -22,6 +22,7 @@
     "db:import": "tsx script/importJsonData.ts",
     "cancel-polymarket-orders": "tsx script/cancelPolymarketOrders.ts",
     "sell-polymarket-positions": "tsx script/sellPolymarketPositions.ts",
+    "check-polymarket-orders": "tsx script/checkPolymarketOrders.ts",
     "prepare": "husky"
   },
   "dependencies": {

@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import { DatabaseService } from "./services/databaseService";
 import { MarketUpdateService } from "./services/marketUpdateService";
 import { OrderUidCalculationService } from "./services/orderUidCalculationService";
+import { PolymarketPositionSellerService } from "./services/polymarketPositionSellerService";
 import {
   ConditionalOrderCreatedEvent,
   ConditionalOrderParams,
@@ -24,6 +25,7 @@ const COMPOSABLE_COW_ADDRESS = process.env.COMPOSABLE_COW!;
 const POLYSWAP_HANDLER_ADDRESS = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER!;
 const GPV2_SETTLEMENT_ADDRESS = process.env.GPV2SETTLEMENT!;
 const MARKET_UPDATE_INTERVAL = parseInt(process.env.MARKET_UPDATE_INTERVAL_MINUTES!) || 60;
+const POSITION_SELL_INTERVAL = parseInt(process.env.POSITION_SELL_INTERVAL_MINUTES!) || 5;
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE!) || 100;
 
 // Use imported ABI files
@@ -553,12 +555,14 @@ async function main() {
     process.on("SIGINT", () => {
       console.log("\nReceived SIGINT, shutting down gracefully...");
       MarketUpdateService.stopUpdateRoutine();
+      PolymarketPositionSellerService.stopSellRoutine();
       process.exit(0);
     });
 
     process.on("SIGTERM", () => {
       console.log("\nReceived SIGTERM, shutting down gracefully...");
       MarketUpdateService.stopUpdateRoutine();
+      PolymarketPositionSellerService.stopSellRoutine();
       process.exit(0);
     });
 
@@ -582,6 +586,7 @@ async function main() {
     listener.stop();
     if (!runOnlyListener) {
       MarketUpdateService.stopUpdateRoutine();
+      PolymarketPositionSellerService.stopSellRoutine();
     }
     process.exit(0);
   });
@@ -591,6 +596,7 @@ async function main() {
     listener.stop();
     if (!runOnlyListener) {
       MarketUpdateService.stopUpdateRoutine();
+      PolymarketPositionSellerService.stopSellRoutine();
     }
     process.exit(0);
   });
@@ -604,6 +610,12 @@ async function main() {
         `Starting market update routine with ${MARKET_UPDATE_INTERVAL} minute interval...`
       );
       MarketUpdateService.startUpdateRoutine(MARKET_UPDATE_INTERVAL);
+
+      // Start the position seller service to auto-sell executed Polymarket positions
+      console.log(
+        `Starting position seller routine with ${POSITION_SELL_INTERVAL} minute interval...`
+      );
+      await PolymarketPositionSellerService.startSellRoutine(POSITION_SELL_INTERVAL);
     }
 
     const servicesMsg = runOnlyListener ? "Blockchain listener started" : "All services started";

@@ -144,6 +144,33 @@ MARKET_UPDATE_INTERVAL_MINUTES=5  # Update every 5 minutes (default)
 AUTO_REMOVE_CLOSED_MARKETS=true   # Remove closed markets automatically
 ```
 
+## 🛡️ Automatic Position Selling
+
+To prevent the system from holding risk after Polymarket BUY orders are executed, PolySwap includes an automatic position selling service. When a user creates a PolySwap limit order, the backend creates a corresponding Polymarket BUY order. Once this order is filled, the system holds a position that could gain or lose value. The position seller service automatically sells these positions to maintain solvency.
+
+### How It Works
+
+1. The service runs every X minutes (default: 5 minutes)
+2. It fetches all current positions from the Polymarket API
+3. For each position found, it creates a SELL order at 95% of current price for faster execution
+4. All sales are logged to the database for auditing
+
+### Configuration
+
+Set the sell interval in your `.env` file:
+
+```bash
+POSITION_SELL_INTERVAL_MINUTES=5  # Check and sell positions every 5 minutes (default)
+```
+
+### Running Options
+
+The position seller runs automatically with the main listener:
+
+```bash
+pnpm start:listener  # Runs blockchain listener, market updater, AND position seller
+```
+
 ### Running Options
 
 1. **Full Service** (Recommended for production):
@@ -209,6 +236,14 @@ STARTING_BLOCK=76437998
 COMPOSABLE_COW=0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74
 NEXT_PUBLIC_POLYSWAP_HANDLER=0x65a5B712F34d8219A4c70451353D2F6A80e6703c
 EXTENSIBLE_FALLBACK_HANDLER=0x2f55e8b20D0B9FEFA187AA7d00B6Cbe563605bF5
+```
+
+### Backend Services Configuration
+
+```bash
+MARKET_UPDATE_INTERVAL_MINUTES=60    # Market data sync interval (default: 60)
+POSITION_SELL_INTERVAL_MINUTES=5     # Position auto-sell check interval (default: 5)
+AUTO_REMOVE_CLOSED_MARKETS=true      # Clean up closed markets automatically
 ```
 
 ## 💰 Fund Flow Architecture

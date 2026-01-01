@@ -1,7 +1,12 @@
 import { query } from "../db/database";
 import { Market } from "../interfaces/Market";
 import { DatabaseMarket } from "../interfaces/Database";
-import { PolyswapOrderRecord, DatabasePolyswapOrder } from "../interfaces/PolyswapOrder";
+import {
+  PolyswapOrderRecord,
+  DatabasePolyswapOrder,
+  SoldPosition,
+  SoldPositionInput,
+} from "../interfaces/PolyswapOrder";
 
 export class DatabaseService {
   /**
@@ -1059,6 +1064,191 @@ export class DatabaseService {
     } catch (error) {
       console.error("❌ Error fetching all orders:", error);
       return [];
+    }
+  }
+
+  // ============================================
+  // Sold Positions Tracking (Position Seller)
+  // ============================================
+
+  /**
+   * Record a sold position in the database
+   */
+  static async recordSoldPosition(input: SoldPositionInput): Promise<number> {
+    const sql = `
+      INSERT INTO sold_positions (
+        asset_id, condition_id, size, sell_price, current_price,
+        order_id, market_title, outcome
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING id
+    `;
+    const values = [
+      input.assetId,
+      input.conditionId,
+      input.size,
+      input.sellPrice,
+      input.currentPrice,
+      input.orderId,
+      input.marketTitle,
+      input.outcome,
+    ];
+
+    try {
+      const result = await query(sql, values);
+      return result.rows[0].id;
+    } catch (error) {
+      console.error("❌ Error recording sold position:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get recently sold positions within the last N hours
+   */
+  static async getRecentlySoldPositions(hoursAgo: number = 24): Promise<SoldPosition[]> {
+    const sql = `
+      SELECT * FROM sold_positions
+      WHERE sold_at > NOW() - INTERVAL '${hoursAgo} hours'
+      ORDER BY sold_at DESC
+    `;
+    try {
+      const result = await query(sql);
+      return result.rows;
+    } catch (error) {
+      console.error("❌ Error fetching recently sold positions:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get a sold position by asset ID (most recent)
+   */
+  static async getSoldPositionByAsset(assetId: string): Promise<SoldPosition | null> {
+    const sql = `
+      SELECT * FROM sold_positions
+      WHERE asset_id = $1
+      ORDER BY sold_at DESC
+      LIMIT 1
+    `;
+    try {
+      const result = await query(sql, [assetId]);
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error("❌ Error fetching sold position by asset:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Get all sold positions with pagination
+   */
+  static async getAllSoldPositions(
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<SoldPosition[]> {
+    const sql = `
+      SELECT * FROM sold_positions
+      ORDER BY sold_at DESC
+      LIMIT $1 OFFSET $2
+    `;
+    try {
+      const result = await query(sql, [limit, offset]);
+      return result.rows;
+    } catch (error) {
+      console.error("❌ Error fetching all sold positions:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get sold positions statistics
+   */
+  static async getSoldPositionsStats(): Promise<{
+    totalSold: number;
+    totalValue: number;
+    last24Hours: number;
+  }> {
+    const sql = `
+      SELECT
+        COUNT(*) as total_sold,
+        COALESCE(SUM(size * sell_price), 0) as total_value,
+        COUNT(CASE WHEN sold_at > NOW() - INTERVAL '24 hours' THEN 1 END) as last_24_hours
+      FROM sold_positions
+    `;
+    try {
+      const result = await query(sql);
+      const row = result.rows[0];
+      return {
+        totalSold: parseInt(row.total_sold),
+        totalValue: parseFloat(row.total_value),
+        last24Hours: parseInt(row.last_24_hours),
+      };
+    } catch (error) {
+      console.error("❌ Error fetching sold positions stats:", error);
+      return { totalSold: 0, totalValue: 0, last24Hours: 0 };
+    }
+  }
+
+  /**
+   * Clean up old sold position records (older than N days)
+   */
+  static async cleanupOldSoldPositions(daysOld: number = 30): Promise<number> {
+    const sql = `
+      DELETE FROM sold_positions
+      WHERE sold_at < NOW() - INTERVAL '${daysOld} days'
+    `;
+    try {
+      const result = await query(sql);
+      return result.rowCount || 0;
+    } catch (error) {
+      console.error("❌ Error cleaning up old sold positions:", error);
+      return 0;
+    }
+  }
+
+  /**
+   * Delete sold positions by order ID (for cleaning up failed orders)
+   */
+  static async deleteSoldPositionByOrderId(orderId: string): Promise<boolean> {
+    const sql = `DELETE FROM sold_positions WHERE order_id = $1`;
+    try {
+      const result = await query(sql, [orderId]);
+      return (result.rowCount || 0) > 0;
+    } catch (error) {
+      console.error("❌ Error deleting sold position by order ID:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Delete sold positions by asset ID
+   */
+  static async deleteSoldPositionByAssetId(assetId: string): Promise<number> {
+    const sql = `DELETE FROM sold_positions WHERE asset_id = $1`;
+    try {
+      const result = await query(sql, [assetId]);
+      return result.rowCount || 0;
+    } catch (error) {
+      console.error("❌ Error deleting sold position by asset ID:", error);
+      return 0;
+    }
+  }
+
+  /**
+   * Delete all sold positions with order_id = 'unknown' (failed orders)
+   */
+  static async cleanupFailedSoldPositions(): Promise<number> {
+    const sql = `DELETE FROM sold_positions WHERE order_id = 'unknown' OR order_id IS NULL`;
+    try {
+      const result = await query(sql);
+      const count = result.rowCount || 0;
+      if (count > 0) {
+        console.log(`🧹 Cleaned up ${count} failed sold position record(s)`);
+      }
+      return count;
+    } catch (error) {
+      console.error("❌ Error cleaning up failed sold positions:", error);
+      return 0;
     }
   }
 }

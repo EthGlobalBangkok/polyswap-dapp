@@ -68,3 +68,29 @@ export interface DatabasePolyswapOrder {
   created_at: Date;
   updated_at: Date;
 }
+
+// Interface for sold positions tracking
+export interface SoldPosition {
+  id: number;
+  asset_id: string; // Polymarket token ID
+  condition_id: string;
+  size: number;
+  sell_price: number;
+  current_price: number;
+  order_id: string;
+  market_title: string;
+  outcome: string;
+  sold_at: Date;
+}
+
+// Input interface for recording a sold position
+export interface SoldPositionInput {
+  assetId: string;
+  conditionId: string;
+  size: number;
+  sellPrice: number;
+  currentPrice: number;
+  orderId: string;
+  marketTitle: string;
+  outcome: string;
+}

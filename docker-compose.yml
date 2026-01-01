@@ -1,24 +1,4 @@
 services:
-  postgres:
-    image: postgres:15
-    container_name: polyswap-postgres
-    environment:
-      POSTGRES_DB: polyswap
-      POSTGRES_USER: polyswap_user
-      POSTGRES_PASSWORD: polyswap_password
-      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
-    ports:
-      - "5433:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./database/init:/docker-entrypoint-initdb.d
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U polyswap_user -d polyswap"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   app:
     container_name: polyswap-app
     build:
@@ -26,17 +6,8 @@ services:
       dockerfile: Dockerfile.app
     ports:
       - "3000:3000"
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=polyswap
-      - DB_USER=polyswap_user
-      - DB_PASSWORD=polyswap_password
     env_file:
       - .env
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
 
   listener:
@@ -44,19 +15,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.listener
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=polyswap
-      - DB_USER=polyswap_user
-      - DB_PASSWORD=polyswap_password
     env_file:
       - .env
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
-
-volumes:
-  postgres_data:
-    driver: local

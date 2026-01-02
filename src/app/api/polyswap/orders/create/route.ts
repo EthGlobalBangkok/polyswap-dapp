@@ -113,10 +113,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Set defaults for optional fields
-    if (!body.minBuyAmount) {
-      body.minBuyAmount = "1";
-    }
+    // Always use 1 wei as minimum buy amount to leverage CoW's MEV protection
+    // through solver competition. This prevents blocking order execution
+    // while still ensuring users get the best price from competing solvers.
+    body.minBuyAmount = "1";
 
     if (!body.startDate) {
       body.startDate = "now";

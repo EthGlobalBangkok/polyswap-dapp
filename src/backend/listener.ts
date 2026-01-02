@@ -212,8 +212,19 @@ class PolyswapBlockchainListener {
           await this.processBlockRange(fromBlock, toBlock);
           this.lastProcessedBlock = toBlock;
         }
-      } catch (error) {
-        console.error("Polling error:", error);
+      } catch (error: any) {
+        const errorMessage = error?.message || error?.toString() || "";
+        // Suppress specific "from block is greater than latest block" error
+        if (
+          errorMessage.includes("from block is greater than latest block") ||
+          (error?.error?.data &&
+            typeof error.error.data === "string" &&
+            error.error.data.includes("from block is greater than latest block"))
+        ) {
+          // Do nothing, just valid RPC sync issue
+        } else {
+          console.error("Polling error:", error);
+        }
       }
     }, 3000);
 

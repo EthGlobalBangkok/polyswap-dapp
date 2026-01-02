@@ -102,9 +102,9 @@ export class DatabaseService {
 
     // Validate outcomes and outcomePrices are not null and are valid
     if (!market.outcomes || !market.outcomePrices) {
-      console.warn(
-        `Skipping market ${market.id}: Missing required outcomes or outcomePrices (outcomes: ${!!market.outcomes}, outcomePrices: ${!!market.outcomePrices})`
-      );
+      // console.warn(
+      //   `Skipping market ${market.id}: Missing required outcomes or outcomePrices (outcomes: ${!!market.outcomes}, outcomePrices: ${!!market.outcomePrices})`
+      // );
       return;
     }
 

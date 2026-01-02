@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import MobileBlocker from "../components/ui/MobileBlocker";
 
 export const metadata: Metadata = {
   title: "PolySwap - Conditional DeFi Swaps",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <MobileBlocker />
+        {children}
+      </body>
     </html>
   );
 }

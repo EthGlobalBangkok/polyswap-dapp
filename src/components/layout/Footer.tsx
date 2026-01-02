@@ -20,21 +20,18 @@ const Footer = () => {
 
         <div className={styles.right}>
           <div className={styles.links}>
-            <a href="#" className={styles.link}>
+            <a href="/about" className={styles.link}>
               About
             </a>
-            <a href="#" className={styles.link}>
-              Docs
+            <a href="/api-docs" className={styles.link}>
+              API Docs
             </a>
-            <a href="#" className={styles.link}>
+            <a href="https://github.com/EthGlobalBangkok" className={styles.link}>
               GitHub
-            </a>
-            <a href="#" className={styles.link}>
-              Support
             </a>
           </div>
           <div className={styles.copyright}>
-            <span>© 2024 PolySwap. All rights reserved.</span>
+            <span>© 2026 PolySwap. All rights reserved.</span>
           </div>
         </div>
       </div>

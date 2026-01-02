@@ -3,6 +3,7 @@
 import Navbar from "../components/layout/Navbar";
 import Footer from "../components/layout/Footer";
 import MarketGrid from "../components/ui/MarketGrid";
+import BetaWarningPopup from "../components/ui/BetaWarningPopup";
 import styles from "./page.module.css";
 
 import { WagmiProvider } from "wagmi";
@@ -16,6 +17,7 @@ export default function Home() {
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <div className={styles.page}>
+          <BetaWarningPopup />
           <Navbar />
 
           <main className={styles.main}>

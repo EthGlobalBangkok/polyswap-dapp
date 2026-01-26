@@ -28,14 +28,10 @@ import { PolyswapOrderData } from "../../../../../../../backend/interfaces/Polys
  *             type: object
  *             required:
  *               - ownerAddress
- *               - rpcUrl
  *             properties:
  *               ownerAddress:
  *                 type: string
  *                 description: Safe wallet address
- *               rpcUrl:
- *                 type: string
- *                 description: RPC URL for blockchain calls
  *     responses:
  *       200:
  *         description: Batch transaction prepared
@@ -73,15 +69,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const { id } = await params;
     const body = await request.json();
-    const { ownerAddress, rpcUrl } = body;
+    const { ownerAddress } = body;
+
+    // Use server-side RPC URL from environment
+    const rpcUrl = process.env.RPC_URL;
+    if (!rpcUrl) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Server configuration error",
+          message: "RPC_URL is not configured in environment",
+        },
+        { status: 500 }
+      );
+    }
 
     // Validate required fields
-    if (!ownerAddress || !rpcUrl) {
+    if (!ownerAddress) {
       return NextResponse.json(
         {
           success: false,
           error: "Missing required fields",
-          message: "ownerAddress and rpcUrl are required",
+          message: "ownerAddress is required",
         },
         { status: 400 }
       );
@@ -161,7 +170,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    // Create provider for blockchain calls
+    // Create provider for blockchain calls using server-side RPC
     const provider = new ethers.JsonRpcProvider(rpcUrl);
 
     // Convert database order to PolyswapOrderData format

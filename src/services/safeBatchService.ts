@@ -268,68 +268,63 @@ export class SafeBatchService {
     individualEstimates: bigint[];
     estimatedCost: string; // in ETH
   }> {
-    try {
-      const estimates: bigint[] = [];
+    const estimates: bigint[] = [];
 
-      for (const tx of batchResult.transactions) {
-        // Skip gas estimation for setDomainVerifier when fallback handler is being set in the same batch
-        // The transaction is valid but gas estimation fails because fallback handler isn't set yet
-        const isSetDomainVerifier = tx.data.startsWith("0x3365582c");
-        const isSetFallbackHandler = tx.data.startsWith("0xf08a0323");
+    for (const tx of batchResult.transactions) {
+      // Skip gas estimation for setDomainVerifier when fallback handler is being set in the same batch
+      // The transaction is valid but gas estimation fails because fallback handler isn't set yet
+      const isSetDomainVerifier = tx.data.startsWith("0x3365582c");
+      const isSetFallbackHandler = tx.data.startsWith("0xf08a0323");
 
-        if (isSetDomainVerifier && batchResult.needsFallbackHandler) {
-          estimates.push(BigInt(100000));
-          continue;
-        }
-
-        try {
-          const gasEstimate = await provider.estimateGas({
-            to: tx.to,
-            data: tx.data,
-            value: tx.value,
-            from: fromAddress,
-          });
-          estimates.push(gasEstimate);
-        } catch (error) {
-          console.warn("Gas estimation failed for transaction, using default:", error);
-          // Use reasonable defaults for different transaction types
-          let defaultGas: bigint;
-          if (tx.data.startsWith("0xa9059cbb")) {
-            defaultGas = BigInt(65000); // ERC20 transfer
-          } else if (isSetFallbackHandler) {
-            defaultGas = BigInt(750000); // setFallbackHandler
-          } else if (isSetDomainVerifier) {
-            defaultGas = BigInt(100000); // setDomainVerifier
-          } else {
-            defaultGas = BigInt(200000); // complex transaction
-          }
-          estimates.push(defaultGas);
-        }
+      if (isSetDomainVerifier && batchResult.needsFallbackHandler) {
+        estimates.push(BigInt(100000));
+        continue;
       }
 
-      const totalGasEstimate = estimates.reduce((sum, gas) => sum + gas, BigInt(0));
-
-      // Get current gas price for cost estimation
-      const gasPrice = await provider.getFeeData();
-      const effectiveGasPrice = gasPrice.gasPrice || BigInt(20000000000); // 20 gwei fallback
-
-      const estimatedCost = ethers.formatEther(totalGasEstimate * effectiveGasPrice);
-
-      return {
-        totalGasEstimate,
-        individualEstimates: estimates,
-        estimatedCost,
-      };
-    } catch (error) {
-      console.error("Error estimating batch gas:", error);
-      // Return conservative estimates
-      const defaultTotal = BigInt(batchResult.transactions.length * 200000);
-      return {
-        totalGasEstimate: defaultTotal,
-        individualEstimates: batchResult.transactions.map(() => BigInt(200000)),
-        estimatedCost: "0.01", // Conservative estimate
-      };
+      try {
+        const gasEstimate = await provider.estimateGas({
+          to: tx.to,
+          data: tx.data,
+          value: tx.value,
+          from: fromAddress,
+        });
+        estimates.push(gasEstimate);
+      } catch {
+        // Use reasonable defaults for different transaction types
+        let defaultGas: bigint;
+        if (tx.data.startsWith("0xa9059cbb")) {
+          defaultGas = BigInt(65000); // ERC20 transfer
+        } else if (isSetFallbackHandler) {
+          defaultGas = BigInt(750000); // setFallbackHandler
+        } else if (isSetDomainVerifier) {
+          defaultGas = BigInt(100000); // setDomainVerifier
+        } else {
+          defaultGas = BigInt(200000); // complex transaction
+        }
+        estimates.push(defaultGas);
+      }
     }
+
+    const totalGasEstimate = estimates.reduce((sum, gas) => sum + gas, BigInt(0));
+
+    // Get current gas price for cost estimation
+    // Public RPCs may fail this call - use a reasonable default for Polygon (30 gwei)
+    let effectiveGasPrice: bigint;
+    try {
+      const gasPrice = await provider.getFeeData();
+      effectiveGasPrice = gasPrice.gasPrice || BigInt(30000000000);
+    } catch {
+      console.log("Failed to get gas price, using default");
+      effectiveGasPrice = BigInt(30000000000); // 30 gwei default for Polygon
+    }
+
+    const estimatedCost = ethers.formatEther(totalGasEstimate * effectiveGasPrice);
+
+    return {
+      totalGasEstimate,
+      individualEstimates: estimates,
+      estimatedCost,
+    };
   }
 
   /**

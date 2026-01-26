@@ -48,3 +48,5 @@ TODO
 .vscode/settings.json
 
 CLAUDE.md
+# Sentry Config File
+.env.sentry-build-plugin

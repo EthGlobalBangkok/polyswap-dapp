@@ -10,6 +10,7 @@ import {
   PolyswapOrderData,
   PolyswapOrderRecord,
 } from "./interfaces/PolyswapOrder";
+import * as Sentry from "@sentry/nextjs";
 
 // Import ABI files
 import composableCowABI from "../abi/composableCoW.json";
@@ -223,6 +224,7 @@ class PolyswapBlockchainListener {
         ) {
           // Do nothing, just valid RPC sync issue
         } else {
+          Sentry.captureException(error);
           console.error("Polling error:", error);
         }
       }

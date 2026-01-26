@@ -18,7 +18,7 @@ export class PolymarketAPIService {
     const { endDateMin, maxNb } = options;
     const baseUrl = `${this.BASE_URL}/markets`;
     const allMarkets: Market[] = [];
-    const limit = 500;
+    const limit = 1000;
     let nextCursor = 0;
     let fetchedCount = 0;
 

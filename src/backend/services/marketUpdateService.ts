@@ -1,5 +1,6 @@
 import { PolymarketAPIService } from "./polymarketAPIService.js";
 import { DatabaseService } from "./databaseService.js";
+import * as Sentry from "@sentry/nextjs";
 
 export class MarketUpdateService {
   private static updateInterval: NodeJS.Timeout | null = null;
@@ -55,7 +56,7 @@ export class MarketUpdateService {
         return;
       }
 
-      const batchSize = 100;
+      const batchSize = 500;
       let successCount = 0;
       let errorCount = 0;
 
@@ -87,6 +88,7 @@ export class MarketUpdateService {
         `Market update completed: ${successCount} processed, ${errorCount} errors (${duration.toFixed(1)}s)`
       );
     } catch (error) {
+      Sentry.captureException(error);
       console.error("Market update failed:", error);
     } finally {
       this.isUpdating = false;

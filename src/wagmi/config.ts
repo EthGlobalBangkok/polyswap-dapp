@@ -1,3 +1,5 @@
+"use client";
+
 import { createConfig, http } from "wagmi";
 import { polygon } from "wagmi/chains";
 import { walletConnect, safe } from "wagmi/connectors";

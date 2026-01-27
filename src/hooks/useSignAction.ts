@@ -1,3 +1,5 @@
+"use client";
+
 import { useAccount, useSignMessage } from "wagmi";
 import { useCallback, useState } from "react";
 

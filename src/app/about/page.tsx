@@ -1,18 +1,18 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Navbar from "../../components/layout/Navbar";
 import Footer from "../../components/layout/Footer";
 import styles from "./page.module.css";
-import { WagmiProvider } from "wagmi";
-import { config } from "../../wagmi/config";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+const Web3Provider = dynamic(
+  () => import("../../components/providers/Web3Provider"),
+  { ssr: false }
+);
 
 export default function About() {
-  const queryClient = new QueryClient();
-
   return (
-    <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>
+    <Web3Provider>
         <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
           <Navbar />
 
@@ -166,7 +166,6 @@ export default function About() {
 
           <Footer />
         </div>
-      </QueryClientProvider>
-    </WagmiProvider>
+    </Web3Provider>
   );
 }

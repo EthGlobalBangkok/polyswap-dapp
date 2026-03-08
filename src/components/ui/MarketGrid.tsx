@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import posthog from "posthog-js";
 import { Market } from "../../types/market";
 import { ApiMarket, apiService, SearchResult } from "../../services/api";
 import MarketCard from "./MarketCard";
@@ -120,6 +121,12 @@ const MarketGrid = () => {
         setMarkets(convertedMarkets);
         setTotalResults(convertedMarkets.length);
         setHasMore(searchResult.pagination.hasMore);
+        posthog.capture("market_searched", {
+          query,
+          category,
+          results_count: convertedMarkets.length,
+          page,
+        });
       } catch (err) {
         console.error("Search failed:", err);
         setError("Search failed. Please try again or check your connection.");
@@ -161,6 +168,13 @@ const MarketGrid = () => {
 
   const handleMarketClick = useCallback(
     (market: Market) => {
+      posthog.capture("market_clicked", {
+        market_id: market.id,
+        market_title: market.title,
+        market_category: market.category,
+        market_volume: market.volume,
+        market_type: market.type,
+      });
       router.push(`/create/${market.id}`);
     },
     [router]

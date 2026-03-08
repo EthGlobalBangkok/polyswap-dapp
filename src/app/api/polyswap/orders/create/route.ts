@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "../../../../../backend/services/databaseService";
+import { getPostHogClient } from "../../../../../lib/posthog-server";
 
 /**
  * @swagger
@@ -287,6 +288,21 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    const posthog = getPostHogClient();
+    posthog.capture({
+      distinctId: body.owner,
+      event: "server_order_created",
+      properties: {
+        order_id: orderId,
+        market_id: body.marketId,
+        sell_token: body.sellToken,
+        buy_token: body.buyToken,
+        selected_outcome: body.selectedOutcome,
+        bet_percentage: body.betPercentage,
+        owner: body.owner,
+      },
+    });
 
     return NextResponse.json({
       success: true,

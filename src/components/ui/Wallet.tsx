@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useConnect, useAccount, useDisconnect, useEnsAvatar, useEnsName } from "wagmi";
+import posthog from "posthog-js";
 import styles from "./Wallet.module.css";
 
 // Utility function to truncate address
@@ -106,9 +107,11 @@ export function WalletOptions() {
       if (isSafeApp && safeConnector) {
         console.log("Connecting to Safe App...");
         connect({ connector: safeConnector });
+        posthog.capture("wallet_connected", { connector: "Safe" });
       } else if (!isSafeApp && walletConnectConnector) {
         console.log("Connecting to WalletConnect...");
         connect({ connector: walletConnectConnector });
+        posthog.capture("wallet_connected", { connector: "WalletConnect" });
       }
     } catch (error) {
       console.error("Connection failed:", error);
@@ -194,7 +197,11 @@ export function Account() {
 
       <button
         className={styles.disconnectButton}
-        onClick={() => disconnect()}
+        onClick={() => {
+          posthog.capture("wallet_disconnected", { address });
+          posthog.reset();
+          disconnect();
+        }}
         title="Disconnect wallet"
       >
         ✕

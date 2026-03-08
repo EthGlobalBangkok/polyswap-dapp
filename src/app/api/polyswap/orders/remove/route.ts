@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "../../../../../backend/services/databaseService";
 import { getPolymarketOrderService } from "../../../../../backend/services/polymarketOrderService";
+import { getPostHogClient } from "../../../../../lib/posthog-server";
 import { ethers } from "ethers";
 import composableCowABI from "../../../../../abi/composableCoW.json";
 import { verifySignature } from "../../../../../backend/utils/signatureVerification";
@@ -242,6 +243,16 @@ export async function PUT(request: NextRequest) {
     const result = await DatabaseService.updateOrderStatus(orderHash, "canceled");
 
     if (result) {
+      const posthog = getPostHogClient();
+      posthog.capture({
+        distinctId: order.owner,
+        event: "server_order_cancellation_confirmed",
+        properties: {
+          order_hash: orderHash,
+          transaction_hash: transactionHash,
+        },
+      });
+
       return NextResponse.json({
         success: true,
         message: "Order cancellation confirmed and database updated",

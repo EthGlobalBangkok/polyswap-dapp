@@ -8,6 +8,7 @@ import {
   useSendTransaction,
   useWaitForTransactionReceipt,
 } from "wagmi";
+import posthog from "posthog-js";
 import { safeService } from "../../../services/safeService";
 import { walletConnectSafeService } from "../../../services/walletConnectSafeService";
 import { apiService } from "../../../services/api";
@@ -249,9 +250,19 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({ isOpen, onClo
         );
 
         if (updateResult.success) {
+          posthog.capture("order_completed", {
+            order_id: orderId,
+            transaction_hash: state.transactionHash,
+            polymarket_order_hash: state.polymarketOrderHash,
+          });
           setState((prev) => ({ ...prev, step: "success" }));
         } else {
           // Still mark as success since the transaction was executed
+          posthog.capture("order_completed", {
+            order_id: orderId,
+            transaction_hash: state.transactionHash,
+            polymarket_order_hash: state.polymarketOrderHash,
+          });
           setState((prev) => ({
             ...prev,
             step: "success",
@@ -323,6 +334,10 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({ isOpen, onClo
   }
 
   const handleCreatePolymarketOrder = async (polymarketOrderHash: string) => {
+    posthog.capture("polymarket_order_created", {
+      order_id: orderId,
+      polymarket_order_hash: polymarketOrderHash,
+    });
     setState((prev) => ({
       ...prev,
       step: "transaction",
@@ -399,6 +414,11 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({ isOpen, onClo
 
         if (result.executed && result.transactionHash) {
           transactionHash = result.transactionHash;
+          posthog.capture("transaction_signed", {
+            order_id: orderId,
+            transaction_hash: result.transactionHash,
+            connector: "Safe",
+          });
         } else {
           // Transaction created but not executed (needs more signatures)
           setState((prev) => ({
@@ -445,6 +465,11 @@ const OrderBroadcastPopup: React.FC<OrderBroadcastPopupProps> = ({ isOpen, onClo
             transactionHash = result.transactionHash;
 
             // Move to "signed" state - show success with tx hash but keep processing
+            posthog.capture("transaction_signed", {
+              order_id: orderId,
+              transaction_hash: result.transactionHash,
+              connector: "WalletConnect",
+            });
             setState((prev) => ({
               ...prev,
               step: "signed",

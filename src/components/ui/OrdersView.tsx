@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import Link from "next/link";
+import posthog from "posthog-js";
 import { apiService, ApiMarket } from "../../services/api";
 import { DatabasePolyswapOrder } from "../../backend/interfaces/PolyswapOrder";
 import OrderBroadcastPopup from "./OrderBroadcastPopup/OrderBroadcastPopup";
@@ -211,6 +212,12 @@ export default function OrdersView({ onBack }: OrdersViewProps) {
       return;
     }
 
+    posthog.capture("order_cancelled", {
+      order_id: order.id,
+      order_hash: order.order_hash,
+      market_id: order.market_id,
+      order_status: order.status,
+    });
     setSelectedOrderForCancellation(order);
     setShowCancellationPopup(true);
   };

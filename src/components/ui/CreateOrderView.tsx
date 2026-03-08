@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import Link from "next/link";
+import posthog from "posthog-js";
 import { apiService, ApiMarket } from "../../services/api";
 import TokenSelector from "./TokenSelector";
 import TokenIcon from "./TokenIcon";
@@ -325,16 +326,36 @@ export default function CreateOrderView({ marketId }: CreateOrderViewProps) {
       if (result.success) {
         setOrderId(result.data.orderId);
         setShowBroadcastPopup(true);
+        posthog.capture("order_form_submitted", {
+          market_id: market.id,
+          market_title: market.title,
+          sell_token: formData.sellToken,
+          buy_token: formData.buyToken,
+          sell_amount: formData.sellAmount,
+          selected_outcome: formData.selectedOutcome,
+          trigger_price: formData.triggerPrice,
+          order_id: result.data.orderId,
+        });
       } else {
         // Format error message for better UX
         let msg = result.message || "Failed";
         if (msg.includes("startDate")) msg = "Invalid Start Date configuration";
         setError(msg);
         setShowErrorPopup(true);
+        posthog.capture("order_creation_failed", {
+          market_id: market.id,
+          error_message: msg,
+        });
       }
     } catch (e) {
-      setError("Submission failed. Please check your connection.");
+      const msg = "Submission failed. Please check your connection.";
+      setError(msg);
       setShowErrorPopup(true);
+      posthog.captureException(e instanceof Error ? e : new Error(msg));
+      posthog.capture("order_creation_failed", {
+        market_id: market?.id,
+        error_message: msg,
+      });
     } finally {
       setIsLoading(false);
     }

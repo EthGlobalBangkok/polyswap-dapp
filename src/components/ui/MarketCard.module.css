@@ -1,7 +1,7 @@
 .marketCard {
   background-color: var(--background-card);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   padding: var(--spacing-lg);
   transition: all var(--transition-normal);
   cursor: pointer;
@@ -10,39 +10,26 @@
   gap: var(--spacing-md);
   height: 100%;
   position: relative;
-  overflow: hidden;
 }
 
 .marketCard:hover {
-  border-color: var(--accent-primary);
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-medium);
+  background-color: var(--background-card-hover);
+  border-color: var(--border-light);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
-.marketCard:hover::before {
-  opacity: 1;
-}
-
-.marketCard::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
-  opacity: 0;
-  transition: opacity var(--transition-normal);
+.marketCard:hover .createButton {
+  background-color: var(--accent-primary);
+  color: white;
 }
 
 .marketCard.inactive {
-  opacity: 0.7;
-  border-color: var(--border-color);
+  opacity: 0.6;
 }
 
 .marketCard.inactive:hover {
-  border-color: var(--border-light);
-  transform: translateY(-2px);
+  transform: none;
 }
 
 /* Header */
@@ -54,26 +41,27 @@
 }
 
 .category {
-  background-color: var(--background-tertiary);
-  color: var(--accent-primary);
   padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--radius-sm);
-  font-size: 0.75rem;
+  border-radius: var(--radius-md);
+  font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .volume {
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
 }
 
 /* Title */
 .title {
   color: var(--text-primary);
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 600;
   line-height: 1.4;
   margin: 0;
@@ -82,29 +70,19 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* Description */
-.description {
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  line-height: 1.5;
-  margin: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
   flex-grow: 1;
 }
 
-/* Binary Odds Container */
+/* Binary Odds */
 .oddsContainer {
   display: flex;
-  gap: var(--spacing-md);
-  padding: var(--spacing-md) 0;
-  border-top: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.oddsRow {
+  display: flex;
+  gap: var(--spacing-sm);
 }
 
 .oddsOption {
@@ -112,83 +90,99 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--spacing-sm);
-  background-color: var(--background-secondary);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--background-tertiary);
   border-radius: var(--radius-md);
 }
 
+.oddsOption.yes {
+  border-left: 3px solid var(--accent-success);
+}
+
+.oddsOption.no {
+  border-left: 3px solid var(--accent-danger);
+}
+
 .oddsLabel {
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: var(--text-secondary);
 }
 
 .oddsValue {
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   font-weight: 700;
+  color: var(--text-primary);
 }
 
-.oddsValue.yes {
-  color: var(--accent-success);
+.oddsBar {
+  height: 4px;
+  background-color: var(--accent-danger-alpha);
+  border-radius: var(--radius-full);
+  overflow: hidden;
 }
 
-.oddsValue.no {
-  color: var(--accent-danger);
+.oddsBarFill {
+  height: 100%;
+  background-color: var(--accent-success);
+  border-radius: var(--radius-full);
+  transition: width var(--transition-slow);
 }
 
-/* Multi-Choice Container */
+/* Multi-Choice */
 .multiChoiceContainer {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
-  padding: var(--spacing-md) 0;
-  border-top: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
 }
 
 .multiChoiceOption {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: 4px;
 }
 
-.optionInfo {
+.optionRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .optionLabel {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 500;
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 70%;
 }
 
 .optionOdds {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .progressBar {
   width: 100%;
-  height: 6px;
+  height: 4px;
   background-color: var(--background-tertiary);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   overflow: hidden;
 }
 
 .progressFill {
   height: 100%;
-  border-radius: var(--radius-sm);
-  transition: width var(--transition-normal);
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+  border-radius: var(--radius-full);
+  transition: width var(--transition-slow);
 }
 
 .moreOptions {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
-  text-align: center;
-  padding: var(--spacing-xs) 0;
-  font-style: italic;
+  padding-top: var(--spacing-xs);
 }
 
 /* Footer */
@@ -197,37 +191,37 @@
   justify-content: space-between;
   align-items: center;
   gap: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border-color);
+  margin-top: auto;
 }
 
 .endDate {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-}
-
-.status {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: 0.8rem;
 }
 
-.statusDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.statusDot.active {
-  background-color: var(--accent-success);
-}
-
-.statusDot.inactive {
-  background-color: var(--text-muted);
-}
-
-.statusText {
+.createButton {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background-color: var(--background-tertiary);
   color: var(--text-secondary);
+  border: none;
+  border-radius: var(--radius-md);
   font-size: 0.8rem;
   font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.createButton:hover {
+  background-color: var(--accent-primary);
+  color: white;
 }
 
 /* Mobile Responsive */
@@ -238,29 +232,22 @@
   }
 
   .title {
-    font-size: 1rem;
+    font-size: 0.95rem;
   }
 
-  .description {
-    font-size: 0.85rem;
-    -webkit-line-clamp: 2;
-  }
-
-  .oddsContainer {
-    gap: var(--spacing-sm);
+  .oddsOption {
+    padding: var(--spacing-sm);
   }
 
   .footer {
     flex-direction: column;
     align-items: flex-start;
-    gap: var(--spacing-xs);
+    gap: var(--spacing-sm);
   }
 
-  .optionLabel {
-    font-size: 0.8rem;
-  }
-
-  .optionOdds {
-    font-size: 0.85rem;
+  .createButton {
+    width: 100%;
+    justify-content: center;
+    padding: var(--spacing-sm);
   }
 }

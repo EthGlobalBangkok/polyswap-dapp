@@ -197,11 +197,11 @@ const MarketGrid = () => {
   const header = useMemo(
     () => (
       <div className={styles.header}>
-        <h2 className={styles.title}>{searchActive ? "Search Results" : "Most Popular Markets"}</h2>
+        <h2 className={styles.title}>{searchActive ? "Search Results" : "Markets That Move Crypto"}</h2>
         <p className={styles.subtitle}>
           {searchActive
-            ? "Markets matching your search."
-            : "Choose a market condition for your conditional swap"}
+            ? "Markets matching your search criteria"
+            : "Elections, regulations, and events that could impact your portfolio"}
         </p>
       </div>
     ),

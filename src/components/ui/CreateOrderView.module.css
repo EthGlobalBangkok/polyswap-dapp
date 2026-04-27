@@ -16,63 +16,48 @@
 
 .backButton {
   align-self: flex-start;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  margin-bottom: var(--spacing-sm);
-  transition: all var(--transition-fast);
-  text-decoration: none;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--spacing-xs);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  transition: all var(--transition-normal);
+  text-decoration: none;
+  background-color: var(--background-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
 }
 
 .backButton:hover {
-  color: var(--accent-primary);
-  border-color: var(--accent-primary);
-  background: transparent;
+  color: var(--text-primary);
+  background-color: var(--background-tertiary);
+  border-color: var(--border-light);
 }
 
 .title {
-  font-size: 2rem;
+  font-size: 1.75rem;
   font-weight: 700;
-  background: linear-gradient(to right, #fff, #a5a5a5);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
 }
 
 .subtitle {
   color: var(--text-secondary);
-  font-size: 1.1rem;
+  font-size: 0.95rem;
 }
 
 /* Split Layout */
 .contentGrid {
   display: grid;
-  grid-template-columns: 480px 1fr;
+  grid-template-columns: 440px 1fr;
   gap: var(--spacing-xl);
-  align-items: stretch;
-  /* Stretch items to same height */
+  align-items: start;
 }
 
-/* ... existing code ... */
-
-/* Date Inputs */
-.dateRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-sm);
-  margin-bottom: var(--spacing-lg);
-  /* Added space before button */
-  width: 100%;
-  box-sizing: border-box;
-}
-
-@media (max-width: 900px) {
+@media (max-width: 1024px) {
   .contentGrid {
     grid-template-columns: 1fr;
   }
@@ -82,51 +67,62 @@
 .formCard {
   background: var(--background-card);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-2xl);
   padding: var(--spacing-xl);
-  box-shadow: var(--shadow-medium);
-  height: 100%;
-  /* Match height */
-  box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  gap: var(--spacing-lg);
 }
 
 .formHeader {
-  margin-bottom: var(--spacing-lg);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .formTitle {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .walletBadge {
-  font-size: 0.8rem;
-  padding: 4px 8px;
-  border-radius: 12px;
-  background: rgba(16, 185, 129, 0.1);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  background: var(--accent-success-alpha);
   color: var(--accent-success);
 }
 
+.walletBadge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  background: var(--accent-success);
+  border-radius: 50%;
+}
+
 .walletWarning {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  background: var(--accent-warning-alpha);
   color: var(--accent-warning);
 }
 
 /* Swap Section Container */
 .swapSection {
-  background: var(--background-tertiary);
+  background: var(--background-secondary);
   border-radius: var(--radius-xl);
-  padding: 4px;
-  border: 1px solid var(--border-light);
+  padding: 3px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 /* Individual Token Input Container */
@@ -134,21 +130,22 @@
   background: var(--background-card);
   padding: var(--spacing-md) var(--spacing-lg);
   border-radius: var(--radius-lg);
-  transition: background var(--transition-fast);
+  transition: all var(--transition-normal);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
 }
 
 .tokenRow:hover {
-  background: var(--background-secondary);
+  background: var(--background-card-hover);
 }
 
 .tokenRowHeader {
   display: flex;
   justify-content: space-between;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
+  font-weight: 500;
 }
 
 .tokenInputRow {
@@ -161,8 +158,8 @@
 .amountInput {
   background: transparent;
   border: none;
-  font-size: 2rem;
-  font-weight: 500;
+  font-size: 1.75rem;
+  font-weight: 600;
   color: var(--text-primary);
   width: 100%;
   outline: none;
@@ -178,7 +175,7 @@
 }
 
 .amountInput::placeholder {
-  color: var(--text-muted);
+  color: var(--text-dim);
 }
 
 /* Token Selector Button */
@@ -187,23 +184,24 @@
   align-items: center;
   gap: var(--spacing-sm);
   background: var(--background-tertiary);
-  padding: 6px 12px 6px 8px;
-  border-radius: 100px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-full);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: all var(--transition-normal);
   color: var(--text-primary);
   font-weight: 600;
-  border: 1px solid transparent;
+  font-size: 0.9rem;
+  border: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
 .tokenSelector:hover {
-  background: var(--background-secondary);
+  background: var(--background-elevated);
   border-color: var(--border-light);
 }
 
 .usdValue {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
 }
 
@@ -213,162 +211,79 @@
   justify-content: center;
   align-items: center;
   height: 0;
-  /* Removing height so it doesn't take up layout space */
   z-index: 10;
   position: relative;
-  /* Top -16px to vertically center it over the gap/border roughly */
-  top: -2px;
 }
 
 .arrowButton {
   background: var(--background-tertiary);
-  /* Lighter than card for visibility */
-  border: 4px solid var(--background-base);
+  border: 4px solid var(--background-secondary);
   border-radius: 50%;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-primary);
-  /* Brighter icon */
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: all var(--transition-fast);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  /* Subtle lift */
+  transition: all var(--transition-normal);
 }
 
 .arrowButton:hover {
-  background: var(--background-secondary);
+  background: var(--background-elevated);
   color: var(--text-primary);
-  transform: scale(1.1);
-  border-color: var(--background-base);
+  transform: rotate(180deg);
 }
 
 /* Outcome Selector */
 .outcomeSection {
-  margin: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .outcomeToggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  background: var(--background-tertiary);
-  padding: 4px;
+  background: var(--background-secondary);
+  padding: 3px;
   border-radius: var(--radius-lg);
-  gap: 4px;
+  gap: 3px;
 }
 
 .outcomeButton {
-  padding: 10px;
+  padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--radius-md);
   font-weight: 600;
-  font-size: 0.9rem;
-  transition: all var(--transition-fast);
-}
-
-.outcomeButton.activeYes {
-  background: #064e3b;
-  color: #34d399;
-}
-
-.outcomeButton.activeNo {
-  background: #7f1d1d;
-  color: #f87171;
-}
-
-.outcomeButton:not(.activeYes):not(.activeNo) {
+  font-size: 0.875rem;
+  transition: all var(--transition-normal);
+  background: transparent;
   color: var(--text-muted);
+  border: none;
+  cursor: pointer;
 }
 
 .outcomeButton:hover:not(.activeYes):not(.activeNo) {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.05);
-}
-
-/* Date Inputs */
-.dateSection {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
-}
-
-.dateInput {
   background: var(--background-tertiary);
-  border: 1px solid var(--border-light);
-  color: var(--text-primary);
-  padding: 10px;
-  border-radius: var(--radius-md);
-  width: 100%;
-  margin-top: var(--spacing-xs);
-  font-family: inherit;
-  outline: none;
 }
 
-.dateInput:focus {
-  border-color: var(--accent-primary);
+.outcomeButton.activeYes {
+  background: var(--accent-success-alpha);
+  color: var(--accent-success);
+  border: 1px solid var(--accent-success);
 }
 
-/* Submit Button */
-.submitButton {
-  width: 100%;
-  padding: 16px;
-  background: var(--accent-primary);
-  color: white;
-  border-radius: var(--radius-lg);
-  font-size: 1rem;
-  font-weight: 600;
-  transition: background var(--transition-fast);
-  margin-top: auto;
-  /* Push to bottom */
-}
-
-.submitButton:hover:not(:disabled) {
-  background: var(--accent-primary-dark);
-}
-
-.submitButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Right Column: Market Info & Chart */
-.infoColumn {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  height: 100%;
-  /* Fill grid cell height */
-}
-
-.marketCard {
-  background: var(--background-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-xl);
-  padding: var(--spacing-lg);
-  height: 100%;
-  /* Fill infoColumn height */
-  box-sizing: border-box;
-  /* Include padding in height */
-}
-
-.marketTitle {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: var(--spacing-sm);
-  line-height: 1.3;
-}
-
-/* Increased contrast for labels */
-.label,
-.dateGroup label {
-  display: block;
-  font-size: 0.9rem;
-  color: var(--text-primary);
-  /* White/High contrast */
-  font-weight: 600;
-  margin-bottom: var(--spacing-sm);
+.outcomeButton.activeNo {
+  background: var(--accent-danger-alpha);
+  color: var(--accent-danger);
+  border: 1px solid var(--accent-danger);
 }
 
 /* Date Inputs */
@@ -376,22 +291,18 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--spacing-md);
-  margin-top: var(--spacing-sm);
-  margin-bottom: var(--spacing-lg);
-  /* Spacing before button */
-  width: 100%;
-  /* Ensure row fits container */
-  box-sizing: border-box;
 }
 
 .dateGroup {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  min-width: 0;
-  /* Critical for grid item shrinking */
-  overflow: hidden;
-  /* Prevent spillover */
+}
+
+.dateGroup label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .labelRow {
@@ -408,18 +319,18 @@
 }
 
 .toggleLabel {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
   font-weight: 500;
 }
 
 .toggleSwitch {
-  width: 32px;
-  height: 18px;
+  width: 28px;
+  height: 16px;
   background: var(--background-tertiary);
-  border-radius: 20px;
+  border-radius: var(--radius-full);
   position: relative;
-  transition: all var(--transition-fast);
+  transition: all var(--transition-normal);
   border: 1px solid var(--border-color);
 }
 
@@ -428,25 +339,25 @@
   position: absolute;
   left: 2px;
   top: 2px;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   background: var(--text-muted);
   border-radius: 50%;
-  transition: all var(--transition-fast);
+  transition: all var(--transition-normal);
 }
 
 .toggleContainer.active .toggleSwitch {
-  background: var(--primary);
-  border-color: var(--primary);
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
 }
 
 .toggleContainer.active .toggleSwitch::after {
-  transform: translateX(14px);
+  transform: translateX(12px);
   background: white;
 }
 
 .toggleContainer.active .toggleLabel {
-  color: var(--primary);
+  color: var(--accent-primary);
 }
 
 .disabledInput {
@@ -459,15 +370,13 @@
   font-size: 0.8rem;
   box-sizing: border-box;
   font-style: italic;
+  height: 38px;
   display: flex;
   align-items: center;
-  height: 35px;
-  /* Match input height approx */
 }
 
-/* Custom styling for date inputs to fit */
 .dateGroup input {
-  background: var(--background-card);
+  background: var(--background-tertiary);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
   padding: var(--spacing-sm);
@@ -475,8 +384,121 @@
   width: 100%;
   font-family: inherit;
   font-size: 0.8rem;
-  /* Slightly smaller font to prevent width expansion */
   box-sizing: border-box;
+  transition: all var(--transition-normal);
+}
+
+.dateGroup input:focus {
+  border-color: var(--accent-primary);
+  outline: none;
+}
+
+/* Condition Card */
+.conditionCard {
+  padding: var(--spacing-lg);
+  background: var(--background-tertiary);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.conditionCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-cyan));
+}
+
+.conditionLabel {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.conditionText {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.highlight {
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--background-card);
+  padding: 2px var(--spacing-sm);
+  border-radius: var(--radius-md);
+  margin: 0 4px;
+  border: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.highlightYes {
+  color: var(--accent-success);
+  background: var(--accent-success-alpha);
+  border-color: var(--accent-success);
+}
+
+.highlightNo {
+  color: var(--accent-danger);
+  background: var(--accent-danger-alpha);
+  border-color: var(--accent-danger);
+}
+
+/* Submit Button */
+.submitButton {
+  width: 100%;
+  padding: var(--spacing-md);
+  background: var(--accent-primary);
+  color: white;
+  border-radius: var(--radius-lg);
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: all var(--transition-normal);
+  border: none;
+  cursor: pointer;
+}
+
+.submitButton:hover:not(:disabled) {
+  background: var(--accent-primary-dark);
+}
+
+.submitButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Right Column: Market Info & Chart */
+.infoColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.marketCard {
+  background: var(--background-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2xl);
+  padding: var(--spacing-xl);
+}
+
+.marketTitle {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-md);
+  line-height: 1.4;
 }
 
 .marketMeta {
@@ -486,7 +508,7 @@
   flex-wrap: wrap;
   gap: var(--spacing-md);
   color: var(--text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   margin-bottom: var(--spacing-md);
 }
 
@@ -496,103 +518,61 @@
   align-items: center;
 }
 
+.tag {
+  background: var(--background-tertiary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
 .polymarketLink {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
   color: var(--accent-primary);
   text-decoration: none;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 500;
-  padding: 4px 10px;
-  background: rgba(59, 130, 246, 0.1);
-  border-radius: 6px;
-  transition: all var(--transition-fast);
-  border: 1px solid transparent;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--accent-primary-alpha);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-normal);
 }
 
 .polymarketLink:hover {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: var(--accent-primary);
-}
-
-.tag {
-  background: var(--background-tertiary);
-  padding: 4px 8px;
-  border-radius: 6px;
+  background: var(--accent-primary);
+  color: white;
 }
 
 .marketDesc {
-  color: var(--text-muted);
-  line-height: 1.5;
-  font-size: 0.95rem;
-  margin-bottom: var(--spacing-md);
-}
-
-/* Condition Card */
-.conditionCard {
-  margin-top: 0;
-  padding: 24px 20px;
-  background: var(--background-card);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-color);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  position: relative;
-  overflow: hidden;
-  box-shadow:
-    0 4px 6px -1px rgba(0, 0, 0, 0.1),
-    0 2px 4px -1px rgba(0, 0, 0, 0.06);
-}
-
-/* Subtle gradient background effect */
-.conditionCard::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #3b82f6, #10b981);
-  opacity: 0.8;
-}
-
-.conditionLabel {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.conditionText {
-  font-size: 1.1rem;
-  color: var(--text-primary);
+  color: var(--text-secondary);
   line-height: 1.6;
-  font-weight: 400;
+  font-size: 0.9rem;
+  margin-bottom: var(--spacing-lg);
 }
 
-.highlight {
-  font-weight: 700;
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.08);
-  /* Slightly lighter than card */
-  padding: 2px 8px;
-  border-radius: 6px;
-  margin: 0 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  white-space: nowrap;
-}
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .container {
+    padding: var(--spacing-md);
+  }
 
-.highlightYes {
-  color: #34d399;
-  background: rgba(5, 150, 105, 0.15);
-  border-color: rgba(5, 150, 105, 0.3);
-}
+  .title {
+    font-size: 1.5rem;
+  }
 
-.highlightNo {
-  color: #f87171;
-  background: rgba(220, 38, 38, 0.15);
-  border-color: rgba(220, 38, 38, 0.3);
+  .formCard,
+  .marketCard {
+    padding: var(--spacing-lg);
+  }
+
+  .amountInput {
+    font-size: 1.5rem;
+  }
+
+  .dateRow {
+    grid-template-columns: 1fr;
+  }
 }

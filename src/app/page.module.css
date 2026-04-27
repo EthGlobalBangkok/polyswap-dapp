@@ -7,10 +7,10 @@
 
 .main {
   flex: 1;
-  padding: var(--spacing-2xl) 0;
+  padding: var(--spacing-xl) 0 var(--spacing-3xl);
 }
 
-/* Add some visual interest with a subtle background pattern */
+/* Subtle background gradient */
 .page::before {
   content: "";
   position: fixed;
@@ -18,9 +18,9 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-image:
-    radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.05) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(29, 78, 216, 0.05) 0%, transparent 50%);
+  background: 
+    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
   pointer-events: none;
   z-index: -1;
 }
@@ -28,6 +28,6 @@
 /* Mobile Responsive */
 @media (max-width: 768px) {
   .main {
-    padding: var(--spacing-xl) 0;
+    padding: var(--spacing-lg) 0 var(--spacing-2xl);
   }
 }

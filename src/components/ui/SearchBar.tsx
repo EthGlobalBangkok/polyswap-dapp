@@ -10,16 +10,15 @@ interface SearchBarProps {
   isLoading?: boolean;
 }
 
+// Crypto-relevant categories that impact markets
 const CATEGORIES = [
-  { value: "", label: "All Categories" },
-  { value: "politics", label: "Politics" },
-  { value: "crypto", label: "Crypto" },
-  { value: "economics", label: "Economics" },
-  { value: "sports", label: "Sports" },
-  { value: "entertainment", label: "Entertainment" },
-  { value: "world", label: "World" },
-  { value: "technology", label: "Technology" },
-  { value: "other", label: "Other" },
+  { value: "", label: "All", icon: "🌐" },
+  { value: "politics", label: "Politics", icon: "🏛️" },
+  { value: "crypto", label: "Crypto", icon: "₿" },
+  { value: "economics", label: "Economy", icon: "📈" },
+  { value: "world", label: "Geopolitics", icon: "🌍" },
+  { value: "technology", label: "Tech", icon: "💻" },
+  { value: "sports", label: "Sports", icon: "⚽" },
 ];
 
 const SearchBar = ({
@@ -30,15 +29,12 @@ const SearchBar = ({
 }: SearchBarProps) => {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
-  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [isSlug, setIsSlug] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Function to detect if input is a slug
   const detectSlug = useCallback((input: string): boolean => {
     const trimmed = input.trim();
-    // Slug pattern: lowercase, hyphens, no spaces, no special chars except hyphens
     const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
     return slugPattern.test(trimmed) && trimmed.length > 0;
   }, []);
@@ -52,9 +48,8 @@ const SearchBar = ({
     [detectSlug]
   );
 
-  const handleCategoryChange = useCallback((category: string) => {
+  const handleCategoryClick = useCallback((category: string) => {
     setSelectedCategory(category);
-    setShowCategoryDropdown(false);
   }, []);
 
   const handleKeyDown = useCallback(
@@ -79,28 +74,20 @@ const SearchBar = ({
     onSearch(query.trim(), selectedCategory || undefined, isSlug);
   }, [onSearch, query, selectedCategory, isSlug]);
 
-  // Close dropdown when clicking outside
-  const handleClickOutside = useCallback((e: MouseEvent) => {
-    if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-      setShowCategoryDropdown(false);
-    }
-  }, []);
-
-  // Add/remove event listener
+  // Search when category changes
   React.useEffect(() => {
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [handleClickOutside]);
-
-  const selectedCategoryLabel =
-    CATEGORIES.find((cat) => cat.value === selectedCategory)?.label || "All Categories";
+    if (selectedCategory) {
+      onSearch(query.trim(), selectedCategory, isSlug);
+    }
+  }, [selectedCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={styles.searchContainer}>
+      {/* Search Input */}
       <div className={styles.searchInputWrapper}>
-        <div className={styles.searchIcon}>🔍</div>
+        <svg className={styles.searchIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
         <input
           ref={inputRef}
           type="text"
@@ -111,56 +98,42 @@ const SearchBar = ({
           className={styles.searchInput}
           disabled={isLoading}
         />
-
-        {/* Category Filter Button */}
-        <button
-          type="button"
-          onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-          className={styles.categoryButton}
-          disabled={isLoading}
-        >
-          <span className={styles.categoryLabel}>{selectedCategoryLabel}</span>
-          <span className={styles.categoryArrow}>▼</span>
-        </button>
-
-        {/* Category Dropdown */}
-        {showCategoryDropdown && (
-          <div ref={dropdownRef} className={styles.categoryDropdown}>
-            {CATEGORIES.map((category) => (
-              <button
-                key={category.value}
-                type="button"
-                onClick={() => handleCategoryChange(category.value)}
-                className={`${styles.categoryOption} ${selectedCategory === category.value ? styles.selected : ""}`}
-              >
-                {category.label}
-              </button>
-            ))}
-          </div>
+        
+        {(query || selectedCategory) && (
+          <button onClick={handleClear} className={styles.clearButton} disabled={isLoading}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
         )}
-
-        {/* Search Button */}
+        
         <button
           onClick={handleSearch}
           className={styles.searchButton}
           disabled={isLoading || (!query.trim() && !selectedCategory)}
         >
-          Search
-        </button>
-
-        {/* Clear Button */}
-        {(query || selectedCategory) && (
-          <button onClick={handleClear} className={styles.clearButton} disabled={isLoading}>
-            ✕
-          </button>
-        )}
-
-        {/* Loading Spinner */}
-        {isLoading && (
-          <div className={styles.loadingSpinner}>
+          {isLoading ? (
             <div className={styles.spinner}></div>
-          </div>
-        )}
+          ) : (
+            "Search"
+          )}
+        </button>
+      </div>
+
+      {/* Category Pills */}
+      <div className={styles.categoryPills}>
+        {CATEGORIES.map((category) => (
+          <button
+            key={category.value}
+            type="button"
+            onClick={() => handleCategoryClick(category.value)}
+            className={`${styles.categoryPill} ${selectedCategory === category.value ? styles.active : ""}`}
+            disabled={isLoading}
+          >
+            <span className={styles.categoryIcon}>{category.icon}</span>
+            <span>{category.label}</span>
+          </button>
+        ))}
       </div>
     </div>
   );

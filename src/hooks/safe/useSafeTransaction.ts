@@ -4,7 +4,11 @@
 import { useEffect, useRef, useState } from "react";
 import { parseAbiItem, type Address, type Hash } from "viem";
 import { usePublicClient, useWaitForCallsStatus } from "wagmi";
-import { fetchMultisigTransaction, isReplaced } from "@/services/safe/safeTxService";
+import {
+  fetchMultisigTransaction,
+  isReplaced,
+  type FetchResult,
+} from "@/services/safe/safeTxService";
 import type { SafeTxStatus } from "@/services/safe/types";
 
 const POLL_INTERVAL_MS = 4_000;
@@ -91,9 +95,12 @@ export function useSafeTransaction({
     const poll = async () => {
       if (cancelled) return;
 
-      const result = await fetchMultisigTransaction(safeTxHash, ac.signal).catch(() => ({
-        kind: "error" as const,
-      }));
+      const result = await fetchMultisigTransaction(safeTxHash, ac.signal).catch(
+        (e: unknown): FetchResult => ({
+          kind: "error",
+          error: e instanceof Error ? e : new Error(String(e)),
+        })
+      );
 
       if (cancelled) return;
 

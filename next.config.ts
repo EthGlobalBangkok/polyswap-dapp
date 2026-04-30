@@ -27,6 +27,21 @@ const nextConfig: NextConfig = {
   },
   // Required to support PostHog trailing slash API requests
   skipTrailingSlashRedirect: true,
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            // Allow embedding inside Safe{Wallet}'s app shell.
+            // frame-ancestors supersedes the legacy X-Frame-Options header.
+            value: "frame-ancestors 'self' https://*.safe.global",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default withSentryConfig(nextConfig, {

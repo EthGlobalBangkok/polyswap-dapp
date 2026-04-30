@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { Hash } from "viem";
 import { Button, Modal } from "@/components/primitives";
 import { Icon } from "@/components/icons";
@@ -10,7 +10,13 @@ import type { SafeCall } from "@/services/safe/types";
 export type SafeSignModalProps = {
   open: boolean;
   onClose: () => void;
-  /** The calls to bundle into one Safe transaction. */
+  /**
+   * The calls to bundle into one Safe transaction.
+   *
+   * Should remain stable (same intended batch) across retries — if the parent
+   * rebuilds this array on every render, memoize it with useMemo. The "Try
+   * again" affordance on terminal error states re-sends this same batch.
+   */
   calls: SafeCall[];
   /** Called once the transaction is confirmed on-chain. */
   onConfirmed: (onChainHash: Hash, safeTxHash: Hash) => void;
@@ -21,13 +27,19 @@ export type SafeSignModalProps = {
 export function SafeSignModal({ open, onClose, calls, onConfirmed, summary }: SafeSignModalProps) {
   const { state, send, reset } = useSafeSignFlow();
 
-  // Trigger onConfirmed exactly once on success.
+  // Hold the latest onConfirmed in a ref so we can fire it exactly once on
+  // success without putting it in the deps (which would re-run the effect on
+  // every render even when nothing meaningful changed).
+  const onConfirmedRef = useRef(onConfirmed);
+  useLayoutEffect(() => {
+    onConfirmedRef.current = onConfirmed;
+  });
+
   useEffect(() => {
     if (state.phase === "success") {
-      onConfirmed(state.onChainHash, state.safeTxHash);
+      onConfirmedRef.current(state.onChainHash, state.safeTxHash);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.phase]);
+  }, [state]);
 
   // Reset state when modal closes so reopening starts fresh.
   useEffect(() => {
@@ -39,13 +51,6 @@ export function SafeSignModal({ open, onClose, calls, onConfirmed, summary }: Sa
     state.phase === "proposed" ||
     state.phase === "awaitingSignatures" ||
     state.phase === "awaitingExecution";
-
-  const isTerminal =
-    state.phase === "success" ||
-    state.phase === "reverted" ||
-    state.phase === "replaced" ||
-    state.phase === "rejected" ||
-    state.phase === "error";
 
   return (
     <Modal
@@ -115,9 +120,12 @@ export function SafeSignModal({ open, onClose, calls, onConfirmed, summary }: Sa
           <div className="space-y-5">
             <div className="flex items-center gap-3">
               <DrawnCheck />
-              <p className="font-serif text-2xl">Done.</p>
+              <div role="status" aria-live="polite">
+                <p className="font-serif text-2xl">Done.</p>
+              </div>
             </div>
             <p className="text-sm text-ink-2">Your transaction is on chain.</p>
+            {/* TODO: derive block-explorer URL from chain config when multi-network support lands */}
             <a
               href={`https://polygonscan.com/tx/${state.onChainHash}`}
               target="_blank"
@@ -142,6 +150,7 @@ export function SafeSignModal({ open, onClose, calls, onConfirmed, summary }: Sa
             body="The transaction executed on chain but reverted. No funds moved."
             detail={`On-chain hash: ${state.onChainHash}`}
             onClose={onClose}
+            onRetry={() => void send(calls)}
           />
         )}
 
@@ -151,27 +160,28 @@ export function SafeSignModal({ open, onClose, calls, onConfirmed, summary }: Sa
             heading="Transaction replaced"
             body="A different transaction with the same Safe nonce was executed first."
             onClose={onClose}
+            onRetry={() => void send(calls)}
           />
         )}
 
         {/* rejected */}
         {state.phase === "rejected" && (
-          <ErrorScreen heading="Cancelled" body={state.message} onClose={onClose} />
+          <ErrorScreen
+            heading="Cancelled"
+            body={state.message}
+            onClose={onClose}
+            onRetry={() => void send(calls)}
+          />
         )}
 
         {/* error */}
         {state.phase === "error" && (
-          <ErrorScreen heading="Something went wrong" body={state.message} onClose={onClose} />
-        )}
-
-        {/* Retry button shown on terminal non-success states */}
-        {isTerminal && state.phase !== "success" && (
-          <div className="mt-4 flex justify-end">
-            <Button variant="accent" size="md" onClick={() => void send(calls)}>
-              Try again
-              <Icon.arrowRight size={14} aria-hidden />
-            </Button>
-          </div>
+          <ErrorScreen
+            heading="Something went wrong"
+            body={state.message}
+            onClose={onClose}
+            onRetry={() => void send(calls)}
+          />
         )}
       </div>
     </Modal>
@@ -191,8 +201,10 @@ function PendingScreen({ heading, body }: { heading: string; body: string }) {
       >
         <span className="size-2 animate-pulse bg-accent" />
       </span>
-      <p className="font-serif text-2xl">{heading}</p>
-      <p className="text-sm text-ink-2">{body}</p>
+      <div role="status" aria-live="polite">
+        <p className="font-serif text-2xl">{heading}</p>
+        <p className="text-sm text-ink-2">{body}</p>
+      </div>
     </div>
   );
 }
@@ -202,14 +214,16 @@ function ErrorScreen({
   body,
   detail,
   onClose,
+  onRetry,
 }: {
   heading: string;
   body: string;
   detail?: string;
   onClose: () => void;
+  onRetry?: () => void;
 }) {
   return (
-    <div className="space-y-4">
+    <div role="status" aria-live="polite" className="space-y-4">
       <div className="flex items-center gap-3">
         <span
           aria-hidden
@@ -225,10 +239,16 @@ function ErrorScreen({
           {detail}
         </p>
       )}
-      <div className="flex justify-end">
+      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
         <Button variant="ghost" size="md" onClick={onClose}>
           Close
         </Button>
+        {onRetry && (
+          <Button variant="accent" size="md" onClick={onRetry}>
+            Try again
+            <Icon.arrowRight size={14} aria-hidden />
+          </Button>
+        )}
       </div>
     </div>
   );

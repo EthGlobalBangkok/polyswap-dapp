@@ -78,7 +78,10 @@ export function CreatePage({ marketId }: Props) {
       wallet.open();
       return;
     }
-    if (!rawMarket) return;
+    if (!rawMarket) {
+      setSigningError("Market data unavailable. Please refresh and try again.");
+      return;
+    }
 
     setSigningError(null);
     setIsPreparingTx(true);
@@ -162,7 +165,10 @@ export function CreatePage({ marketId }: Props) {
   // After the Safe tx is confirmed on-chain
   // ---------------------------------------------------------------------------
 
-  const onConfirmed = async (onChainHash: Hash) => {
+  const onConfirmed = async (onChainHash: Hash, _safeTxHash: Hash) => {
+    // The safeTxHash links execution back to the multisig approval record;
+    // backend doesn't currently store it but the underscore prefix signals
+    // we're aware of the parameter.
     const orderId = orderIdRef.current;
     // For setup-only batches there is no order to record — the main order will be
     // submitted on the next "Review & sign" attempt, once setup is confirmed.
@@ -294,7 +300,7 @@ export function CreatePage({ marketId }: Props) {
           open={signOpen}
           onClose={() => setSignOpen(false)}
           calls={calls}
-          onConfirmed={(onChainHash) => void onConfirmed(onChainHash)}
+          onConfirmed={onConfirmed}
           summary={modalSummary}
         />
       )}

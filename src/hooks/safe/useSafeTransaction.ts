@@ -65,6 +65,8 @@ export function useSafeTransaction({
     if (use5792) return;
     if (!safeTxHash || !safeAddress || !publicClient) return;
 
+    restNotFoundSinceRef.current = null;
+
     const ac = new AbortController();
     let cancelled = false;
     let pollHandle: ReturnType<typeof setTimeout> | null = null;
@@ -81,7 +83,9 @@ export function useSafeTransaction({
         if (cancelled) return;
         // Filter to logs whose txHash topic matches the target safeTxHash.
         const log = logs.find(
-          (l) => (l as { args?: { txHash?: string } }).args?.txHash === safeTxHash
+          (l) =>
+            (l as { args?: { txHash?: string } }).args?.txHash?.toLowerCase() ===
+            safeTxHash.toLowerCase()
         );
         if (!log) return;
         const success = log.eventName === "ExecutionSuccess";
@@ -110,22 +114,25 @@ export function useSafeTransaction({
           restNotFoundSinceRef.current = Date.now();
         }
         if (Date.now() - restNotFoundSinceRef.current > NOT_FOUND_GRACE_MS) {
-          // Still not indexed after grace — it's likely been superseded.
-          // We don't have a nonce yet (never got the tx), so leave status as-is.
-          // Event watch is still running; if execution actually lands, we'll see it.
+          // Still not indexed after grace — likely never reached the service.
+          // No nonce, so we can't resolve to "replaced". Stop polling — the
+          // on-chain event watcher remains active and will catch a successful
+          // execution if one arrives.
+          return;
         }
       } else if (result.kind === "ok") {
         restNotFoundSinceRef.current = null;
         const tx = result.tx;
 
         if (tx.isExecuted) {
-          if (tx.transactionHash) {
+          if (tx.transactionHash && tx.isSuccessful !== null) {
             setStatus({
               kind: tx.isSuccessful ? "executed" : "reverted",
               onChainHash: tx.transactionHash,
             });
             return; // terminal — stop polling
           }
+          // isExecuted but isSuccessful still null — wait one more poll.
         } else {
           // Replacement check: is there another executed tx at the same nonce?
           const replaced = await isReplaced(safeAddress, tx.nonce, safeTxHash, ac.signal).catch(

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount, useCapabilities, useChainId } from "wagmi";
+import { useAccount, useCapabilities } from "wagmi";
 import { polygon } from "wagmi/chains";
 import type { Address } from "viem";
 
@@ -17,8 +17,7 @@ export type SafeAccountState = {
 };
 
 export function useSafeAccount(): SafeAccountState {
-  const { address, connector, status } = useAccount();
-  const chainId = useChainId();
+  const { address, connector, status, chainId } = useAccount();
 
   const [isReady, setIsReady] = useState(false);
   useEffect(() => {
@@ -31,7 +30,16 @@ export function useSafeAccount(): SafeAccountState {
     query: { enabled: status === "connected" },
   });
 
-  const supports5792 = Boolean(capabilities?.[chainId ?? polygon.id]?.atomicBatch?.supported);
+  // EIP-5792 capability detection.
+  // viem 2.37+ exposes the finalized shape: { atomic: { status: 'supported' | 'ready' | 'unsupported' } }.
+  // Safe Apps Provider 0.18.x still uses the pre-finalization draft: { atomicBatch: { supported: true } }.
+  // Check both so we work against current Safe iframe and future wallets.
+  const cap = capabilities?.[chainId ?? polygon.id];
+  const atomicStatus = cap?.atomic?.status;
+  const supports5792 =
+    atomicStatus === "supported" ||
+    atomicStatus === "ready" ||
+    Boolean((cap as { atomicBatch?: { supported?: boolean } } | undefined)?.atomicBatch?.supported);
 
   return {
     safeAddress: address,

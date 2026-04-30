@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { CowQuoteService } from "@/backend/services/cowQuoteService";
 import { TokenPriceService } from "@/backend/services/tokenPriceService";
 

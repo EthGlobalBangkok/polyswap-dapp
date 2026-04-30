@@ -1,32 +1,48 @@
-"use client";
+import { Footer } from "@/components/layout/Footer";
+import {
+  Categories,
+  FAQ,
+  FinalCTA,
+  Guarantees,
+  Hero,
+  HowItWorks,
+  LandingHeader,
+  Premise,
+  PullQuote,
+} from "@/components/landing";
+import { Reveal } from "@/components/primitives";
 
-import dynamic from "next/dynamic";
-import Navbar from "../components/layout/Navbar";
-import Footer from "../components/layout/Footer";
-import MarketGrid from "../components/ui/MarketGrid";
-import BetaWarningPopup from "../components/ui/BetaWarningPopup";
-import styles from "./page.module.css";
-
-const Web3Provider = dynamic(
-  () => import("../components/providers/Web3Provider"),
-  { ssr: false }
-);
-
-export default function Home() {
+export default function HomePage() {
   return (
-    <Web3Provider>
-      <div className={styles.page}>
-        <BetaWarningPopup />
-        <Navbar />
-
-        <main className={styles.main}>
-          <div className="container">
-            <MarketGrid />
-          </div>
-        </main>
-
-        <Footer />
-      </div>
-    </Web3Provider>
+    <div className="flex min-h-screen flex-col">
+      <LandingHeader />
+      <main className="flex-1">
+        {/* Hero plays its own mount choreography immediately. */}
+        <Hero />
+        {/* Downstream sections fade up the first time they enter the viewport. */}
+        <Reveal>
+          <Premise />
+        </Reveal>
+        <Reveal>
+          <HowItWorks />
+        </Reveal>
+        <Reveal>
+          <Categories />
+        </Reveal>
+        <Reveal>
+          <Guarantees />
+        </Reveal>
+        <Reveal>
+          <PullQuote />
+        </Reveal>
+        <Reveal>
+          <FAQ />
+        </Reveal>
+        <Reveal>
+          <FinalCTA />
+        </Reveal>
+      </main>
+      <Footer />
+    </div>
   );
 }

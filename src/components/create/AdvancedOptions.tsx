@@ -1,0 +1,85 @@
+"use client";
+
+import { useState } from "react";
+import { Icon } from "@/components/icons";
+import { cn } from "@/lib/cn";
+import type { CreateFormState, Expiry } from "@/hooks/useCreateOrder";
+
+interface Props {
+  state: Pick<CreateFormState, "expiry" | "slippagePct">;
+  onChange: <K extends "expiry" | "slippagePct">(key: K, value: CreateFormState[K]) => void;
+}
+
+const EXPIRIES: { value: Expiry; label: string }[] = [
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+  { value: "until-resolution", label: "Until market resolves" },
+];
+
+const SLIPPAGES: number[] = [0.1, 0.5, 1, 2];
+
+export function AdvancedOptions({ state, onChange }: Props) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <section className="border border-ink bg-paper">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm sm:px-5"
+        aria-expanded={open}
+      >
+        <span className="eyebrow">A few extra options</span>
+        <span className={cn("text-ink-3 transition-transform", open && "rotate-180")} aria-hidden>
+          <Icon.chevronDown size={14} />
+        </span>
+      </button>
+      {open && (
+        <div className="space-y-5 border-t border-rule-soft p-4 sm:p-5">
+          <div>
+            <p className="text-xs text-ink-3">Cancel automatically after</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {EXPIRIES.map((e) => {
+                const active = state.expiry === e.value;
+                return (
+                  <button
+                    key={e.value}
+                    type="button"
+                    onClick={() => onChange("expiry", e.value)}
+                    className={cn(
+                      "border border-ink px-3 py-1.5 text-xs",
+                      active ? "bg-ink text-paper" : "bg-paper hover:bg-paper-2"
+                    )}
+                  >
+                    {e.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs text-ink-3">How much price wiggle is OK</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {SLIPPAGES.map((s) => {
+                const active = Math.abs(state.slippagePct - s) < 0.001;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => onChange("slippagePct", s)}
+                    className={cn(
+                      "num border border-ink px-3 py-1.5 text-xs",
+                      active ? "bg-ink text-paper" : "bg-paper hover:bg-paper-2"
+                    )}
+                  >
+                    {s}%
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}

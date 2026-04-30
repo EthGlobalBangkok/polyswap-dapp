@@ -1,6 +1,6 @@
 import Safe from "@safe-global/protocol-kit";
-import { MetaTransactionData, SafeTransactionDataPartial } from "@safe-global/types-kit";
-import { ethers } from "ethers";
+import { type MetaTransactionData, type SafeTransactionDataPartial } from "@safe-global/types-kit";
+import { type ethers } from "ethers";
 
 export interface SafeTransactionRequest {
   to: string;

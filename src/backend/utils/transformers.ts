@@ -1,4 +1,4 @@
-import { DatabaseMarket } from "../interfaces/Database";
+import { type DatabaseMarket } from "../interfaces/Database";
 
 // Transform database market to API format expected by frontend
 export function transformDatabaseMarket(dbMarket: DatabaseMarket) {

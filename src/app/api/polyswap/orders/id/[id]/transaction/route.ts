@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "../../../../../../../backend/services/databaseService";
 import { TransactionEncodingService } from "../../../../../../../backend/services/transactionEncodingService";
 import { TransactionEventService } from "../../../../../../../backend/services/transactionEventService";
-import { PolyswapOrderData } from "../../../../../../../backend/interfaces/PolyswapOrder";
+import { type PolyswapOrderData } from "../../../../../../../backend/interfaces/PolyswapOrder";
 
 /**
  * @swagger

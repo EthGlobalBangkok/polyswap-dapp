@@ -15,11 +15,19 @@ const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   prettierConfig,
   {
-    plugins: {
-      prettier,
-    },
+    plugins: { prettier },
     rules: {
       "prettier/prettier": "error",
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+      "@typescript-eslint/consistent-type-imports": [
+        "warn",
+        { prefer: "type-imports", fixStyle: "inline-type-imports" },
+      ],
+      "react-hooks/exhaustive-deps": "warn",
     },
   },
 ];

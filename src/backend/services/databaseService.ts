@@ -1,11 +1,11 @@
 import { query } from "../db/database";
-import { Market } from "../interfaces/Market";
-import { DatabaseMarket } from "../interfaces/Database";
+import { type Market } from "../interfaces/Market";
+import { type DatabaseMarket } from "../interfaces/Database";
 import {
-  PolyswapOrderRecord,
-  DatabasePolyswapOrder,
-  SoldPosition,
-  SoldPositionInput,
+  type PolyswapOrderRecord,
+  type DatabasePolyswapOrder,
+  type SoldPosition,
+  type SoldPositionInput,
 } from "../interfaces/PolyswapOrder";
 
 export class DatabaseService {

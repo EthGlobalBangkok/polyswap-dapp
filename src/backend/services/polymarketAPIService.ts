@@ -1,4 +1,4 @@
-import { Market } from "../interfaces/Market";
+import { type Market } from "../interfaces/Market";
 
 export interface GetOpenMarketsOptions {
   endDateMin: string; // ISO date string like "2025-07-24T12:00:00Z"

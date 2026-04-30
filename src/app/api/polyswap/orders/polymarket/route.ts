@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "../../../../../backend/services/databaseService";
 import { getPolymarketOrderService } from "../../../../../backend/services/polymarketOrderService";
 

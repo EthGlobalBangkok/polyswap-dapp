@@ -1,5 +1,5 @@
 // API service for communicating with the backend
-import { DatabasePolyswapOrder } from "../backend/interfaces/PolyswapOrder";
+import { type DatabasePolyswapOrder } from "../backend/interfaces/PolyswapOrder";
 
 export interface BackendMarket {
   id: string;

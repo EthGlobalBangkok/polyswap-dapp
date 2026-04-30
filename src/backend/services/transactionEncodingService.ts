@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { PolyswapOrderData, ConditionalOrderParams } from "../interfaces/PolyswapOrder";
+import { type PolyswapOrderData, type ConditionalOrderParams } from "../interfaces/PolyswapOrder";
 import composableCowAbi from "../../abi/composableCoW.json";
 
 export interface TransactionData {

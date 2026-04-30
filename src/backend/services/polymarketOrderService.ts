@@ -1,4 +1,4 @@
-import { ApiKeyCreds, ClobClient, Side, OrderType, AssetType } from "@polymarket/clob-client";
+import { type ApiKeyCreds, ClobClient, Side, OrderType, AssetType } from "@polymarket/clob-client";
 import { ethers } from "ethers";
 
 export interface PolymarketOrderConfig {

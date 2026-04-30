@@ -1,0 +1,68 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { Logo } from "@/components/layout/Logo";
+import { Button } from "@/components/primitives";
+import { Icon } from "@/components/icons";
+import { MobileNav, type MobileNavLink } from "@/components/layout/MobileNav";
+
+const ANCHOR_LINKS: { href: string; label: string }[] = [
+  { href: "#how-it-works", label: "How it works" },
+  { href: "/markets", label: "Markets" },
+  { href: "#faq", label: "FAQ" },
+];
+
+const MOBILE_LINKS: MobileNavLink[] = [
+  { href: "#how-it-works", label: "How it works" },
+  { href: "/markets", label: "Browse markets" },
+  { href: "/dashboard", label: "My swaps" },
+  { href: "#faq", label: "FAQ" },
+];
+
+export function LandingHeader() {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  return (
+    <header className="border-b border-ink bg-paper">
+      <div className="mx-auto flex h-16 max-w-[1280px] items-center justify-between px-6 sm:px-8 lg:px-12">
+        <Link href="/" className="flex items-center gap-3">
+          <Logo size={26} />
+          <span className="font-serif text-2xl">Polyswap</span>
+        </Link>
+
+        <nav className="hidden items-center gap-7 text-sm lg:flex" aria-label="Primary">
+          {ANCHOR_LINKS.map((l) => (
+            <a key={l.href} href={l.href} className="hover:underline">
+              {l.label}
+            </a>
+          ))}
+          <Link href="/markets">
+            <Button variant="ink" size="sm">
+              Open app
+              <Icon.arrowRight size={14} aria-hidden />
+            </Button>
+          </Link>
+        </nav>
+
+        <div className="flex items-center gap-2 lg:hidden">
+          <Link href="/markets">
+            <Button variant="ink" size="sm">
+              Open app
+            </Button>
+          </Link>
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="-m-2 p-2"
+            aria-label="Open menu"
+          >
+            <Icon.menu size={20} />
+          </button>
+        </div>
+      </div>
+
+      <MobileNav open={mobileOpen} onClose={() => setMobileOpen(false)} links={MOBILE_LINKS} />
+    </header>
+  );
+}

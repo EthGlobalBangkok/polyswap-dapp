@@ -6,9 +6,9 @@ import { OrderUidCalculationService } from "./services/orderUidCalculationServic
 import { PolymarketPositionSellerService } from "./services/polymarketPositionSellerService";
 import {
   ConditionalOrderCreatedEvent,
-  ConditionalOrderParams,
-  PolyswapOrderData,
-  PolyswapOrderRecord,
+  type ConditionalOrderParams,
+  type PolyswapOrderData,
+  type PolyswapOrderRecord,
 } from "./interfaces/PolyswapOrder";
 import * as Sentry from "@sentry/nextjs";
 

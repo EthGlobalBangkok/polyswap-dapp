@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { ConditionalOrderParams } from "../interfaces/PolyswapOrder";
+import { type ConditionalOrderParams } from "../interfaces/PolyswapOrder";
 
 export interface TransactionEventDetails {
   blockNumber: number;

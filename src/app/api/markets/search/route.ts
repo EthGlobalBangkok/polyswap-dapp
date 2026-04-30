@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "../../../../backend/services/databaseService";
 import { transformDatabaseMarkets } from "../../../../backend/utils/transformers";
-import { DatabaseMarket } from "@/backend/interfaces/Database";
+import { type DatabaseMarket } from "@/backend/interfaces/Database";
 
 /**
  * @swagger

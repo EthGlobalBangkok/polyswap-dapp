@@ -1,4 +1,4 @@
-import { Pool, PoolClient } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { config as dotenvConfig } from "dotenv";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";

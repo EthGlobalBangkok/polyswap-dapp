@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Button } from "@/components/primitives";
+import { Button, DetailSkeleton } from "@/components/primitives";
 import { Icon } from "@/components/icons";
 import { useMarket } from "@/hooks/useMarketsData";
 import { useCreateOrder } from "@/hooks/useCreateOrder";
@@ -26,7 +26,7 @@ export function CreatePage({ marketId }: Props) {
   const wallet = useWalletModal();
 
   if (isLoading) {
-    return <p className="py-16 text-center text-sm text-ink-3">Loading market…</p>;
+    return <DetailSkeleton />;
   }
 
   if (isError || !market) {

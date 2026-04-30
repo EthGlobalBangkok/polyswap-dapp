@@ -14,7 +14,9 @@ export function Stamp({ children, className }: Props) {
         "-rotate-3",
         className
       )}
-      style={{ background: "rgba(217,74,31,0.06)" }}
+      style={{
+        background: "color-mix(in srgb, var(--color-accent) 6%, transparent)",
+      }}
     >
       {children}
     </span>

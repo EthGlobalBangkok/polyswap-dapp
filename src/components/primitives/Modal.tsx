@@ -95,7 +95,7 @@ export function Modal({
                     aria-label="Close"
                     className="-m-1 p-1 text-ink-3 hover:text-ink"
                   >
-                    <Icon.x size={18} />
+                    <Icon.x size={18} aria-hidden />
                   </button>
                 )}
               </div>

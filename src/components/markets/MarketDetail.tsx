@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMarket } from "@/hooks/useMarketsData";
-import { Button, Tag, Tape, Dial } from "@/components/primitives";
+import { Button, DetailSkeleton, Tag, Tape, Dial } from "@/components/primitives";
 import { CategoryIcon, Icon } from "@/components/icons";
 import { fmtUSD, fmtDate } from "@/lib/format";
 
@@ -14,7 +14,7 @@ export function MarketDetail({ identifier }: Props) {
   const { data, isLoading, isError } = useMarket(identifier);
 
   if (isLoading) {
-    return <div className="py-16 text-center text-sm text-ink-3">Loading market…</div>;
+    return <DetailSkeleton />;
   }
   if (isError || !data) {
     return (

@@ -19,7 +19,7 @@ export function Shimmer({ className }: Props) {
       className={cn(
         "relative block overflow-hidden bg-paper-3",
         "before:absolute before:inset-0",
-        "before:bg-[linear-gradient(110deg,transparent_30%,rgba(22,20,15,0.07)_50%,transparent_70%)]",
+        "before:bg-[linear-gradient(110deg,transparent_30%,color-mix(in_srgb,var(--color-ink)_7%,transparent)_50%,transparent_70%)]",
         "before:animate-[shimmer_2s_ease-in-out_infinite]",
         className
       )}

@@ -24,8 +24,11 @@ const button = cva(
           "bg-transparent border-transparent text-ink hover:underline underline-offset-4 active:translate-x-0 active:translate-y-0",
       },
       size: {
-        sm: "px-3 py-1.5 text-xs",
-        md: "px-5 py-3 text-sm",
+        // `pointer-coarse` bumps the height to 44px on touch devices so the
+        // small button still meets the iOS / Android touch-target guideline,
+        // without making it visually heavy on desktop.
+        sm: "px-3 py-1.5 text-xs pointer-coarse:min-h-11",
+        md: "px-5 py-3 text-sm pointer-coarse:min-h-11",
         lg: "px-6 py-3.5 text-base",
       },
     },

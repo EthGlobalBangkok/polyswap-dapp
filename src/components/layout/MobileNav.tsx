@@ -59,9 +59,9 @@ export function MobileNav({ open, onClose, links, footer }: Props) {
             type="button"
             aria-label="Close menu"
             onClick={onClose}
-            className="-m-2 p-2 text-ink hover:bg-paper-3"
+            className="-m-2 inline-flex size-11 items-center justify-center text-ink hover:bg-paper-3"
           >
-            <Icon.x size={18} />
+            <Icon.x size={18} aria-hidden />
           </button>
         </div>
         <nav className="flex-1 overflow-y-auto">

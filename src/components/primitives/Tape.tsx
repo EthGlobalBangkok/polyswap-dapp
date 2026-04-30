@@ -56,7 +56,11 @@ export function Tape({
   const xC = width - padX;
 
   const stroke = side === "YES" ? "var(--color-yes)" : "var(--color-no)";
-  const fillCol = side === "YES" ? "rgba(46,107,63,.12)" : "rgba(176,58,46,.12)";
+  // Semi-transparent fill, tokenised so the colour follows the design system.
+  const fillCol =
+    side === "YES"
+      ? "color-mix(in srgb, var(--color-yes) 12%, transparent)"
+      : "color-mix(in srgb, var(--color-no) 12%, transparent)";
 
   return (
     <svg

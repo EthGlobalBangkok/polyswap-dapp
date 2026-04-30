@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Button, Dial, Status, Tape, TokenGlyph } from "@/components/primitives";
+import { Button, DetailSkeleton, Dial, Status, Tape, TokenGlyph } from "@/components/primitives";
 import { Icon } from "@/components/icons";
 import { fmtDate, fmtNum, fmtPointsAway } from "@/lib/format";
 import { useOrder } from "@/hooks/useOrders";
@@ -23,7 +23,7 @@ export function SwapDetailPage({ orderId }: Props) {
   }
 
   if (isLoading) {
-    return <p className="py-16 text-center text-sm text-ink-3">Loading swap…</p>;
+    return <DetailSkeleton />;
   }
 
   if (isError || !order) {

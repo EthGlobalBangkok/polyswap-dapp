@@ -9,6 +9,7 @@ export { Stamp } from "./Stamp";
 export { Marquee } from "./Marquee";
 export { Modal } from "./Modal";
 export { Shimmer } from "./Shimmer";
+export { DetailSkeleton } from "./DetailSkeleton";
 export { CountUp } from "./CountUp";
 export { MotionList, MotionItem } from "./MotionList";
 export { Reveal, RevealStack, RevealItem } from "./Reveal";

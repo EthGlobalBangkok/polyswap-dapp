@@ -54,10 +54,10 @@ export function LandingHeader() {
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="-m-2 p-2"
+            className="-m-2 inline-flex size-11 items-center justify-center"
             aria-label="Open menu"
           >
-            <Icon.menu size={20} />
+            <Icon.menu size={20} aria-hidden />
           </button>
         </div>
       </div>

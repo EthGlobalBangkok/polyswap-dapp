@@ -38,7 +38,8 @@ export function WalletButton({ onConnect, className }: Props) {
         className={cn(
           "inline-flex items-center gap-2 border border-ink bg-paper px-3 py-1.5 text-xs",
           "num font-medium text-ink",
-          "hover:bg-paper-3"
+          "hover:bg-paper-3",
+          "pointer-coarse:min-h-11"
         )}
       >
         <span aria-hidden className="inline-block size-1.5 bg-yes pulse-dot" />

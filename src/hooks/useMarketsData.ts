@@ -138,6 +138,23 @@ export function useMarket(identifier: string) {
   });
 }
 
+/**
+ * Same fetch as `useMarket` but returns the raw `ApiMarket` without
+ * transforming to `MarketViewModel`. Use this when you need fields that
+ * `toViewModel` discards (e.g. `clobTokenIds`, `conditionId`).
+ */
+export function useRawMarket(identifier: string) {
+  return useQuery({
+    queryKey: ["market", identifier],
+    queryFn: async () => {
+      const bySlug = await apiService.getMarketBySlug(identifier);
+      if (bySlug) return bySlug;
+      return apiService.getMarketById(identifier);
+    },
+    staleTime: STALE,
+  });
+}
+
 export function thresholdSide(probability: number): Side {
   return probability >= 0.5 ? "YES" : "NO";
 }

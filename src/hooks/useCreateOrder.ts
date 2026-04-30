@@ -117,7 +117,7 @@ export interface UseCreateOrderReturn {
 
 /**
  * Pure, presentational form hook. Submission is wired separately through
- * the SignModal so the form state is decoupled from network side-effects.
+ * the SafeSignModal so the form state is decoupled from network side-effects.
  */
 export function useCreateOrder(): UseCreateOrderReturn {
   const [state, setState] = useState<CreateFormState>(INITIAL);

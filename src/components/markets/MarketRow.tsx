@@ -23,7 +23,7 @@ export function MarketRow({ market }: Props) {
   return (
     <TransitionLink
       href={`/markets/${market.id}`}
-      className="group block border-b border-rule-soft bg-paper hover:bg-paper-2"
+      className="group relative block border-b border-rule-soft bg-paper hover:bg-paper-2 before:absolute before:left-0 before:top-0 before:h-full before:w-0 before:bg-accent before:transition-[width] before:duration-200 before:ease-out before:content-[''] hover:before:w-1"
       data-testid="market-row"
     >
       {/* Desktop layout */}

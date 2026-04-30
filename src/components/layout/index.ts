@@ -6,3 +6,4 @@ export { WalletButton } from "./WalletButton";
 export { MobileNav } from "./MobileNav";
 export type { MobileNavLink } from "./MobileNav";
 export { TransitionLink } from "./TransitionLink";
+export { ConsoleSignature } from "./ConsoleSignature";

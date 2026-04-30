@@ -28,13 +28,6 @@ export function Masthead({ onConnectWallet }: Props) {
   const pathname = usePathname() ?? "";
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const todayLabel = new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date());
-
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
 
   const mobileLinks: MobileNavLink[] = NAV_LINKS.map((l) => ({
@@ -44,18 +37,6 @@ export function Masthead({ onConnectWallet }: Props) {
 
   return (
     <header className="border-b border-ink bg-paper">
-      {/* Date strip — desktop only, classic newspaper plate */}
-      <div className="hidden border-b border-rule-soft lg:block">
-        <div className="mx-auto flex max-w-[1280px] items-center justify-between px-12 py-1.5 text-[11px]">
-          <span className="eyebrow">Polyswap · Vol. I · No. 1</span>
-          <span className="text-ink-3 num">{todayLabel}</span>
-          <span className="eyebrow flex items-center gap-1.5">
-            <span aria-hidden className="size-1.5 rounded-full bg-accent-2" />
-            Polygon network
-          </span>
-        </div>
-      </div>
-
       {/* Main bar */}
       <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-6 px-6 py-4 sm:px-8 lg:px-12 lg:py-5">
         <Link

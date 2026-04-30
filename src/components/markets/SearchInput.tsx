@@ -48,7 +48,7 @@ export function SearchInput({
         value={local}
         onChange={(e) => setLocal(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-transparent px-3 py-3 text-base outline-none placeholder:text-ink-3"
+        className="w-full bg-transparent px-3 py-3 text-base outline-none placeholder:text-ink-3 [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
         aria-label="Search markets"
       />
       {local.length > 0 && (

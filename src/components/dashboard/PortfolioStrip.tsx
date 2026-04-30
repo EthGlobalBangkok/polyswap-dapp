@@ -1,6 +1,6 @@
 "use client";
 
-import { CountUp } from "@/components/primitives";
+import { CountUp, Stamp } from "@/components/primitives";
 import { fmtUSD } from "@/lib/format";
 import type { OrderViewModel } from "@/hooks/useOrders";
 
@@ -8,19 +8,22 @@ interface Props {
   orders: OrderViewModel[];
 }
 
-interface NumericMetric {
-  kind: "number";
+interface BaseMetric {
   label: string;
-  raw: number;
-  format: (n: number) => string;
   caption: string;
+  /** Optional badge overlay (e.g. accent stamp) shown only when truly earned. */
+  badge?: React.ReactNode;
 }
 
-interface TextMetric {
+interface NumericMetric extends BaseMetric {
+  kind: "number";
+  raw: number;
+  format: (n: number) => string;
+}
+
+interface TextMetric extends BaseMetric {
   kind: "text";
-  label: string;
   value: string;
-  caption: string;
   breathe?: boolean;
 }
 
@@ -73,6 +76,8 @@ function compute(orders: OrderViewModel[]): Metric[] {
       raw: hitRate === null ? 0 : hitRate * 100,
       format: (n) => (hitRate === null ? "—" : `${Math.round(n)}%`),
       caption: hitRate === null ? "No closed swaps yet" : `${filled.length}/${finishedTotal} fired`,
+      // Only ever shown when every closed swap has fired — keeps it special.
+      badge: hitRate === 1 && finishedTotal >= 2 ? <Stamp>Perfect record</Stamp> : null,
     },
   ];
 }
@@ -88,12 +93,13 @@ export function PortfolioStrip({ orders }: Props) {
         <div
           key={m.label}
           className={
-            "p-4 sm:p-5 " +
+            "relative p-4 sm:p-5 " +
             (i < metrics.length - 1
               ? "border-b border-ink sm:[&:nth-child(odd)]:border-r sm:[&:nth-child(2)]:border-b-0 lg:!border-b-0 lg:[&:not(:last-child)]:border-r"
               : "")
           }
         >
+          {m.badge && <span className="absolute right-3 top-3 z-10">{m.badge}</span>}
           <p className="eyebrow">{m.label}</p>
           {m.kind === "number" ? (
             <p className="num mt-2 truncate text-2xl font-semibold text-ink lg:text-3xl">

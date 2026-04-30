@@ -90,9 +90,12 @@ export function MarketsList() {
         </p>
       )}
       {!isLoading && !isError && items.length === 0 && (
-        <p className="px-4 py-12 text-center text-sm text-ink-3 sm:px-6">
-          No markets match those filters.
-        </p>
+        <div className="border-b border-rule-soft px-6 py-16 text-center sm:px-8 lg:py-20">
+          <p className="font-serif text-xl text-ink sm:text-2xl">Nothing fits that brief.</p>
+          <p className="mt-2 text-sm text-ink-3">
+            Try a wider net — clear the search, or pick a different category above.
+          </p>
+        </div>
       )}
       {!isLoading && !isError && items.length > 0 && (
         <MotionList key={listKey} className="-mx-4 sm:mx-0">

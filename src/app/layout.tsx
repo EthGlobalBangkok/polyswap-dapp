@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fraunces, Inter_Tight, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/cn";
+import { ConsoleSignature } from "@/components/layout";
 
 const sans = Inter_Tight({
   subsets: ["latin"],
@@ -38,7 +39,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={cn(sans.variable, serif.variable, mono.variable)}>
-      <body className="bg-paper text-ink antialiased">{children}</body>
+      <body className="bg-paper text-ink antialiased">
+        <ConsoleSignature />
+        {children}
+      </body>
     </html>
   );
 }

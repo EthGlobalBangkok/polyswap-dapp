@@ -8,7 +8,7 @@ import { useSafeTransaction } from "./useSafeTransaction";
 import { encodeMultiSend } from "@/services/safe/multiSendEncoder";
 import type { SafeCall } from "@/services/safe/types";
 
-const STORAGE_KEY = "polyswap.pendingSafeTx";
+const STORAGE_KEY_PREFIX = "polyswap.pendingSafeTx";
 
 export type SafeSignPhase =
   | { phase: "idle" }
@@ -29,6 +29,10 @@ export function useSafeSignFlow() {
   const [state, dispatch] = useReducer((_s: SafeSignPhase, n: SafeSignPhase) => n, {
     phase: "idle",
   } as SafeSignPhase);
+
+  const storageKey: string | null = safeAddress
+    ? `${STORAGE_KEY_PREFIX}.${safeAddress.toLowerCase()}`
+    : null;
 
   // ----- Send paths -----
   const { sendCallsAsync } = useSendCalls();
@@ -87,26 +91,26 @@ export function useSafeSignFlow() {
 
   const reset = useCallback(() => {
     dispatch({ phase: "idle" });
-    if (typeof window !== "undefined") localStorage.removeItem(STORAGE_KEY);
-  }, []);
+    if (typeof window !== "undefined" && storageKey) localStorage.removeItem(storageKey);
+  }, [storageKey]);
 
   // ----- Recover from localStorage on mount -----
   useEffect(() => {
-    if (!isReady || typeof window === "undefined") return;
-    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!isReady || typeof window === "undefined" || !storageKey) return;
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return;
     try {
       const parsed = JSON.parse(raw) as Persisted;
       // Stale beyond 1h — drop.
       if (Date.now() - parsed.ts > 60 * 60 * 1000) {
-        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(storageKey);
         return;
       }
       dispatch({ phase: "proposed", safeTxHash: parsed.safeTxHash });
     } catch {
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(storageKey);
     }
-  }, [isReady]);
+  }, [isReady, storageKey]);
 
   // ----- Track the proposed tx -----
   const safeTxHash = "safeTxHash" in state ? state.safeTxHash : undefined;
@@ -144,22 +148,27 @@ export function useSafeSignFlow() {
     }
   }, [txStatus, safeTxHash]);
 
+  // Derive the hash we want persisted. Using a derived value (not state itself)
+  // prevents the localStorage write from firing on every poll-induced re-render —
+  // otherwise the 1h TTL would silently slide forward every 4 seconds.
+  const persistableHash: Hash | null =
+    "safeTxHash" in state &&
+    (state.phase === "proposed" ||
+      state.phase === "awaitingSignatures" ||
+      state.phase === "awaitingExecution")
+      ? state.safeTxHash
+      : null;
+
   // ----- Persist while in-flight -----
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const inFlight =
-      state.phase === "proposed" ||
-      state.phase === "awaitingSignatures" ||
-      state.phase === "awaitingExecution";
-    const terminal =
-      state.phase === "success" || state.phase === "reverted" || state.phase === "replaced";
-    if (inFlight && "safeTxHash" in state) {
-      const payload: Persisted = { safeTxHash: state.safeTxHash, ts: Date.now() };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-    } else if (terminal) {
-      localStorage.removeItem(STORAGE_KEY);
+    if (typeof window === "undefined" || !storageKey) return;
+    if (persistableHash) {
+      const payload: Persisted = { safeTxHash: persistableHash, ts: Date.now() };
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+    } else {
+      localStorage.removeItem(storageKey);
     }
-  }, [state]);
+  }, [persistableHash, storageKey]);
 
   return { state, send, reset };
 }

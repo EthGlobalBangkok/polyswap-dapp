@@ -321,7 +321,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             message:
               "On-chain receipt not found. The transaction may not have been mined on this RPC node yet — retry in a moment.",
           },
-          { status: 502 } // upstream/RPC issue, not client error
+          { status: 503 } // transient RPC lag — retry is appropriate
         );
       }
 

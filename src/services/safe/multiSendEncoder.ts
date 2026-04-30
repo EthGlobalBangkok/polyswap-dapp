@@ -26,8 +26,14 @@ const MULTI_SEND_ABI = [
  * Then ABI-encodes a single `multiSend(bytes)` call to MultiSendCallOnly.
  *
  * Operation is forced to 0 (CALL); MultiSendCallOnly rejects DELEGATECALL.
+ *
+ * The outer `value` returned is the sum of all sub-call values, since
+ * MultiSendCallOnly forwards the outer value to each sub-call per the
+ * packed `value` field. Throws if `calls` is empty.
  */
 export function encodeMultiSend(calls: SafeCall[]): { to: Address; data: Hex; value: bigint } {
+  if (calls.length === 0) throw new Error("encodeMultiSend: calls must not be empty");
+
   const packed = concatHex(
     calls.map((c) => {
       const data = (c.data ?? "0x") as Hex;
@@ -42,6 +48,7 @@ export function encodeMultiSend(calls: SafeCall[]): { to: Address; data: Hex; va
     })
   );
 
+  const totalValue = calls.reduce((acc, c) => acc + (c.value ?? 0n), 0n);
   return {
     to: MULTI_SEND_CALL_ONLY,
     data: encodeFunctionData({
@@ -49,6 +56,6 @@ export function encodeMultiSend(calls: SafeCall[]): { to: Address; data: Hex; va
       functionName: "multiSend",
       args: [packed],
     }),
-    value: 0n,
+    value: totalValue,
   };
 }

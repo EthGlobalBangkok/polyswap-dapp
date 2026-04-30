@@ -312,14 +312,16 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       eventDetails = await TransactionEventService.getTransactionEventDetails(transactionHash);
 
       if (!eventDetails) {
+        // The frontend only calls PUT after observing on-chain execution.
+        // If we can't read the receipt here, it's a real RPC error, not "tx not mined yet".
         return NextResponse.json(
           {
             success: false,
-            error: "Transaction event not found",
+            error: "receipt_not_found",
             message:
-              "Could not find ConditionalOrderCreated event in the transaction. Please ensure the transaction was successful and contains the expected event.",
+              "On-chain receipt not found. The transaction may not have been mined on this RPC node yet — retry in a moment.",
           },
-          { status: 400 }
+          { status: 502 } // upstream/RPC issue, not client error
         );
       }
 

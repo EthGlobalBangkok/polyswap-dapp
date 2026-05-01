@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import { useSendCalls, useSendTransaction } from "wagmi";
 import type { Hash } from "viem";
 import { useSafeAccount } from "./useSafeAccount";
@@ -22,13 +22,17 @@ export type SafeSignPhase =
   | { phase: "replaced"; safeTxHash: Hash }
   | { phase: "error"; message: string };
 
-type Persisted = { safeTxHash: Hash; ts: number };
+type Persisted = { safeTxHash: Hash; kind: "5792" | "safetx"; ts: number };
 
 export function useSafeSignFlow() {
   const { safeAddress, supports5792, isReady } = useSafeAccount();
   const [state, dispatch] = useReducer((_s: SafeSignPhase, n: SafeSignPhase) => n, {
     phase: "idle",
   } as SafeSignPhase);
+
+  // Tracks which send path was used so the persistence effect can write the
+  // correct kind discriminant. A ref avoids rippling changes into SafeSignPhase.
+  const sentViaRef = useRef<"5792" | "safetx" | null>(null);
 
   const storageKey: string | null = safeAddress
     ? `${STORAGE_KEY_PREFIX}.${safeAddress.toLowerCase()}`
@@ -56,6 +60,7 @@ export function useSafeSignFlow() {
             })),
           });
           safeTxHash = result.id as Hash;
+          sentViaRef.current = "5792";
         } else if (calls.length === 1 && calls[0]) {
           // No batching needed.
           const c = calls[0];
@@ -64,6 +69,7 @@ export function useSafeSignFlow() {
             data: c.data,
             value: c.value,
           });
+          sentViaRef.current = "safetx";
         } else {
           // Pre-EIP-5792 wallet: pack calls via MultiSendCallOnly so it's still
           // a single Safe transaction (single signature). Note: MultiSendCallOnly
@@ -75,14 +81,15 @@ export function useSafeSignFlow() {
             data: packed.data,
             value: packed.value,
           });
+          sentViaRef.current = "safetx";
         }
         dispatch({ phase: "proposed", safeTxHash });
       } catch (e) {
-        const err = e as Error & { code?: number };
-        if (err.code === 4001 || /reject/i.test(err.message)) {
+        const err = e as Error & { code?: unknown };
+        if (err.code === 4001 || (err as { code?: unknown }).code === "ACTION_REJECTED") {
           dispatch({ phase: "rejected", message: "You rejected the request in Safe" });
         } else {
-          dispatch({ phase: "error", message: err.message ?? "Unknown error" });
+          dispatch({ phase: "error", message: (err as Error).message ?? "Unknown error" });
         }
       }
     },
@@ -91,6 +98,7 @@ export function useSafeSignFlow() {
 
   const reset = useCallback(() => {
     dispatch({ phase: "idle" });
+    sentViaRef.current = null;
     if (typeof window !== "undefined" && storageKey) localStorage.removeItem(storageKey);
   }, [storageKey]);
 
@@ -101,16 +109,34 @@ export function useSafeSignFlow() {
     if (!raw) return;
     try {
       const parsed = JSON.parse(raw) as Persisted;
+      // Validate shape before trusting the stored value.
+      if (
+        typeof parsed.safeTxHash !== "string" ||
+        !/^0x[0-9a-fA-F]{64}$/.test(parsed.safeTxHash) ||
+        typeof parsed.ts !== "number" ||
+        (parsed.kind !== "5792" && parsed.kind !== "safetx")
+      ) {
+        localStorage.removeItem(storageKey);
+        return;
+      }
       // Stale beyond 1h — drop.
       if (Date.now() - parsed.ts > 60 * 60 * 1000) {
         localStorage.removeItem(storageKey);
         return;
       }
+      // Refuse to revive if the connector capability has changed since the tx
+      // was sent — the id format won't match what useSafeTransaction expects.
+      const expectedKind: Persisted["kind"] = supports5792 ? "5792" : "safetx";
+      if (parsed.kind !== expectedKind) {
+        localStorage.removeItem(storageKey);
+        return;
+      }
+      sentViaRef.current = parsed.kind;
       dispatch({ phase: "proposed", safeTxHash: parsed.safeTxHash });
     } catch {
       localStorage.removeItem(storageKey);
     }
-  }, [isReady, storageKey]);
+  }, [isReady, storageKey, supports5792]);
 
   // ----- Track the proposed tx -----
   const safeTxHash = "safeTxHash" in state ? state.safeTxHash : undefined;
@@ -162,8 +188,12 @@ export function useSafeSignFlow() {
   // ----- Persist while in-flight -----
   useEffect(() => {
     if (typeof window === "undefined" || !storageKey) return;
-    if (persistableHash) {
-      const payload: Persisted = { safeTxHash: persistableHash, ts: Date.now() };
+    if (persistableHash && sentViaRef.current) {
+      const payload: Persisted = {
+        safeTxHash: persistableHash,
+        kind: sentViaRef.current,
+        ts: Date.now(),
+      };
       localStorage.setItem(storageKey, JSON.stringify(payload));
     } else {
       localStorage.removeItem(storageKey);

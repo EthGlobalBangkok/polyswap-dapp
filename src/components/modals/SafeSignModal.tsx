@@ -41,9 +41,20 @@ export function SafeSignModal({ open, onClose, calls, onConfirmed, summary }: Sa
     }
   }, [state]);
 
-  // Reset state when modal closes so reopening starts fresh.
+  // On modal close: clean up state ONLY for terminal phases. Mid-flight closes
+  // leave the persisted safeTxHash so a tab reload (or future modal open) can
+  // resume tracking. The user's tx is still on its way.
   useEffect(() => {
-    if (!open && state.phase !== "idle") reset();
+    if (
+      !open &&
+      (state.phase === "success" ||
+        state.phase === "reverted" ||
+        state.phase === "replaced" ||
+        state.phase === "rejected" ||
+        state.phase === "error")
+    ) {
+      reset();
+    }
   }, [open, state.phase, reset]);
 
   const isPending =

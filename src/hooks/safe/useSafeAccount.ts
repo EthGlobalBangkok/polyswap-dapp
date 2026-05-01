@@ -32,13 +32,13 @@ export function useSafeAccount(): SafeAccountState {
 
   // EIP-5792 capability detection.
   // viem 2.37+ exposes the finalized shape: { atomic: { status: 'supported' | 'ready' | 'unsupported' } }.
+  // We only treat 'supported' as green-light; 'ready' may require wallet_grantPermissions first.
   // Safe Apps Provider 0.18.x still uses the pre-finalization draft: { atomicBatch: { supported: true } }.
   // Check both so we work against current Safe iframe and future wallets.
   const cap = capabilities?.[chainId ?? polygon.id];
   const atomicStatus = cap?.atomic?.status;
   const supports5792 =
     atomicStatus === "supported" ||
-    atomicStatus === "ready" ||
     Boolean((cap as { atomicBatch?: { supported?: boolean } } | undefined)?.atomicBatch?.supported);
 
   return {

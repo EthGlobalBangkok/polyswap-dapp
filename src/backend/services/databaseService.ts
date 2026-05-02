@@ -406,14 +406,41 @@ export class DatabaseService {
   }
 
   /**
-   * Returns the highest block_number seen across all orders (for listener catch-up).
+   * Returns the latest block the listener has finished processing.
+   * Prefers the persisted cursor in `listener_state`; falls back to
+   * MAX(block_number) of polyswap_orders for first-run / pre-cursor envs.
    */
   static async getLatestProcessedBlock(): Promise<number> {
-    const result = await query<{ latest_block: number | null }>(
+    const stateResult = await query<{ value: string | number | null }>(
+      `SELECT value FROM listener_state WHERE key = $1`,
+      ["last_processed_block"]
+    );
+    const cursor = stateResult.rows[0]?.value;
+    if (cursor !== undefined && cursor !== null) {
+      return Number(cursor);
+    }
+
+    const fallback = await query<{ latest_block: number | null }>(
       `SELECT MAX(block_number) as latest_block FROM polyswap_orders`,
       []
     );
-    return result.rows[0]?.latest_block ?? 0;
+    return fallback.rows[0]?.latest_block ?? 0;
+  }
+
+  /**
+   * Persist the listener cursor. Called after each catch-up batch so the
+   * next start-up can resume from the right block, even if no orders fell
+   * inside the window.
+   */
+  static async setLatestProcessedBlock(blockNumber: number): Promise<void> {
+    await query(
+      `INSERT INTO listener_state (key, value, updated_at)
+       VALUES ($1, $2, CURRENT_TIMESTAMP)
+       ON CONFLICT (key) DO UPDATE
+         SET value = EXCLUDED.value,
+             updated_at = CURRENT_TIMESTAMP`,
+      ["last_processed_block", blockNumber]
+    );
   }
 
   /**

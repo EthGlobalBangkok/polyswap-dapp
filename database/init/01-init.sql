@@ -122,6 +122,18 @@ CREATE INDEX IF NOT EXISTS idx_sold_positions_condition_id  ON sold_positions(co
 CREATE INDEX IF NOT EXISTS idx_sold_positions_sold_at       ON sold_positions(sold_at);
 CREATE INDEX IF NOT EXISTS idx_sold_positions_order_id      ON sold_positions(order_id);
 
+-- ============================================================
+-- Listener state: persisted cursor for the blockchain catch-up.
+-- Single-row key/value table; the listener writes the highest
+-- block window it has finished processing so the next start-up
+-- can resume without rescanning the entire history.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS listener_state (
+  key        VARCHAR(64) PRIMARY KEY,
+  value      BIGINT NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Grant permissions
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO polyswap_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO polyswap_user;

@@ -1,140 +1,128 @@
 \c polyswap;
 
+-- ============================================================
+-- Markets: lean search-index only.
+-- Live data (prices, outcomes, depth) is fetched client-side
+-- from Polymarket Gamma. Only static/searchable fields live here.
+-- ============================================================
 CREATE TABLE IF NOT EXISTS markets (
-    id VARCHAR(20) PRIMARY KEY,
-    question TEXT NOT NULL,
-    condition_id VARCHAR(66) NOT NULL UNIQUE, -- Ethereum addresses are 66 chars with 0x prefix
-    slug VARCHAR(255), -- Market slug for URL-friendly identifiers
-    event_slug VARCHAR(255), -- Parent event slug for Polymarket links (used for multi-choice markets)
-    category VARCHAR(50) NOT NULL DEFAULT 'Other', -- Market category (Politics, Crypto, Sports, etc.)
-    start_date TIMESTAMP WITH TIME ZONE NOT NULL,
-    end_date TIMESTAMP WITH TIME ZONE NOT NULL,
-    volume DECIMAL(20, 6) NOT NULL DEFAULT 0,
-    outcomes JSONB NOT NULL, -- Store as JSON array
-    outcome_prices JSONB NOT NULL, -- Store as JSON array
-    clob_token_ids JSONB, -- Store as JSON array of CLOB token IDs
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    -- Constraints for data validation
-    CONSTRAINT valid_dates CHECK (end_date > start_date),
-    CONSTRAINT valid_volume CHECK (volume >= 0)
+  id             VARCHAR(80) PRIMARY KEY,
+  slug           VARCHAR(255) NOT NULL UNIQUE,
+  question       TEXT NOT NULL,
+  category       VARCHAR(64),
+  volume         NUMERIC(30, 6) DEFAULT 0,
+  liquidity      NUMERIC(30, 6) DEFAULT 0,
+  end_date       TIMESTAMPTZ,
+  clob_token_ids TEXT[],
+  active         BOOLEAN DEFAULT TRUE,
+  updated_at     TIMESTAMPTZ DEFAULT NOW(),
+  -- Full-text search vector; auto-maintained by Postgres (requires pg >= 12)
+  search_vec     TSVECTOR GENERATED ALWAYS AS (to_tsvector('english', question)) STORED
 );
 
--- Create indexes for frequently queried columns
-CREATE INDEX IF NOT EXISTS idx_markets_condition_id ON markets(condition_id);
-CREATE INDEX IF NOT EXISTS idx_markets_slug ON markets(slug);
-CREATE INDEX IF NOT EXISTS idx_markets_event_slug ON markets(event_slug);
-CREATE INDEX IF NOT EXISTS idx_markets_category ON markets(category);
-CREATE INDEX IF NOT EXISTS idx_markets_end_date ON markets(end_date);
-CREATE INDEX IF NOT EXISTS idx_markets_start_date ON markets(start_date);
-CREATE INDEX IF NOT EXISTS idx_markets_volume ON markets(volume);
-CREATE INDEX IF NOT EXISTS idx_markets_created_at ON markets(created_at);
-CREATE INDEX IF NOT EXISTS idx_markets_updated_at ON markets(updated_at);
+CREATE INDEX IF NOT EXISTS markets_search_vec_idx       ON markets USING GIN (search_vec);
+CREATE INDEX IF NOT EXISTS markets_category_idx         ON markets (category);
+CREATE INDEX IF NOT EXISTS markets_volume_idx           ON markets (volume DESC);
+CREATE INDEX IF NOT EXISTS markets_liquidity_idx        ON markets (liquidity DESC);
+CREATE INDEX IF NOT EXISTS markets_active_end_date_idx  ON markets (active, end_date) WHERE active = TRUE;
 
--- Create a function to automatically update the updated_at timestamp
+-- ============================================================
+-- PolySwap Orders: source of truth for conditional orders.
+-- Listener writes; status enum: draft | live | filled | canceled
+-- ============================================================
+CREATE TABLE IF NOT EXISTS polyswap_orders (
+  id                    SERIAL PRIMARY KEY,
+  order_hash            VARCHAR(66) UNIQUE,
+  owner                 VARCHAR(42) NOT NULL,
+  handler               VARCHAR(42),
+  sell_token            VARCHAR(42) NOT NULL,
+  buy_token             VARCHAR(42) NOT NULL,
+  sell_amount           DECIMAL(78, 0) NOT NULL,
+  min_buy_amount        DECIMAL(78, 0) NOT NULL,
+  start_time            TIMESTAMP WITH TIME ZONE NOT NULL,
+  end_time              TIMESTAMP WITH TIME ZONE NOT NULL,
+  polymarket_order_hash VARCHAR(66),
+  app_data              VARCHAR(66),
+  block_number          BIGINT,
+  transaction_hash      VARCHAR(66),
+  log_index             INTEGER,
+  market_id             VARCHAR(80),
+  outcome_selected      VARCHAR(256),
+  bet_percentage        DECIMAL(5, 2),
+  status                VARCHAR(20) NOT NULL DEFAULT 'draft',
+  order_uid             VARCHAR(114),
+  filled_at             TIMESTAMP WITH TIME ZONE,
+  fill_transaction_hash VARCHAR(66),
+  fill_block_number     BIGINT,
+  fill_log_index        INTEGER,
+  actual_sell_amount    DECIMAL(78, 0),
+  actual_buy_amount     DECIMAL(78, 0),
+  fee_amount            DECIMAL(78, 0),
+  created_at            TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at            TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT valid_sell_amount    CHECK (sell_amount > 0),
+  CONSTRAINT valid_min_buy_amount CHECK (min_buy_amount > 0),
+  CONSTRAINT valid_times          CHECK (end_time > start_time),
+  CONSTRAINT valid_status         CHECK (status IN ('draft', 'live', 'filled', 'canceled')),
+  CONSTRAINT valid_bet_percentage CHECK (bet_percentage IS NULL OR (bet_percentage >= 0 AND bet_percentage <= 100)),
+  CONSTRAINT fk_market            FOREIGN KEY (market_id) REFERENCES markets(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_order_hash       ON polyswap_orders(order_hash);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_owner            ON polyswap_orders(owner);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_handler          ON polyswap_orders(handler);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_sell_token       ON polyswap_orders(sell_token);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_buy_token        ON polyswap_orders(buy_token);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_start_time       ON polyswap_orders(start_time);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_end_time         ON polyswap_orders(end_time);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_block_number     ON polyswap_orders(block_number);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_polymarket_hash  ON polyswap_orders(polymarket_order_hash);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_market_id        ON polyswap_orders(market_id);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_status           ON polyswap_orders(status);
+CREATE INDEX IF NOT EXISTS idx_polyswap_orders_order_uid        ON polyswap_orders(order_uid);
+
+-- Auto-update updated_at on row changes
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
+  NEW.updated_at = CURRENT_TIMESTAMP;
+  RETURN NEW;
 END;
 $$ language 'plpgsql';
 
--- Create trigger to automatically update updated_at
-CREATE TRIGGER update_markets_updated_at 
-    BEFORE UPDATE ON markets 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_polyswap_orders_updated_at
+  BEFORE UPDATE ON polyswap_orders
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
 
--- Create polyswap orders table for blockchain events
-CREATE TABLE IF NOT EXISTS polyswap_orders (
-    id SERIAL PRIMARY KEY, -- Auto-incrementing ID
-    order_hash VARCHAR(66) UNIQUE, -- keccak256 hash of the order params (can be NULL for draft orders)
-    owner VARCHAR(42) NOT NULL, -- Ethereum address with 0x prefix
-    handler VARCHAR(42), -- Ethereum address with 0x prefix
-    sell_token VARCHAR(42) NOT NULL, -- Ethereum address with 0x prefix
-    buy_token VARCHAR(42) NOT NULL, -- Ethereum address with 0x prefix  
-    sell_amount DECIMAL(78, 0) NOT NULL, -- Large integers for token amounts (up to 2^256)
-    min_buy_amount DECIMAL(78, 0) NOT NULL, -- Large integers for token amounts (up to 2^256)
-    start_time TIMESTAMP WITH TIME ZONE NOT NULL, -- t0 converted to timestamp
-    end_time TIMESTAMP WITH TIME ZONE NOT NULL, -- t converted to timestamp
-    polymarket_order_hash VARCHAR(66), -- bytes32 hex string
-    app_data VARCHAR(66), -- bytes32 hex string
-    block_number BIGINT, -- Block number where event was emitted
-    transaction_hash VARCHAR(66), -- Transaction hash
-    log_index INTEGER, -- Log index within the transaction
-    market_id VARCHAR(20), -- Link to markets.id
-    outcome_selected VARCHAR(256), -- Selected outcome index
-    bet_percentage DECIMAL(5, 2), -- Bet percentage (0-100)
-    status VARCHAR(20) NOT NULL DEFAULT 'draft', -- Order status: draft|live|filled|canceled
-    order_uid VARCHAR(114), -- CoW Protocol order UID (56 bytes = 0x + 112 hex chars)
-    filled_at TIMESTAMP WITH TIME ZONE, -- When the order was filled
-    fill_transaction_hash VARCHAR(66), -- Transaction hash of the Trade event
-    fill_block_number BIGINT, -- Block number where order was filled
-    fill_log_index INTEGER, -- Log index of the Trade event
-    actual_sell_amount DECIMAL(78, 0), -- Actual amount of tokens sold
-    actual_buy_amount DECIMAL(78, 0), -- Actual amount of tokens bought
-    fee_amount DECIMAL(78, 0), -- Trade fee amount
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    -- Constraints for data validation
-    CONSTRAINT valid_sell_amount CHECK (sell_amount > 0),
-    CONSTRAINT valid_min_buy_amount CHECK (min_buy_amount > 0),
-    CONSTRAINT valid_times CHECK (end_time > start_time),
-    CONSTRAINT valid_status CHECK (status IN ('draft', 'live', 'filled', 'canceled')),
-    CONSTRAINT valid_bet_percentage CHECK (bet_percentage IS NULL OR (bet_percentage >= 0 AND bet_percentage <= 100)),
-    CONSTRAINT fk_market FOREIGN KEY (market_id) REFERENCES markets(id) ON DELETE SET NULL
-);
-
--- Create indexes for frequently queried columns
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_order_hash ON polyswap_orders(order_hash);
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_owner ON polyswap_orders(owner);
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_handler ON polyswap_orders(handler);
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_sell_token ON polyswap_orders(sell_token);
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_buy_token ON polyswap_orders(buy_token);
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_start_time ON polyswap_orders(start_time);
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_end_time ON polyswap_orders(end_time);
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_block_number ON polyswap_orders(block_number);
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_polymarket_hash ON polyswap_orders(polymarket_order_hash);
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_market_id ON polyswap_orders(market_id);
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_status ON polyswap_orders(status);
-CREATE INDEX IF NOT EXISTS idx_polyswap_orders_order_uid ON polyswap_orders(order_uid);
-
--- Create trigger to automatically update updated_at for polyswap_orders
-CREATE TRIGGER update_polyswap_orders_updated_at 
-    BEFORE UPDATE ON polyswap_orders 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
-
--- Create sold_positions table for tracking auto-sold Polymarket positions
--- This prevents the system from holding risk after BUY orders are executed
+-- ============================================================
+-- Sold Positions: protocol's own ledger for auto-sold positions.
+-- Unchanged from original schema.
+-- ============================================================
 CREATE TABLE IF NOT EXISTS sold_positions (
-    id SERIAL PRIMARY KEY,
-    asset_id VARCHAR(100) NOT NULL, -- Polymarket token ID
-    condition_id VARCHAR(66) NOT NULL, -- Polymarket condition ID
-    size DECIMAL(20, 6) NOT NULL, -- Number of shares sold
-    sell_price DECIMAL(10, 6) NOT NULL, -- Price at which we sold
-    current_price DECIMAL(10, 6) NOT NULL, -- Market price at time of sale
-    order_id VARCHAR(100) NOT NULL, -- Polymarket order ID
-    market_title TEXT, -- Market title for reference
-    outcome VARCHAR(100), -- Outcome name (Yes/No)
-    sold_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    -- Constraints
-    CONSTRAINT valid_size CHECK (size > 0),
-    CONSTRAINT valid_sell_price CHECK (sell_price > 0),
-    CONSTRAINT valid_current_price CHECK (current_price >= 0)
+  id              SERIAL PRIMARY KEY,
+  asset_id        VARCHAR(100) NOT NULL,
+  condition_id    VARCHAR(66) NOT NULL,
+  size            DECIMAL(20, 6) NOT NULL,
+  sell_price      DECIMAL(10, 6) NOT NULL,
+  current_price   DECIMAL(10, 6) NOT NULL,
+  order_id        VARCHAR(100) NOT NULL,
+  market_title    TEXT,
+  outcome         VARCHAR(100),
+  sold_at         TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT valid_size          CHECK (size > 0),
+  CONSTRAINT valid_sell_price    CHECK (sell_price > 0),
+  CONSTRAINT valid_current_price CHECK (current_price >= 0)
 );
 
--- Create indexes for sold_positions
-CREATE INDEX IF NOT EXISTS idx_sold_positions_asset_id ON sold_positions(asset_id);
-CREATE INDEX IF NOT EXISTS idx_sold_positions_condition_id ON sold_positions(condition_id);
-CREATE INDEX IF NOT EXISTS idx_sold_positions_sold_at ON sold_positions(sold_at);
-CREATE INDEX IF NOT EXISTS idx_sold_positions_order_id ON sold_positions(order_id);
+CREATE INDEX IF NOT EXISTS idx_sold_positions_asset_id      ON sold_positions(asset_id);
+CREATE INDEX IF NOT EXISTS idx_sold_positions_condition_id  ON sold_positions(condition_id);
+CREATE INDEX IF NOT EXISTS idx_sold_positions_sold_at       ON sold_positions(sold_at);
+CREATE INDEX IF NOT EXISTS idx_sold_positions_order_id      ON sold_positions(order_id);
 
--- Grant permissions to the user
+-- Grant permissions
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO polyswap_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO polyswap_user;
 GRANT USAGE ON SCHEMA public TO polyswap_user;

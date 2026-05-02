@@ -213,11 +213,11 @@ No off-chain signature for live cancel — the tx receipt is the proof. Composab
 
 ## 6. Database schema after refactor
 
-| Table             | Purpose                    | Notes                                                                                                                          |
-| ----------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `markets`         | search index only          | lean fields (id, slug, question, category, volume, liquidity, end_date, clob_token_ids, active). `tsvector` index on question. |
-| `polyswap_orders` | source of truth for orders | listener writes; tracks polymarket_order_hash, on-chain order_hash, order_uid, status, fill details.                           |
-| `sold_positions`  | protocol's own ledger      | Polymarket position-sell records. Unchanged.                                                                                   |
+| Table             | Purpose                    | Notes                                                                                                                                                                                                                                                                                                              |
+| ----------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `markets`         | search index only          | lean fields (id, slug, question, category, volume, liquidity, end_date, clob_token_ids, active). `tsvector` index on question.                                                                                                                                                                                     |
+| `polyswap_orders` | source of truth for orders | listener writes; tracks polymarket_order_hash, on-chain order_hash, order_uid, status, fill details, plus failure-tracking columns (`last_error_name`, `last_error_reason`, `last_error_retry_at`, `last_checked_at`, `cow_order_uid`, `cow_order_status`). Status enum adds `errored`. See Section 7 for details. |
+| `sold_positions`  | protocol's own ledger      | Polymarket position-sell records. Unchanged.                                                                                                                                                                                                                                                                       |
 
 `databaseService.ts` shrinks ~1,255 → ~350 lines. All market methods collapse into `searchMarkets(filters)`, `upsertMarket(market)`, `removeEnded()`.
 
@@ -291,6 +291,10 @@ src/backend/listener/
   cron/
     draftJanitor.ts              # NEW — cancels Polymarket orders for drafts >10min old
                                  # ~80 lines, runs every 60s
+    orderHealthCheck.ts          # NEW — eth_calls getTradeableOrderWithSignature for each
+                                 # live order, decodes custom error reasons, stores in DB.
+                                 # Also polls api.cow.fi for discrete order status when UID
+                                 # is known. ~120 lines, runs every 30–60s
     marketSync.ts                # wraps simplified MarketUpdateService
                                  # ~30 lines
     positionSeller.ts            # wraps PolymarketPositionSellerService
@@ -358,6 +362,58 @@ Used by:
 - `handlers/conditionalOrderCreated.ts` (decode incoming events)
 - `app/api/polyswap/orders/route.ts` (compute expected order_hash for the new draft)
 
+### Order failure visibility — `eth_call` poll
+
+CoW Protocol's Watchtower has no public failure API — internal logs only ([cowprotocol/watch-tower](https://github.com/cowprotocol/watch-tower) only exposes `/api/version`, `/api/config`, `/metrics`). To know **why** a conditional order isn't filling (other than running our own watchtower), the listener uses a standard pattern: `eth_call` on `IConditionalOrder.getTradeableOrderWithSignature(owner, params, offchainInput, proof)` against the handler. When the order isn't fillable, the call reverts with one of these custom errors, all carrying a structured `string reason` argument the handler authors:
+
+| Error                                                | Meaning                                                    | Action                                   |
+| ---------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------- |
+| `OrderNotValid(string reason)`                       | Order is in a permanent invalid state                      | Mark `errored`, expose reason to user    |
+| `PollNever(string reason)`                           | Will never be fillable (market resolved unfavorably, etc.) | Mark `errored`, expose reason to user    |
+| `PollTryNextBlock(string reason)`                    | Try again next block                                       | Keep polling, expose latest reason       |
+| `PollTryAtBlock(uint256 blockNumber, string reason)` | Try again at block N                                       | Keep polling, expose latest reason + ETA |
+| `PollTryAtEpoch(uint256 timestamp, string reason)`   | Try again at time T                                        | Keep polling, expose latest reason + ETA |
+
+The reason string is authored by **your own PolySwap handler contract**, so you control the user-facing vocabulary ("market not yet resolved", "trigger threshold not crossed", "market resolved NO", etc.). Update the handler to emit clear, human-readable strings — no contract change here, just a content choice.
+
+### Cron: `cron/orderHealthCheck.ts` (NEW — ~120 lines)
+
+Runs every 30–60s. For each `live` order in DB:
+
+1. `eth_call` `getTradeableOrderWithSignature(owner, params, offchainInput, proof)` against the handler.
+2. If success → no change.
+3. If revert → decode the 4-byte selector against the known custom-error ABI, persist `{ last_error_name, last_error_reason, last_error_retry_at, last_checked_at }` on the order row.
+4. If `OrderNotValid` or `PollNever` → mark order status `errored` (terminal). Trigger Polymarket order cancel.
+
+Cheap: a single multicall covers all live orders (~few hundred per poll). Failures are stored idempotently — a transient revert that resolves on the next tick simply overwrites with success.
+
+### Discrete order tracking (secondary)
+
+Once a discrete CoW order UID is known (after Watchtower posts it — derivable from on-chain `Trade` events on GPv2Settlement, or by `keccak256` of the discrete `GPv2Order.Data`), the listener also polls `GET https://api.cow.fi/{chain}/api/v1/orders/{uid}` for terminal status: `presignaturePending | open | fulfilled | cancelled | expired`. Updates the DB row's status accordingly.
+
+This catches the "Watchtower posted a discrete order, but solvers couldn't fill it" failure mode (e.g., price moved, order expired) — the `eth_call` poll alone wouldn't detect this.
+
+### Schema additions for error tracking
+
+```sql
+ALTER TABLE polyswap_orders ADD COLUMN last_error_name VARCHAR(64);
+ALTER TABLE polyswap_orders ADD COLUMN last_error_reason TEXT;
+ALTER TABLE polyswap_orders ADD COLUMN last_error_retry_at BIGINT;  -- epoch seconds, optional (PollTryAtBlock/PollTryAtEpoch)
+ALTER TABLE polyswap_orders ADD COLUMN last_checked_at TIMESTAMP;
+ALTER TABLE polyswap_orders ADD COLUMN cow_order_uid BYTEA;          -- discrete order UID once Watchtower posts
+ALTER TABLE polyswap_orders ADD COLUMN cow_order_status VARCHAR(32); -- mirror of api.cow.fi status
+```
+
+Status enum gets a new value: `errored` (terminal — `OrderNotValid` or `PollNever`).
+
+### Frontend exposure
+
+`GET /api/polyswap/orders/id/{id}` already returns the order row. With these new columns, the frontend can render reasons inline:
+
+- `last_error_reason` displayed under the order on the dashboard ("Reason: market not yet resolved").
+- For `PollTryAtBlock` / `PollTryAtEpoch`, render an ETA ("Retries in ~2 hours").
+- Status `errored` shows a clear terminal state with the reason; no spinner.
+
 ### What this kills
 
 - Custom `reconnect()` method (transport handles it)
@@ -401,13 +457,27 @@ Total ~300 lines, split by destination. Old `convertBackendMarket` shape convers
 
 ## 9. Signature flow
 
-`useSafeSignFlow` (and `useSafeAccount`, `useSafeTransaction`, `multiSendEncoder`) is correct and stays. Refactor's contribution:
+`useSafeSignFlow` (and `useSafeAccount`, `useSafeTransaction`, `multiSendEncoder`) is correct and stays. Batching is **already active on the current branch** — `CreatePage.tsx` calls the `/batch-transaction` endpoint and passes `[fallbackHandler?, domainVerifier?, approval, main]` into `useSafeSignFlow.send()`, which dispatches via EIP-5792 atomic (Safe iframe + capable WalletConnect-Safe) or MultiSend fallback (legacy WalletConnect-Safe). The previous "batching disabled because of WalletConnect issues" symptom predates the recent Safe sign flow refactor and is no longer a constraint.
+
+Refactor's contribution:
 
 - Removes the post-sign `PUT /transaction` round-trip from `useCreateOrder` — `useWaitForTransactionReceipt` + the local "just created" cache replace it.
 - `useSignAction` shrinks to draft-cancel only (one EIP-191 message: `"Cancel draft order {id} at {timestamp}"`).
 - Live cancel path no longer needs `useSignAction` — uses `useWriteContract` for `ComposableCoW.remove()` then a single notify call.
 
 The wallet UX itself is unchanged — same modal, same flow.
+
+### Wallet connector cleanup
+
+Today `WalletModal` shows MetaMask, Rabby, and other browser-injected wallets in addition to WalletConnect and Safe. The injected wallets aren't in `wagmi/config.ts` — they leak in because wagmi v2's `multiInjectedProviderDiscovery` defaults to `true`, which auto-discovers EIP-6963 wallets at the connector level. The app is **Safe-only**; non-Safe wallets shouldn't be selectable.
+
+Changes:
+
+- **`src/wagmi/config.ts`**: add `multiInjectedProviderDiscovery: false` to `createConfig`. Removes MetaMask, Rabby, Coinbase Wallet, etc. from `useConnect().connectors`.
+- **`src/components/modals/WalletModal.tsx`**: filter out the `safe` connector from display. The `safe()` connector auto-connects when the dApp is loaded inside a Safe iframe (existing behavior, driven by `unstable_getInfoTimeout: 1000` already in config). Showing it as a clickable option outside iframe context is misleading — it would just fail. The modal should show **WalletConnect only**.
+- **No change to Safe iframe behavior**: when in iframe, `safe()` auto-detects + auto-connects on mount and the modal never opens. No selection UI is needed in that path.
+
+After: a user opening the modal sees one button — "WalletConnect" — that supports both regular EOAs and WalletConnect-Safe accounts.
 
 ---
 

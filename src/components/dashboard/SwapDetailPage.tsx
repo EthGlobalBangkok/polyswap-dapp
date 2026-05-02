@@ -26,10 +26,12 @@ export function SwapDetailPage({ orderId }: Props) {
   const { deleteDraft, buildRemoveLiveCalls, notifyRemoval, pending, error } = useRemoveOrder();
   const [signOpen, setSignOpen] = useState(false);
   const [calls, setCalls] = useState<SafeCall[] | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
 
   const cancellable = order?.phase === "draft" || order?.phase === "live";
 
   const handleCancelClick = async () => {
+    setLocalError(null);
     if (!order) return;
     if (order.phase === "draft") {
       try {
@@ -43,7 +45,7 @@ export function SwapDetailPage({ orderId }: Props) {
     }
     if (order.phase === "live") {
       if (!order.orderHash) {
-        // Live order without hash should not happen — listener populates it.
+        setLocalError("Order hash not yet available — please retry in a moment.");
         return;
       }
       setCalls(buildRemoveLiveCalls(order.orderHash));
@@ -53,15 +55,19 @@ export function SwapDetailPage({ orderId }: Props) {
 
   const onConfirmed = async () => {
     if (!order) return;
-    setSignOpen(false);
+    const numericId = order.numericId;
     try {
-      await notifyRemoval(order.numericId);
+      await notifyRemoval(numericId);
     } catch {
-      // error surfaced via hook state; user can retry from dashboard
-    } finally {
-      queryClient.invalidateQueries({ queryKey: ["orders", address] });
-      router.push("/dashboard");
+      // hook's error state already surfaces in the UI
+      setSignOpen(false);
+      setCalls(null);
+      return;
     }
+    queryClient.invalidateQueries({ queryKey: ["orders", address] });
+    setSignOpen(false);
+    setCalls(null);
+    router.push("/dashboard");
   };
 
   const cancelSummary = useMemo(
@@ -136,7 +142,7 @@ export function SwapDetailPage({ orderId }: Props) {
                 <Icon.trash size={14} aria-hidden />
                 {pending ? "Cancelling…" : "Cancel swap"}
               </Button>
-              {error && <p className="text-xs text-no">{error}</p>}
+              {(localError ?? error) && <p className="text-xs text-no">{localError ?? error}</p>}
             </div>
           )}
         </div>
@@ -240,7 +246,10 @@ export function SwapDetailPage({ orderId }: Props) {
       {calls && (
         <SafeSignModal
           open={signOpen}
-          onClose={() => setSignOpen(false)}
+          onClose={() => {
+            setSignOpen(false);
+            setCalls(null);
+          }}
           calls={calls}
           onConfirmed={() => void onConfirmed()}
           summary={cancelSummary}

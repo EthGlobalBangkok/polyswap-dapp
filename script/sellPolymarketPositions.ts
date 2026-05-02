@@ -9,7 +9,9 @@
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
-import { ethers } from "ethers";
+import { createPublicClient, createWalletClient, http, type Address, type Hex } from "viem";
+import { polygon } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -22,6 +24,30 @@ import { getPolymarketOrderService } from "../src/backend/services/polymarketOrd
 
 // Polymarket Data API endpoint for positions
 const POSITIONS_API_URL = "https://data-api.polymarket.com/positions";
+
+// Conditional Tokens (ERC1155) ABI used for approval management
+const CONDITIONAL_TOKENS_ABI = [
+  {
+    type: "function",
+    name: "isApprovedForAll",
+    stateMutability: "view",
+    inputs: [
+      { name: "account", type: "address" },
+      { name: "operator", type: "address" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "setApprovalForAll",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "operator", type: "address" },
+      { name: "approved", type: "bool" },
+    ],
+    outputs: [],
+  },
+] as const;
 
 // Updated interface to match the actual API response
 interface Position {
@@ -91,9 +117,9 @@ async function sellAllPositions() {
     // Derive owner address from private key
     // Ensure private key has 0x prefix
     const pk = process.env.PK;
-    const privateKey = pk.startsWith("0x") ? pk : `0x${pk}`;
-    const wallet = new ethers.Wallet(privateKey);
-    const ownerAddress = wallet.address;
+    const privateKey: Hex = (pk.startsWith("0x") ? pk : `0x${pk}`) as Hex;
+    const account = privateKeyToAccount(privateKey);
+    const ownerAddress: Address = account.address;
 
     console.log(`🔐 Derived owner address: ${ownerAddress}`);
 
@@ -119,9 +145,9 @@ async function sellAllPositions() {
     console.log("✅ Service initialized successfully");
 
     // --- Approval Logic Start ---
-    const CONDITIONAL_TOKEN_ADDRESS = process.env.CONDITIONAL_TOKEN;
-    const POLYMARKET_EXCHANGE_ADDRESS =
-      process.env.POLYMARKET_CONTRACT_ADDRESS || "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
+    const CONDITIONAL_TOKEN_ADDRESS = process.env.CONDITIONAL_TOKEN as Address | undefined;
+    const POLYMARKET_EXCHANGE_ADDRESS: Address = (process.env.POLYMARKET_CONTRACT_ADDRESS ||
+      "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E") as Address;
 
     if (!CONDITIONAL_TOKEN_ADDRESS) {
       console.warn(
@@ -132,32 +158,40 @@ async function sellAllPositions() {
         `🔍 Checking approval for Operator: ${POLYMARKET_EXCHANGE_ADDRESS} on CT: ${CONDITIONAL_TOKEN_ADDRESS}`
       );
 
-      const ctAbi = [
-        "function setApprovalForAll(address operator, bool approved) external",
-        "function isApprovedForAll(address owner, address operator) external view returns (bool)",
-      ];
-
-      // Use the wallet connected to the provider (created inside the service or create a new one)
-      // Since we have the private key here (pk), we can create a connected wallet
-      const provider = new ethers.JsonRpcProvider(process.env.RPC_URL || "https://polygon-rpc.com");
-      const signer = new ethers.Wallet(privateKey, provider);
-
-      const ctContract = new ethers.Contract(CONDITIONAL_TOKEN_ADDRESS, ctAbi, signer);
+      const rpcUrl = process.env.RPC_URL || "https://polygon-rpc.com";
+      const publicClient = createPublicClient({
+        chain: polygon,
+        transport: http(rpcUrl),
+      });
+      const walletClient = createWalletClient({
+        account,
+        chain: polygon,
+        transport: http(rpcUrl),
+      });
 
       try {
-        const isApproved = await ctContract.isApprovedForAll(
-          ownerAddress,
-          POLYMARKET_EXCHANGE_ADDRESS
-        );
+        const isApproved = await publicClient.readContract({
+          address: CONDITIONAL_TOKEN_ADDRESS,
+          abi: CONDITIONAL_TOKENS_ABI,
+          functionName: "isApprovedForAll",
+          args: [ownerAddress, POLYMARKET_EXCHANGE_ADDRESS],
+        });
         console.log(`   Current Approval Status: ${isApproved}`);
 
         if (!isApproved) {
           console.log("   📝 Sending setApprovalForAll(true) transaction...");
-          const tx = await ctContract.setApprovalForAll(POLYMARKET_EXCHANGE_ADDRESS, true);
-          console.log(`   🚀 Transaction sent: ${tx.hash}`);
+          const txHash = await walletClient.writeContract({
+            account,
+            chain: polygon,
+            address: CONDITIONAL_TOKEN_ADDRESS,
+            abi: CONDITIONAL_TOKENS_ABI,
+            functionName: "setApprovalForAll",
+            args: [POLYMARKET_EXCHANGE_ADDRESS, true],
+          });
+          console.log(`   🚀 Transaction sent: ${txHash}`);
 
           console.log("   ⏳ Waiting for confirmation...");
-          await tx.wait();
+          await publicClient.waitForTransactionReceipt({ hash: txHash });
           console.log("   ✅ Approval confirmed!");
         } else {
           console.log("   ✅ Already approved.");

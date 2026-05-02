@@ -48,22 +48,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function isPolyswapTxCall(value: unknown): value is PolyswapTxCall {
+  return (
+    isRecord(value) &&
+    typeof value.to === "string" &&
+    typeof value.data === "string" &&
+    typeof value.value === "string"
+  );
+}
+
 function isCreateOrderSuccess(
   json: unknown
 ): json is ApiSuccessEnvelope<CreatePolyswapOrderResponse> {
   if (!isRecord(json)) return false;
   if (json.success !== true) return false;
-  const data = json.data;
-  if (!isRecord(data)) return false;
+  if (!isRecord(json.data)) return false;
+  const d = json.data;
   return (
-    typeof data.orderId === "number" &&
-    typeof data.polymarketOrderHash === "string" &&
-    typeof data.orderHash === "string" &&
-    typeof data.sellToken === "string" &&
-    typeof data.sellAmount === "string" &&
-    typeof data.vaultRelayer === "string" &&
-    isRecord(data.tx) &&
-    Array.isArray(data.batchTx)
+    typeof d.orderId === "number" &&
+    typeof d.polymarketOrderHash === "string" &&
+    typeof d.orderHash === "string" &&
+    isPolyswapTxCall(d.tx) &&
+    Array.isArray(d.batchTx) &&
+    d.batchTx.every(isPolyswapTxCall) &&
+    typeof d.sellToken === "string" &&
+    typeof d.sellAmount === "string" &&
+    typeof d.vaultRelayer === "string"
   );
 }
 

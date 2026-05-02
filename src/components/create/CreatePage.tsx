@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
-import { erc20Abi, type Address, type Hash, type Hex } from "viem";
+import { erc20Abi, isAddress, type Address, type Hash, type Hex } from "viem";
 import { usePublicClient } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, DetailSkeleton } from "@/components/primitives";
@@ -96,10 +96,18 @@ export function CreatePage({ marketId }: Props) {
       const outcomeIndex = state.side === "YES" ? 0 : 1;
       const buyTokenRaw = rawMarket.clobTokenIds?.[outcomeIndex] ?? rawMarket.clobTokenIds?.[0];
       if (!buyTokenRaw) throw new Error("Market is missing CLOB token IDs.");
-      const buyToken = buyTokenRaw as Address;
+      if (!isAddress(buyTokenRaw)) {
+        throw new Error(`Market clob token id is not a valid address: ${buyTokenRaw}`);
+      }
+      const buyToken: Address = buyTokenRaw;
+
+      if (!isAddress(state.fromToken.address)) {
+        throw new Error(`Sell token address is not a valid address: ${state.fromToken.address}`);
+      }
+      const sellToken: Address = state.fromToken.address;
 
       const order = await apiService.createPolyswapOrder({
-        sellToken: state.fromToken.address as Address,
+        sellToken,
         buyToken,
         sellAmount: sellAmountWei,
         minBuyAmount: "1",
@@ -143,9 +151,9 @@ export function CreatePage({ marketId }: Props) {
     // The draft row already exists; the listener flips it to live once the
     // ConditionalOrderCreated event is observed. Invalidate the orders query
     // so the next refetch picks the new row up.
-    if (safeAddress) {
-      queryClient.invalidateQueries({ queryKey: ["orders", safeAddress] });
-    }
+    // safeAddress is guaranteed truthy here — handleReview guards it before
+    // opening the modal.
+    queryClient.invalidateQueries({ queryKey: ["orders", safeAddress] });
     setSignOpen(false);
     const orderId = orderIdRef.current;
     if (orderId !== null) {

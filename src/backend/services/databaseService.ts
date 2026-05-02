@@ -502,7 +502,7 @@ export class DatabaseService {
    */
   static async updateOrderStatusById(
     orderId: number,
-    status: "draft" | "live" | "filled" | "canceled",
+    status: "draft" | "live" | "filled" | "canceled" | "errored",
     fillDetails?: {
       filledAt?: Date;
       fillTransactionHash?: string;
@@ -565,6 +565,53 @@ export class DatabaseService {
       console.error(`❌ Error updating order status for ID ${orderId}:`, error);
       return false;
     }
+  }
+
+  /**
+   * Persist a CoW conditional-order poll error onto a row. Used by the
+   * orderHealthCheck cron when getTradeableOrderWithSignature reverts.
+   */
+  static async setOrderError(
+    id: number,
+    errorName: string,
+    reason: string,
+    retryAt: number | null
+  ): Promise<void> {
+    await query(
+      `UPDATE polyswap_orders
+       SET last_error_name = $1, last_error_reason = $2, last_error_retry_at = $3,
+           last_checked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4`,
+      [errorName, reason, retryAt, id]
+    );
+  }
+
+  /**
+   * Wipe error diagnostics from a row (used when the order becomes fillable
+   * again after a transient revert).
+   */
+  static async clearOrderError(id: number): Promise<void> {
+    await query(
+      `UPDATE polyswap_orders
+       SET last_error_name = NULL, last_error_reason = NULL, last_error_retry_at = NULL,
+           last_checked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [id]
+    );
+  }
+
+  /**
+   * Persist the discrete CoW orderbook status for an order (open, fulfilled,
+   * cancelled, expired, presignaturePending).
+   */
+  static async setCowOrderStatus(id: number, status: string): Promise<boolean> {
+    const result = await query(
+      `UPDATE polyswap_orders
+       SET cow_order_status = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 RETURNING id`,
+      [status, id]
+    );
+    return result.rows.length > 0;
   }
 
   /**

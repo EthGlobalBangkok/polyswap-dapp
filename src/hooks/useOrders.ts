@@ -7,9 +7,6 @@ import type { DatabasePolyswapOrder } from "@/backend/interfaces/PolyswapOrder";
 import type { SwapStatus } from "@/types/design";
 import { useTokens, type Token } from "@/hooks/useTokens";
 
-// Re-export Token as TokenMeta so existing consumers of this module are not broken.
-export type { Token as TokenMeta };
-
 export interface OrderViewModel {
   id: string;
   numericId: number;

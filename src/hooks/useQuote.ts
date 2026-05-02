@@ -26,6 +26,19 @@ const ETH_ADDRESS = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 /** 30-second stale time — quotes expire quickly. */
 const STALE_MS = 30_000;
 
+/**
+ * Returns true only when `s` is a valid decimal integer string that parses to
+ * a positive BigInt. Protects the `enabled` guard from throwing on inputs like
+ * ".", "1e18", or "abc" — which BigInt() would turn into a SyntaxError.
+ */
+function isPositiveBigIntString(s: string): boolean {
+  try {
+    return BigInt(s) > 0n;
+  } catch {
+    return false;
+  }
+}
+
 // Shape of the CoW quote API response body.
 interface CowQuoteApiResponse {
   quote: {
@@ -54,10 +67,6 @@ export interface QuoteResult {
   sellAmount: string;
   feeAmount: string;
   validTo: number;
-  /** Raw (bigint-derived) buy amount string — same units as wei. */
-  buyAmountFormatted: string;
-  /** Raw (bigint-derived) sell amount string — same units as wei. */
-  sellAmountFormatted: string;
   /** Exchange rate: buyAmount / sellAmount (both in wei, high precision). */
   exchangeRate: string;
 }
@@ -141,7 +150,9 @@ async function fetchCowQuote(params: Required<QuoteParams>): Promise<QuoteResult
   const buyAmountBigInt = BigInt(data.quote.buyAmount);
   const sellAmountBigInt = BigInt(data.quote.sellAmount);
 
-  // High-precision integer arithmetic avoids floating-point drift.
+  // BigInt arithmetic for the multiplication step keeps precision; final ratio
+  // is computed in JS Number — adequate for typical token amounts but not exact
+  // for extreme values (> ~2^53 after division).
   const PRECISION = 1_000_000_000_000n;
   const rate = (buyAmountBigInt * PRECISION) / sellAmountBigInt;
   const exchangeRate = (Number(rate) / Number(PRECISION)).toString();
@@ -151,8 +162,6 @@ async function fetchCowQuote(params: Required<QuoteParams>): Promise<QuoteResult
     sellAmount: data.quote.sellAmount,
     feeAmount: data.quote.feeAmount ?? "0",
     validTo: data.quote.validTo ?? 0,
-    buyAmountFormatted: buyAmountBigInt.toString(),
-    sellAmountFormatted: sellAmountBigInt.toString(),
     exchangeRate,
   };
 }
@@ -166,8 +175,7 @@ export function useQuote(params: QuoteParams | null) {
 
   const enabled =
     params !== null &&
-    params.sellAmount.length > 0 &&
-    BigInt(params.sellAmount) > 0n &&
+    isPositiveBigIntString(params.sellAmount) &&
     isAddress(params.userAddress) &&
     params.sellToken.length > 0 &&
     params.buyToken.length > 0 &&

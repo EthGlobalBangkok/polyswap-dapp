@@ -26,6 +26,8 @@ const POLYGON_CHAIN_ID = 137;
 
 /** 30-minute stale time — token lists change rarely. */
 const STALE_MS = 30 * 60_000;
+/** 1-hour GC time — must exceed STALE_MS so cached data survives the stale window. */
+const GC_MS = 60 * 60_000;
 
 async function fetchPolygonTokens(): Promise<Token[]> {
   const results = await Promise.all(
@@ -92,5 +94,6 @@ export function useTokens() {
     queryKey: ["cow-tokens"],
     queryFn: fetchPolygonTokens,
     staleTime: STALE_MS,
+    gcTime: GC_MS,
   });
 }

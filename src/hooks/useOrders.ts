@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
+import type { Hex } from "viem";
 import { apiService } from "@/services/api";
 import type { DatabasePolyswapOrder } from "@/backend/interfaces/PolyswapOrder";
 import type { SwapStatus } from "@/types/design";
@@ -23,6 +24,10 @@ export interface OrderViewModel {
   spark: number[];
   /** Threshold used for visual feedback. Real value comes from order params later. */
   threshold: number;
+  /** Underlying DB lifecycle status — used by cancel logic (off-chain delete vs. on-chain remove). */
+  phase: "draft" | "live" | "filled" | "canceled";
+  /** On-chain order hash, populated once the listener observes ConditionalOrderCreated. Null while draft. */
+  orderHash: Hex | null;
 }
 
 const STALE = 30_000;
@@ -90,6 +95,8 @@ export function toOrderView(
     endTime: new Date(o.end_time),
     spark: syntheticSpark(String(o.id)),
     threshold: 0.7,
+    phase: o.status,
+    orderHash: o.order_hash ? (o.order_hash as Hex) : null,
   };
 }
 

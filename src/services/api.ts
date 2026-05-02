@@ -84,6 +84,10 @@ function readErrorMessage(json: unknown): string | undefined {
   return message ?? error;
 }
 
+function isSuccessEnvelope(value: unknown): value is { success: true } {
+  return isRecord(value) && value.success === true;
+}
+
 class ApiService {
   private baseUrl = "/api"; // Use relative paths for Next.js API routes
 
@@ -164,6 +168,39 @@ class ApiService {
         error: "Failed to fetch orders",
         message: error instanceof Error ? error.message : "Unknown error",
       };
+    }
+  }
+
+  /**
+   * Off-chain draft cancellation: DELETEs the row.
+   * Auth: EIP-191 message signed via useSignAction("cancel_draft", String(orderId)).
+   */
+  async deleteDraftOrder(orderId: number, signature: string, timestamp: number): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/polyswap/orders/id/${orderId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signature, timestamp }),
+    });
+    const json: unknown = await res.json();
+    if (!res.ok || !isSuccessEnvelope(json)) {
+      throw new Error(readErrorMessage(json) ?? `HTTP ${res.status}`);
+    }
+  }
+
+  /**
+   * Server-side finalisation after the on-chain ComposableCoW.remove(orderHash)
+   * has been confirmed. Auth: EIP-191 message signed via
+   * useSignAction("notify_remove", String(orderId)).
+   */
+  async notifyRemoveOrder(orderId: number, signature: string, timestamp: number): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/polyswap/orders/id/${orderId}/notify-remove`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signature, timestamp }),
+    });
+    const json: unknown = await res.json();
+    if (!res.ok || !isSuccessEnvelope(json)) {
+      throw new Error(readErrorMessage(json) ?? `HTTP ${res.status}`);
     }
   }
 }

@@ -1,10 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { useAccount } from "wagmi";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button, DetailSkeleton, Dial, Status, Tape, TokenGlyph } from "@/components/primitives";
 import { Icon } from "@/components/icons";
 import { fmtDate, fmtNum, fmtPointsAway } from "@/lib/format";
 import { useOrder } from "@/hooks/useOrders";
+import { useRemoveOrder } from "@/hooks/useRemoveOrder";
+import { SafeSignModal } from "@/components/modals/SafeSignModal";
+import type { SafeCall } from "@/services/safe/types";
 import { Timeline } from "./Timeline";
 
 interface Props {
@@ -13,6 +20,54 @@ interface Props {
 
 export function SwapDetailPage({ orderId }: Props) {
   const { order, isLoading, isError, walletConnected } = useOrder(orderId);
+  const { address } = useAccount();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { deleteDraft, buildRemoveLiveCalls, notifyRemoval, pending, error } = useRemoveOrder();
+  const [signOpen, setSignOpen] = useState(false);
+  const [calls, setCalls] = useState<SafeCall[] | null>(null);
+
+  const cancellable = order?.phase === "draft" || order?.phase === "live";
+
+  const handleCancelClick = async () => {
+    if (!order) return;
+    if (order.phase === "draft") {
+      try {
+        await deleteDraft(order.numericId);
+        queryClient.invalidateQueries({ queryKey: ["orders", address] });
+        router.push("/dashboard");
+      } catch {
+        // error surfaced via hook state
+      }
+      return;
+    }
+    if (order.phase === "live") {
+      if (!order.orderHash) {
+        // Live order without hash should not happen — listener populates it.
+        return;
+      }
+      setCalls(buildRemoveLiveCalls(order.orderHash));
+      setSignOpen(true);
+    }
+  };
+
+  const onConfirmed = async () => {
+    if (!order) return;
+    setSignOpen(false);
+    try {
+      await notifyRemoval(order.numericId);
+    } catch {
+      // error surfaced via hook state; user can retry from dashboard
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["orders", address] });
+      router.push("/dashboard");
+    }
+  };
+
+  const cancelSummary = useMemo(
+    () => (order ? <>Cancel &ldquo;{order.nickname}&rdquo;</> : null),
+    [order]
+  );
 
   if (!walletConnected) {
     return (
@@ -70,10 +125,19 @@ export function SwapDetailPage({ orderId }: Props) {
               {fmtDate(order.endTime)}
             </p>
           </div>
-          {order.status === "waiting" && (
-            <Button variant="ghost" size="sm" disabled>
-              <Icon.trash size={14} aria-hidden /> Cancel swap
-            </Button>
+          {cancellable && (
+            <div className="flex flex-col items-end gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={pending}
+                onClick={() => void handleCancelClick()}
+              >
+                <Icon.trash size={14} aria-hidden />
+                {pending ? "Cancelling…" : "Cancel swap"}
+              </Button>
+              {error && <p className="text-xs text-no">{error}</p>}
+            </div>
           )}
         </div>
       </div>
@@ -172,6 +236,16 @@ export function SwapDetailPage({ orderId }: Props) {
           </div>
         </aside>
       </div>
+
+      {calls && (
+        <SafeSignModal
+          open={signOpen}
+          onClose={() => setSignOpen(false)}
+          calls={calls}
+          onConfirmed={() => void onConfirmed()}
+          summary={cancelSummary}
+        />
+      )}
     </div>
   );
 }

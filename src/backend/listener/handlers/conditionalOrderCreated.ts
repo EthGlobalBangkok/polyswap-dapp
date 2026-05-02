@@ -58,6 +58,7 @@ export async function handleConditionalOrderCreated(log: Log): Promise<void> {
       owner: decoded.owner,
       orderHash,
       handler: decoded.params.handler,
+      salt: decoded.params.salt,
       data,
       transactionHash: log.transactionHash,
       blockNumber: Number(log.blockNumber),

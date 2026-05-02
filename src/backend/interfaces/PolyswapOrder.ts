@@ -41,6 +41,7 @@ export interface PolyswapOrderRecord {
   transactionHash: string;
   logIndex: number;
   createdAt: Date;
+  salt?: string;
 }
 
 // Database interface for the polyswap_orders table

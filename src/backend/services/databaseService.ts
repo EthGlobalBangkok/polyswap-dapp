@@ -172,14 +172,15 @@ export class DatabaseService {
     outcomeSelected: string;
     betPercentageValue: number;
     polymarketOrderHash: string;
+    salt: string;
   }): Promise<number> {
     const sql = `
       INSERT INTO polyswap_orders (
         owner, sell_token, buy_token,
         sell_amount, min_buy_amount, start_time, end_time, market_id,
-        outcome_selected, bet_percentage, polymarket_order_hash, status
+        outcome_selected, bet_percentage, polymarket_order_hash, salt, status
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
       )
       RETURNING id
     `;
@@ -196,6 +197,7 @@ export class DatabaseService {
       orderData.outcomeSelected,
       orderData.betPercentageValue,
       orderData.polymarketOrderHash,
+      orderData.salt,
       "draft",
     ];
 
@@ -219,9 +221,9 @@ export class DatabaseService {
         order_hash, owner, handler, sell_token, buy_token,
         sell_amount, min_buy_amount, start_time, end_time, polymarket_order_hash,
         app_data, block_number, transaction_hash, log_index, market_id,
-        outcome_selected, bet_percentage, status
+        outcome_selected, bet_percentage, salt, status
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
       )
       ON CONFLICT (order_hash) DO UPDATE SET
         owner                 = EXCLUDED.owner,
@@ -240,6 +242,7 @@ export class DatabaseService {
         market_id             = EXCLUDED.market_id,
         outcome_selected      = EXCLUDED.outcome_selected,
         bet_percentage        = EXCLUDED.bet_percentage,
+        salt                  = EXCLUDED.salt,
         status                = EXCLUDED.status,
         updated_at            = CURRENT_TIMESTAMP
     `;
@@ -269,6 +272,7 @@ export class DatabaseService {
       null, // market_id — not available from blockchain events
       null, // outcome_selected — not available from blockchain events
       null, // bet_percentage — not available from blockchain events
+      order.salt ?? null,
       "live",
     ];
 
@@ -301,6 +305,7 @@ export class DatabaseService {
     owner: string;
     orderHash: string;
     handler: string;
+    salt: string;
     data: PolyswapOrderData;
     blockNumber: number;
     transactionHash: string;
@@ -326,8 +331,9 @@ export class DatabaseService {
            block_number = $4,
            log_index = $5,
            app_data = $6,
+           salt = $7,
            updated_at = CURRENT_TIMESTAMP
-         WHERE id = $7`,
+         WHERE id = $8`,
         [
           input.orderHash,
           input.handler.toLowerCase(),
@@ -335,6 +341,7 @@ export class DatabaseService {
           input.blockNumber,
           input.logIndex,
           input.data.appData,
+          input.salt,
           draftResult.rows[0].id,
         ]
       );
@@ -358,6 +365,7 @@ export class DatabaseService {
       transactionHash: input.transactionHash,
       logIndex: input.logIndex,
       createdAt: new Date(),
+      salt: input.salt,
     });
   }
 

@@ -457,6 +457,7 @@ export async function POST(request: NextRequest) {
         outcomeSelected: selectedOutcome,
         betPercentageValue: betPercentage,
         polymarketOrderHash,
+        salt: params.salt,
       });
     } catch (dbError) {
       console.error("Failed to insert order into database:", dbError);

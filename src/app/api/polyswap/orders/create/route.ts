@@ -243,16 +243,9 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("Market found:", market);
-    if (!market.outcomes.includes(body.selectedOutcome)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid outcome selected",
-          message: "The selected outcome is not valid for this market",
-        },
-        { status: 400 }
-      );
-    }
+    // NOTE: Outcome validation against market outcomes was removed in Phase 3 —
+    // the lean markets table no longer stores outcomes (live data comes from Gamma).
+    // Phase 4 will validate outcomes via a Gamma call during the consolidated POST /orders flow.
 
     // Parse bet percentage
     const betPercentageValue = parseFloat(body.betPercentage);

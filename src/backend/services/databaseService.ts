@@ -126,6 +126,19 @@ export class DatabaseService {
   }
 
   /**
+   * Fetch a single market by its primary-key id.
+   * Used by the existing order-creation routes until Phase 4 refactors them.
+   */
+  static async getMarketById(id: string): Promise<DatabaseMarket | null> {
+    const result = await query<DatabaseMarket>(
+      `SELECT id, slug, question, category, volume, liquidity, end_date, clob_token_ids, active, updated_at
+       FROM markets WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /**
    * Fetch a single market by slug. Used by the order-creation flow to resolve
    * clob_token_ids when the frontend sends a slug instead of a raw token ID.
    */
@@ -185,8 +198,8 @@ export class DatabaseService {
     ];
 
     try {
-      const result = await query(sql, values);
-      const orderId: number = result.rows[0].id;
+      const result = await query<{ id: number }>(sql, values);
+      const orderId: number = result.rows[0]!.id;
       return orderId;
     } catch (error) {
       console.error(`❌ Database error inserting frontend order:`, error);
@@ -280,13 +293,13 @@ export class DatabaseService {
     offset: number = 0
   ): Promise<DatabasePolyswapOrder[]> {
     if (ownerAddress && ownerAddress.trim() !== "") {
-      const result = await query(
+      const result = await query<DatabasePolyswapOrder>(
         `SELECT * FROM polyswap_orders WHERE owner = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
         [ownerAddress.toLowerCase(), limit, offset]
       );
       return result.rows;
     }
-    const result = await query(
+    const result = await query<DatabasePolyswapOrder>(
       `SELECT * FROM polyswap_orders ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
       [limit, offset]
     );
@@ -297,7 +310,10 @@ export class DatabaseService {
    * Get a polyswap order by its keccak256 order hash.
    */
   static async getPolyswapOrderByHash(orderHash: string): Promise<DatabasePolyswapOrder | null> {
-    const result = await query(`SELECT * FROM polyswap_orders WHERE order_hash = $1`, [orderHash]);
+    const result = await query<DatabasePolyswapOrder>(
+      `SELECT * FROM polyswap_orders WHERE order_hash = $1`,
+      [orderHash]
+    );
     return result.rows[0] ?? null;
   }
 
@@ -305,7 +321,10 @@ export class DatabaseService {
    * Get a polyswap order by its auto-increment ID.
    */
   static async getPolyswapOrderById(id: number): Promise<DatabasePolyswapOrder | null> {
-    const result = await query(`SELECT * FROM polyswap_orders WHERE id = $1`, [id]);
+    const result = await query<DatabasePolyswapOrder>(
+      `SELECT * FROM polyswap_orders WHERE id = $1`,
+      [id]
+    );
     return result.rows[0] ?? null;
   }
 
@@ -313,8 +332,11 @@ export class DatabaseService {
    * Returns the highest block_number seen across all orders (for listener catch-up).
    */
   static async getLatestProcessedBlock(): Promise<number> {
-    const result = await query(`SELECT MAX(block_number) as latest_block FROM polyswap_orders`, []);
-    return (result.rows[0].latest_block as number | null) ?? 0;
+    const result = await query<{ latest_block: number | null }>(
+      `SELECT MAX(block_number) as latest_block FROM polyswap_orders`,
+      []
+    );
+    return result.rows[0]?.latest_block ?? 0;
   }
 
   /**
@@ -324,7 +346,7 @@ export class DatabaseService {
     fromBlock: number,
     toBlock: number
   ): Promise<DatabasePolyswapOrder[]> {
-    const result = await query(
+    const result = await query<DatabasePolyswapOrder>(
       `SELECT * FROM polyswap_orders WHERE block_number >= $1 AND block_number <= $2 ORDER BY block_number ASC, log_index ASC`,
       [fromBlock, toBlock]
     );
@@ -337,7 +359,7 @@ export class DatabaseService {
   static async getPolyswapOrdersByPolymarketHash(
     polymarketHash: string
   ): Promise<DatabasePolyswapOrder[]> {
-    const result = await query(
+    const result = await query<DatabasePolyswapOrder>(
       `SELECT * FROM polyswap_orders WHERE polymarket_order_hash = $1 ORDER BY created_at DESC`,
       [polymarketHash]
     );
@@ -352,7 +374,7 @@ export class DatabaseService {
     status: "draft" | "live" | "filled" | "canceled"
   ): Promise<boolean> {
     try {
-      const result = await query(
+      const result = await query<DatabasePolyswapOrder>(
         `UPDATE polyswap_orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE order_hash = $2 RETURNING order_hash`,
         [status, orderHash]
       );
@@ -498,7 +520,7 @@ export class DatabaseService {
     limit: number = 100,
     offset: number = 0
   ): Promise<DatabasePolyswapOrder[]> {
-    const result = await query(
+    const result = await query<DatabasePolyswapOrder>(
       `SELECT * FROM polyswap_orders WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
       [status, limit, offset]
     );
@@ -512,7 +534,7 @@ export class DatabaseService {
     orderHash: string,
     ownerAddress: string
   ): Promise<DatabasePolyswapOrder | null> {
-    const result = await query(
+    const result = await query<DatabasePolyswapOrder>(
       `SELECT * FROM polyswap_orders WHERE order_hash = $1 AND owner = $2`,
       [orderHash, ownerAddress.toLowerCase()]
     );
@@ -585,7 +607,10 @@ export class DatabaseService {
    */
   static async getPolyswapOrderByUid(orderUid: string): Promise<DatabasePolyswapOrder | null> {
     try {
-      const result = await query(`SELECT * FROM polyswap_orders WHERE order_uid = $1`, [orderUid]);
+      const result = await query<DatabasePolyswapOrder>(
+        `SELECT * FROM polyswap_orders WHERE order_uid = $1`,
+        [orderUid]
+      );
       return result.rows[0] ?? null;
     } catch (error) {
       console.error(`❌ Error fetching order by UID ${orderUid}:`, error);
@@ -598,7 +623,7 @@ export class DatabaseService {
    */
   static async getLiveOrdersWithoutUid(): Promise<DatabasePolyswapOrder[]> {
     try {
-      const result = await query(
+      const result = await query<DatabasePolyswapOrder>(
         `SELECT * FROM polyswap_orders WHERE status = 'live' AND (order_uid IS NULL OR order_uid = '') ORDER BY created_at ASC`,
         []
       );
@@ -614,7 +639,7 @@ export class DatabaseService {
    */
   static async getLiveOrders(): Promise<DatabasePolyswapOrder[]> {
     try {
-      const result = await query(
+      const result = await query<DatabasePolyswapOrder>(
         `SELECT * FROM polyswap_orders WHERE status = 'live' ORDER BY created_at ASC`,
         []
       );
@@ -630,7 +655,10 @@ export class DatabaseService {
    */
   static async getAllPolyswapOrders(): Promise<DatabasePolyswapOrder[]> {
     try {
-      const result = await query(`SELECT * FROM polyswap_orders ORDER BY created_at ASC`, []);
+      const result = await query<DatabasePolyswapOrder>(
+        `SELECT * FROM polyswap_orders ORDER BY created_at ASC`,
+        []
+      );
       return result.rows;
     } catch (error) {
       console.error("❌ Error fetching all orders:", error);
@@ -651,7 +679,7 @@ export class DatabaseService {
       RETURNING id
     `;
     try {
-      const result = await query(sql, [
+      const result = await query<{ id: number }>(sql, [
         input.assetId,
         input.conditionId,
         input.size,
@@ -661,7 +689,7 @@ export class DatabaseService {
         input.marketTitle,
         input.outcome,
       ]);
-      const id: number = result.rows[0].id;
+      const id: number = result.rows[0]!.id;
       return id;
     } catch (error) {
       console.error("❌ Error recording sold position:", error);
@@ -671,7 +699,7 @@ export class DatabaseService {
 
   static async getRecentlySoldPositions(hoursAgo: number = 24): Promise<SoldPosition[]> {
     try {
-      const result = await query(
+      const result = await query<SoldPosition>(
         `SELECT * FROM sold_positions WHERE sold_at > NOW() - INTERVAL '${hoursAgo} hours' ORDER BY sold_at DESC`,
         []
       );
@@ -684,7 +712,7 @@ export class DatabaseService {
 
   static async getSoldPositionByAsset(assetId: string): Promise<SoldPosition | null> {
     try {
-      const result = await query(
+      const result = await query<SoldPosition>(
         `SELECT * FROM sold_positions WHERE asset_id = $1 ORDER BY sold_at DESC LIMIT 1`,
         [assetId]
       );
@@ -700,7 +728,7 @@ export class DatabaseService {
     offset: number = 0
   ): Promise<SoldPosition[]> {
     try {
-      const result = await query(
+      const result = await query<SoldPosition>(
         `SELECT * FROM sold_positions ORDER BY sold_at DESC LIMIT $1 OFFSET $2`,
         [limit, offset]
       );
@@ -717,7 +745,11 @@ export class DatabaseService {
     last24Hours: number;
   }> {
     try {
-      const result = await query(
+      const result = await query<{
+        total_sold: string;
+        total_value: string;
+        last_24_hours: string;
+      }>(
         `SELECT COUNT(*) as total_sold,
                 COALESCE(SUM(size * sell_price), 0) as total_value,
                 COUNT(CASE WHEN sold_at > NOW() - INTERVAL '24 hours' THEN 1 END) as last_24_hours
@@ -726,9 +758,9 @@ export class DatabaseService {
       );
       const row = result.rows[0];
       return {
-        totalSold: parseInt(row.total_sold as string),
-        totalValue: parseFloat(row.total_value as string),
-        last24Hours: parseInt(row.last_24_hours as string),
+        totalSold: parseInt(row?.total_sold ?? "0"),
+        totalValue: parseFloat(row?.total_value ?? "0"),
+        last24Hours: parseInt(row?.last_24_hours ?? "0"),
       };
     } catch (error) {
       console.error("❌ Error fetching sold positions stats:", error);
@@ -738,7 +770,7 @@ export class DatabaseService {
 
   static async cleanupOldSoldPositions(daysOld: number = 30): Promise<number> {
     try {
-      const result = await query(
+      const result = await query<SoldPosition>(
         `DELETE FROM sold_positions WHERE sold_at < NOW() - INTERVAL '${daysOld} days'`,
         []
       );
@@ -751,7 +783,9 @@ export class DatabaseService {
 
   static async deleteSoldPositionByOrderId(orderId: string): Promise<boolean> {
     try {
-      const result = await query(`DELETE FROM sold_positions WHERE order_id = $1`, [orderId]);
+      const result = await query<SoldPosition>(`DELETE FROM sold_positions WHERE order_id = $1`, [
+        orderId,
+      ]);
       return (result.rowCount ?? 0) > 0;
     } catch (error) {
       console.error("❌ Error deleting sold position by order ID:", error);
@@ -761,7 +795,9 @@ export class DatabaseService {
 
   static async deleteSoldPositionByAssetId(assetId: string): Promise<number> {
     try {
-      const result = await query(`DELETE FROM sold_positions WHERE asset_id = $1`, [assetId]);
+      const result = await query<SoldPosition>(`DELETE FROM sold_positions WHERE asset_id = $1`, [
+        assetId,
+      ]);
       return result.rowCount ?? 0;
     } catch (error) {
       console.error("❌ Error deleting sold position by asset ID:", error);
@@ -771,7 +807,7 @@ export class DatabaseService {
 
   static async cleanupFailedSoldPositions(): Promise<number> {
     try {
-      const result = await query(
+      const result = await query<SoldPosition>(
         `DELETE FROM sold_positions WHERE order_id = 'unknown' OR order_id IS NULL`,
         []
       );

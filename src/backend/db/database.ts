@@ -48,11 +48,21 @@ export async function getClient(): Promise<PoolClient> {
   return await pool.connect();
 }
 
-// Execute a query with automatic client management
-export async function query(text: string, params?: any[]): Promise<any> {
+// Execute a query with automatic client management.
+// T must extend pg's QueryResultRow ({ [column: string]: any }).
+// Default is Record<string, unknown> which satisfies QueryResultRow.
+// Callers use query<MyInterface>(...) to get typed rows.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function query<T extends Record<string, any> = Record<string, unknown>>(
+  text: string,
+  params?: unknown[]
+): Promise<import("pg").QueryResult<T>> {
   const client = await pool.connect();
   try {
-    const result = await client.query(text, params);
+    // params cast: pg accepts ValueExpression[] but our callers pass unknown[].
+    // This cast is safe — all actual values are valid pg parameter types.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await client.query<T>(text, params as any[]);
     return result;
   } finally {
     client.release();

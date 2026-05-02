@@ -7,25 +7,23 @@ export class MarketUpdateService {
   private static isUpdating = false;
 
   /**
-   * Start the market update routine with specified interval
-   * @param intervalMinutes Update interval in minutes (from env var)
+   * Start the market update routine with the given interval.
+   * Fires immediately on start, then on each subsequent interval.
    */
   static startUpdateRoutine(intervalMinutes: number = 60) {
-    if (this.updateInterval) {
-      return;
-    }
+    if (this.updateInterval) return;
 
     const intervalMs = intervalMinutes * 60 * 1000;
     console.log(`Market update routine started (${intervalMinutes} min interval)`);
 
-    this.updateMarkets();
+    void this.updateMarkets();
     this.updateInterval = setInterval(() => {
-      this.updateMarkets();
+      void this.updateMarkets();
     }, intervalMs);
   }
 
   /**
-   * Stop the market update routine
+   * Stop the market update routine.
    */
   static stopUpdateRoutine() {
     if (this.updateInterval) {
@@ -36,57 +34,24 @@ export class MarketUpdateService {
   }
 
   /**
-   * Manually trigger a market update
+   * Fetch all active Polymarket markets from Gamma and upsert them into the
+   * lean search-index table. Then remove any markets whose end_date has passed.
    */
   static async updateMarkets(): Promise<void> {
-    if (this.isUpdating) {
-      return;
-    }
+    if (this.isUpdating) return;
 
     this.isUpdating = true;
-    const startTime = Date.now();
-
     try {
-      const endDateMin = new Date().toISOString();
       const markets = await PolymarketAPIService.getOpenMarkets({
-        endDateMin,
+        endDateMin: new Date().toISOString(),
       });
 
-      if (markets.length === 0) {
-        return;
+      for (const market of markets) {
+        await DatabaseService.upsertMarket(market);
       }
 
-      const batchSize = 500;
-      let successCount = 0;
-      let errorCount = 0;
-
-      for (let i = 0; i < markets.length; i += batchSize) {
-        const batch = markets.slice(i, i + batchSize);
-
-        for (const market of batch) {
-          try {
-            await DatabaseService.insertMarket(market);
-            successCount++;
-          } catch (error) {
-            console.error(`Error processing market ${market.id}:`, error);
-            errorCount++;
-          }
-        }
-
-        if (i + batchSize < markets.length) {
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-      }
-
-      const shouldRemoveClosed = process.env.AUTO_REMOVE_CLOSED_MARKETS?.toLowerCase() === "true";
-      if (shouldRemoveClosed) {
-        await DatabaseService.removeClosedMarkets();
-      }
-
-      const duration = (Date.now() - startTime) / 1000;
-      console.log(
-        `Market update completed: ${successCount} processed, ${errorCount} errors (${duration.toFixed(1)}s)`
-      );
+      const removed = await DatabaseService.removeEndedMarkets();
+      console.log(`market sync: upserted ${markets.length}, removed ${removed} ended`);
     } catch (error) {
       Sentry.captureException(error);
       console.error("Market update failed:", error);
@@ -96,7 +61,7 @@ export class MarketUpdateService {
   }
 
   /**
-   * Get the current status of the update routine
+   * Returns the current run status of the update routine.
    */
   static getStatus() {
     return {

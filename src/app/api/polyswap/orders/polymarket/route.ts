@@ -144,26 +144,10 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Parse CLOB token IDs from market data
-    let clobTokenIds: string[] = [];
-    try {
-      clobTokenIds = Array.isArray(market.clob_token_ids)
-        ? market.clob_token_ids
-        : JSON.parse(market.clob_token_ids as unknown as string);
-    } catch (parseError) {
-      console.error("Failed to parse CLOB token IDs:", parseError);
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid market data",
-          message: "Failed to parse CLOB token IDs from market data",
-        },
-        { status: 500 }
-      );
-    }
+    // clob_token_ids is stored as TEXT[] in the lean schema — pg driver returns a JS string[].
+    const clobTokenIds: string[] = market.clob_token_ids ?? [];
 
-    // Validate we have CLOB token IDs
-    if (!clobTokenIds || clobTokenIds.length === 0) {
+    if (clobTokenIds.length === 0) {
       return NextResponse.json(
         {
           success: false,
@@ -174,57 +158,57 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Validate outcome selected (is the value of an outcome like yes/no so search in array the outcome and save the array index)
-    // Parse outcomes from market data
+    // Outcomes are no longer stored in the DB (lean schema, Phase 3).
+    // Fetch them live from Polymarket Gamma to map outcome name → clobTokenIds index.
     let outcomes: string[] = [];
     try {
-      outcomes = Array.isArray(market.outcomes)
-        ? market.outcomes
-        : JSON.parse(market.outcomes as unknown as string);
-    } catch (parseError) {
-      console.error("Failed to parse outcomes:", parseError);
+      const gammaUrl = `https://gamma-api.polymarket.com/markets?id=${encodeURIComponent(market.id)}&limit=1`;
+      const gammaRes = await fetch(gammaUrl);
+      if (gammaRes.ok) {
+        const gammaData: unknown = await gammaRes.json();
+        if (Array.isArray(gammaData) && gammaData.length > 0) {
+          // outcomePrices and outcomes are JSON-encoded strings in the Gamma response
+          const raw = gammaData[0] as Record<string, unknown>;
+          const rawOutcomes: unknown = raw["outcomes"];
+          if (typeof rawOutcomes === "string") {
+            const parsed: unknown = JSON.parse(rawOutcomes);
+            outcomes = Array.isArray(parsed) ? (parsed as string[]) : [];
+          }
+        }
+      }
+    } catch (gammaError) {
+      console.error("Failed to fetch outcomes from Gamma:", gammaError);
+    }
+
+    if (outcomes.length === 0) {
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid market data",
-          message: "Failed to parse outcomes from market data",
+          error: "Missing outcomes",
+          message: "Could not determine market outcomes",
         },
         { status: 500 }
       );
     }
 
-    // Validate we have outcomes
-    if (!outcomes || outcomes.length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Missing outcomes",
-          message: "Market does not have any outcomes",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Find the index of the selected outcome in the outcomes array
     const outcomeIndex = outcomes.indexOf(order.outcome_selected);
     if (outcomeIndex === -1) {
       return NextResponse.json(
         {
           success: false,
           error: "Invalid outcome selected",
-          message: `Outcome '${order.outcome_selected}' is not valid for this market. Valid outcomes are: ${outcomes.join(", ")}`,
+          message: `Outcome '${order.outcome_selected}' is not valid. Valid outcomes: ${outcomes.join(", ")}`,
         },
         { status: 400 }
       );
     }
 
-    // Validate that we have a CLOB token ID for the selected outcome
     if (outcomeIndex >= clobTokenIds.length) {
       return NextResponse.json(
         {
           success: false,
           error: "Missing CLOB token ID",
-          message: `No CLOB token ID found for outcome '${order.outcome_selected}'`,
+          message: `No CLOB token ID for outcome '${order.outcome_selected}'`,
         },
         { status: 500 }
       );

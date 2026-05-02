@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import dotenv from "dotenv";
 import { DatabaseService } from "./services/databaseService";
+import { testConnection } from "./db/database";
 import { MarketUpdateService } from "./services/marketUpdateService";
 import { OrderUidCalculationService } from "./services/orderUidCalculationService";
 import { PolymarketPositionSellerService } from "./services/polymarketPositionSellerService";
@@ -562,7 +563,7 @@ async function main() {
     console.log("Starting Market Update Service Only");
     console.log(`Update interval: ${MARKET_UPDATE_INTERVAL} minutes`);
 
-    await DatabaseService.getMarketStats();
+    await testConnection();
     console.log("Database connected successfully");
 
     process.on("SIGINT", () => {

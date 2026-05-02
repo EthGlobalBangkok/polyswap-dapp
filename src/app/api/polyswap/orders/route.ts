@@ -276,13 +276,27 @@ export async function POST(request: NextRequest) {
     }
     const marketId: string = body.marketId;
 
+    // --- Optional date field type guards ---
+    if (body.startDate !== undefined && typeof body.startDate !== "string") {
+      return NextResponse.json(
+        { success: false, error: "Invalid startDate", message: "startDate must be a string" },
+        { status: 400 }
+      );
+    }
+    if (body.deadline !== undefined && typeof body.deadline !== "string") {
+      return NextResponse.json(
+        { success: false, error: "Invalid deadline", message: "deadline must be a string" },
+        { status: 400 }
+      );
+    }
+
     // --- Date handling ---
     const now = new Date();
     let startDate: Date;
     if (!body.startDate || body.startDate === "now") {
       startDate = new Date();
     } else {
-      startDate = new Date(body.startDate as string);
+      startDate = new Date(body.startDate);
       // Reject start dates more than 60s in the past
       if (startDate < new Date(now.getTime() - 60_000)) {
         return NextResponse.json(
@@ -297,7 +311,7 @@ export async function POST(request: NextRequest) {
       deadline = new Date(startDate);
       deadline.setDate(deadline.getDate() + 14);
     } else {
-      deadline = new Date(body.deadline as string);
+      deadline = new Date(body.deadline);
     }
 
     if (deadline <= startDate) {
@@ -436,13 +450,13 @@ export async function POST(request: NextRequest) {
         buyToken,
         sellAmount,
         minBuyAmount,
-        selectedOutcome,
         startDate: startDate.toISOString(),
         deadline: deadline.toISOString(),
         marketId,
         owner,
         outcomeSelected: selectedOutcome,
         betPercentageValue: betPercentage,
+        polymarketOrderHash,
       });
     } catch (dbError) {
       console.error("Failed to insert order into database:", dbError);
@@ -455,9 +469,6 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-
-    // Attach the Polymarket hash to the row immediately
-    await DatabaseService.updateOrderPolymarketHashById(orderId, polymarketOrderHash);
 
     // --- PostHog analytics (same event as legacy /orders/create) ---
     const posthog = getPostHogClient();

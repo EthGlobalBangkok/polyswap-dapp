@@ -164,21 +164,21 @@ export class DatabaseService {
     buyToken: string;
     sellAmount: string;
     minBuyAmount: string;
-    selectedOutcome: string;
     startDate: string;
     deadline: string;
     marketId: string;
     owner: string;
     outcomeSelected: string;
     betPercentageValue: number;
+    polymarketOrderHash: string;
   }): Promise<number> {
     const sql = `
       INSERT INTO polyswap_orders (
         owner, sell_token, buy_token,
         sell_amount, min_buy_amount, start_time, end_time, market_id,
-        outcome_selected, bet_percentage, status
+        outcome_selected, bet_percentage, polymarket_order_hash, status
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
       )
       RETURNING id
     `;
@@ -194,6 +194,7 @@ export class DatabaseService {
       orderData.marketId,
       orderData.outcomeSelected,
       orderData.betPercentageValue,
+      orderData.polymarketOrderHash,
       "draft",
     ];
 

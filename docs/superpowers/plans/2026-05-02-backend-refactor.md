@@ -51,7 +51,7 @@
 
   ```
   # WebSocket RPC for the listener (Alchemy / dRPC / QuickNode all work on Polygon)
-  RPC_URL_WSS=wss://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY
+  WSS_RPC_URL=wss://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY
   ```
 
   Update local `.env` with a real WSS URL.
@@ -60,7 +60,7 @@
 
   ```bash
   git add .env.sample
-  git commit -m "chore(env): document RPC_URL_WSS for the new listener"
+  git commit -m "chore(env): document WSS_RPC_URL for the new listener"
   ```
 
 ---
@@ -2026,10 +2026,10 @@ The largest single piece. We rewrite `src/backend/listener.ts` (650 lines, ether
 
   export function getWebSocketClient(): PublicClient {
     if (_wsClient) return _wsClient;
-    if (!process.env.RPC_URL_WSS) throw new Error("RPC_URL_WSS missing");
+    if (!process.env.WSS_RPC_URL) throw new Error("WSS_RPC_URL missing");
     _wsClient = createPublicClient({
       chain: polygon,
-      transport: webSocket(process.env.RPC_URL_WSS),
+      transport: webSocket(process.env.WSS_RPC_URL),
     });
     return _wsClient;
   }

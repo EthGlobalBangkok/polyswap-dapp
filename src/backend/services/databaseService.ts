@@ -567,6 +567,18 @@ export class DatabaseService {
   }
 
   /**
+   * Drafts created before `cutoff` — used by the listener's draft-janitor cron
+   * to sweep orders the user never finished signing on-chain.
+   */
+  static async findDraftsOlderThan(cutoff: Date): Promise<DatabasePolyswapOrder[]> {
+    const result = await query<DatabasePolyswapOrder>(
+      `SELECT * FROM polyswap_orders WHERE status = 'draft' AND created_at < $1 ORDER BY created_at ASC`,
+      [cutoff]
+    );
+    return result.rows;
+  }
+
+  /**
    * Update the Polymarket order hash on a draft order (by on-chain order_hash).
    */
   static async updateOrderPolymarketHash(

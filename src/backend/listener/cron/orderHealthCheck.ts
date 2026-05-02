@@ -104,11 +104,50 @@ async function checkOne(order: DatabasePolyswapOrder): Promise<void> {
   }
 }
 
+/**
+ * Fetch the discrete CoW orderbook status for an order with a known
+ * order_uid and persist it. Maps terminal CoW states (`fulfilled`,
+ * `expired`, `cancelled`) onto our row-level `status` so the UI reflects
+ * fills/cancellations even if we miss the on-chain Trade event.
+ */
+async function pollCowOrderbook(order: DatabasePolyswapOrder): Promise<void> {
+  if (!order.order_uid) return;
+  const url = `https://api.cow.fi/polygon/api/v1/orders/${order.order_uid}`;
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch (err) {
+    console.warn(`orderHealthCheck: cow.fi fetch failed for order ${order.id}`, err);
+    return;
+  }
+  if (res.status === 404) {
+    // Not yet indexed by CoW — common right after creation; not an error.
+    return;
+  }
+  if (!res.ok) {
+    console.warn(`orderHealthCheck: cow.fi returned ${res.status} for order ${order.id}`);
+    return;
+  }
+  const json: unknown = await res.json();
+  if (typeof json !== "object" || json === null) return;
+  const status = (json as { status?: unknown }).status;
+  if (typeof status !== "string") return;
+
+  await DatabaseService.setCowOrderStatus(order.id, status);
+
+  if (status === "fulfilled") {
+    await DatabaseService.updateOrderStatusById(order.id, "filled");
+  } else if (status === "expired" || status === "cancelled") {
+    await DatabaseService.updateOrderStatusById(order.id, "canceled");
+  }
+}
+
 export async function runOrderHealthCheck(): Promise<void> {
   const live = await DatabaseService.getLiveOrders();
   for (const order of live) {
     try {
       await checkOne(order);
+      await pollCowOrderbook(order);
     } catch (err) {
       console.error(`orderHealthCheck: order ${order.id} crashed`, err);
     }

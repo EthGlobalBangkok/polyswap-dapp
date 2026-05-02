@@ -1,11 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { createPublicClient, http, getAddress, type Address, type Hex } from "viem";
-import { polygon } from "viem/chains";
-import { ethers } from "ethers";
+import { getAddress, type Address, type Hex } from "viem";
 import composableCowAbi from "@/abi/composableCoW.json";
 import { DatabaseService } from "@/backend/services/databaseService";
 import { verifySignature } from "@/backend/utils/signatureVerification";
 import { getPolymarketOrderService } from "@/backend/services/polymarketOrderService";
+import { getPublicClient } from "@/backend/listener/blockchainProvider";
 
 const COMPOSABLE_COW: Address = getAddress(
   process.env.COMPOSABLE_COW ?? "0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74"
@@ -54,15 +53,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     );
   }
 
-  const rpcUrl = process.env.RPC_URL;
-  if (!rpcUrl) {
-    return NextResponse.json(
-      { success: false, error: "Server RPC misconfigured" },
-      { status: 500 }
-    );
-  }
-
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
+  const publicClient = getPublicClient();
   const verification = await verifySignature({
     action: "notify_remove",
     orderIdentifier: String(orderId),
@@ -70,7 +61,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     chainId: 137,
     signature: body.signature,
     expectedAddress: order.owner,
-    provider,
+    publicClient,
   });
   if (!verification.valid) {
     return NextResponse.json(
@@ -81,11 +72,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   // ComposableCoW.remove() emits no event, and Safe-wrapped txs hide the inner call,
   // so we verify removal by reading singleOrders[owner][orderHash] (true after create, false after remove).
-  const publicClient = createPublicClient({
-    chain: polygon,
-    transport: http(rpcUrl),
-  });
-
   const isStillActive = await publicClient.readContract({
     address: COMPOSABLE_COW,
     abi: composableCowAbi,

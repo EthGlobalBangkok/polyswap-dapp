@@ -1,8 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { ethers } from "ethers";
 import { DatabaseService } from "../../../../../../backend/services/databaseService";
 import { verifySignature } from "@/backend/utils/signatureVerification";
 import { getPolymarketOrderService } from "@/backend/services/polymarketOrderService";
+import { getPublicClient } from "@/backend/listener/blockchainProvider";
 
 interface DeleteDraftBody {
   signature: string;
@@ -125,14 +125,6 @@ export async function DELETE(
     );
   }
 
-  const rpcUrl = process.env.RPC_URL;
-  if (!rpcUrl) {
-    return NextResponse.json(
-      { success: false, error: "Server RPC misconfigured" },
-      { status: 500 }
-    );
-  }
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
   const verification = await verifySignature({
     action: "cancel_draft",
     orderIdentifier: String(orderId),
@@ -140,7 +132,7 @@ export async function DELETE(
     chainId: 137,
     signature: body.signature,
     expectedAddress: order.owner,
-    provider,
+    publicClient: getPublicClient(),
   });
   if (!verification.valid) {
     return NextResponse.json(

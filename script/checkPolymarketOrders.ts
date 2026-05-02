@@ -3,7 +3,10 @@
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
-import { ethers } from "ethers";
+import { createPublicClient, http, parseAbiItem, type Address, type Hex } from "viem";
+import { polygon } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
+import type { OpenOrder } from "@polymarket/clob-client";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -13,14 +16,50 @@ dotenv.config({ path: resolve(__dirname, "..", ".env") });
 import { getPolymarketOrderService } from "../src/backend/services/polymarketOrderService";
 
 // Contract addresses
-const CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
+const CTF_ADDRESS: Address = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
 const POSITIONS_API_URL = "https://data-api.polymarket.com/positions";
 
-// ERC1155 ABI
+// ERC1155 ABI (viem JSON form) for balanceOf reads
 const ERC1155_ABI = [
-  "function balanceOf(address account, uint256 id) view returns (uint256)",
-  "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)",
-];
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [
+      { name: "account", type: "address" },
+      { name: "id", type: "uint256" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+] as const;
+
+// CTF ERC1155 TransferSingle event (used to scan recent inbound transfers)
+const TRANSFER_SINGLE_EVENT = parseAbiItem(
+  "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)"
+);
+
+// Polymarket Data API position shape (subset we use here)
+interface PolymarketPosition {
+  proxyWallet: string;
+  asset: string;
+  conditionId: string;
+  size: number;
+  avgPrice: number;
+  currentValue: number;
+  cashPnl: number;
+  percentPnl: number;
+  curPrice: number;
+  title: string;
+  slug: string;
+  icon: string;
+  eventSlug: string;
+  outcome: string;
+  outcomeIndex: number;
+  oppositeOutcome: string;
+  oppositeAsset: string;
+  endDate: string;
+  negativeRisk: boolean;
+}
 
 async function checkOrders() {
   console.log("🔍 Checking Polymarket Orders, Positions & On-Chain Balances...\n");
@@ -29,9 +68,9 @@ async function checkOrders() {
   if (!pk) {
     throw new Error("Private key (PK) is not set");
   }
-  const privateKey = pk.startsWith("0x") ? pk : `0x${pk}`;
-  const wallet = new ethers.Wallet(privateKey);
-  const walletAddress = wallet.address;
+  const privateKey: Hex = (pk.startsWith("0x") ? pk : `0x${pk}`) as Hex;
+  const account = privateKeyToAccount(privateKey);
+  const walletAddress: Address = account.address;
 
   console.log(`📍 Wallet Address: ${walletAddress}\n`);
 
@@ -57,11 +96,11 @@ async function checkOrders() {
     console.log("📋 OPEN ORDERS (from CLOB API)");
     console.log("═".repeat(80));
 
-    const orders = await client.getOpenOrders({});
+    const orders: OpenOrder[] = await client.getOpenOrders({});
     console.log(`Total Active Orders: ${orders.length}\n`);
 
-    const buyOrders = orders.filter((o: any) => o.side === "BUY");
-    const sellOrders = orders.filter((o: any) => o.side === "SELL");
+    const buyOrders = orders.filter((o) => o.side === "BUY");
+    const sellOrders = orders.filter((o) => o.side === "SELL");
 
     console.log(`🟢 BUY Orders: ${buyOrders.length}`);
     console.log(`🔴 SELL Orders: ${sellOrders.length}`);
@@ -87,7 +126,7 @@ async function checkOrders() {
     console.log("═".repeat(80));
 
     const positionsResponse = await fetch(`${POSITIONS_API_URL}?user=${walletAddress}`);
-    const positions = await positionsResponse.json();
+    const positions: PolymarketPosition[] = await positionsResponse.json();
 
     console.log(`Total Positions: ${positions.length}\n`);
 
@@ -108,36 +147,51 @@ async function checkOrders() {
     console.log("═".repeat(80));
 
     const rpcUrl = process.env.RPC_URL || "https://polygon-rpc.com";
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const ctfContract = new ethers.Contract(CTF_ADDRESS, ERC1155_ABI, provider);
+    const publicClient = createPublicClient({
+      chain: polygon,
+      transport: http(rpcUrl),
+    });
 
     // Get recent transfer events (last ~2000 blocks ≈ 1 hour on Polygon)
-    const currentBlock = await provider.getBlockNumber();
-    const fromBlock = currentBlock - 2000;
+    const currentBlock = await publicClient.getBlockNumber();
+    const fromBlock = currentBlock - 2000n;
 
     console.log(`Scanning blocks ${fromBlock} to ${currentBlock}...\n`);
 
-    const filter = ctfContract.filters.TransferSingle(null, null, walletAddress);
-    const events = await ctfContract.queryFilter(filter, fromBlock, currentBlock);
+    const logs = await publicClient.getLogs({
+      address: CTF_ADDRESS,
+      event: TRANSFER_SINGLE_EVENT,
+      args: {
+        to: walletAddress,
+      },
+      fromBlock,
+      toBlock: currentBlock,
+    });
 
-    console.log(`Found ${events.length} transfer events to your wallet\n`);
+    console.log(`Found ${logs.length} transfer events to your wallet\n`);
 
     // Get unique token IDs and check balances
     const tokenIds = new Set<string>();
-    for (const event of events) {
-      if ("args" in event && event.args) {
-        tokenIds.add(event.args.id.toString());
+    for (const log of logs) {
+      const id = log.args.id;
+      if (typeof id === "bigint") {
+        tokenIds.add(id.toString());
       }
     }
 
     console.log(`Unique tokens received: ${tokenIds.size}`);
 
     for (const tokenId of tokenIds) {
-      const balance = await ctfContract.balanceOf(walletAddress, tokenId);
+      const balance = await publicClient.readContract({
+        address: CTF_ADDRESS,
+        abi: ERC1155_ABI,
+        functionName: "balanceOf",
+        args: [walletAddress, BigInt(tokenId)],
+      });
       const balanceNum = Number(balance) / 1e6;
 
       // Check if this is in the positions API
-      const inAPI = positions.find((p: any) => p.asset === tokenId);
+      const inAPI = positions.find((p) => p.asset === tokenId);
       const apiStatus = inAPI ? "✅ In API" : "⚠️ NOT in API yet";
 
       console.log(`   Token: ${tokenId.slice(0, 30)}...`);

@@ -1,9 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import { getAbiItem, type Address, type Log, type AbiEvent } from "viem";
-import composableCowAbi from "@/abi/composableCoW.json";
-import gpv2Abi from "@/abi/GPV2Settlement.json";
+import { parseAbiItem, type Address, type Log } from "viem";
 import { testConnection } from "@/backend/db/database";
 import { getWebSocketClient } from "./blockchainProvider";
 import { handleConditionalOrderCreated } from "./handlers/conditionalOrderCreated";
@@ -18,6 +16,20 @@ import {
   triggerPositionSell,
 } from "./cron/positionSeller";
 import { startDraftJanitor, stopDraftJanitor } from "./cron/draftJanitor";
+import { startOrderHealthCheck, stopOrderHealthCheck } from "./cron/orderHealthCheck";
+
+// Canonical event signatures used by `watchEvent`. Using `parseAbiItem` keeps
+// the resulting `AbiEvent` value strongly typed (no cast required) and
+// avoids the `getAbiItem` overload that returns `AbiEvent | undefined`.
+const CONDITIONAL_ORDER_CREATED_EVENT = parseAbiItem(
+  "event ConditionalOrderCreated(address indexed owner, (address handler, bytes32 salt, bytes staticInput) params)"
+);
+const TRADE_EVENT = parseAbiItem(
+  "event Trade(address indexed owner, address sellToken, address buyToken, uint256 sellAmount, uint256 buyAmount, uint256 feeAmount, bytes orderUid)"
+);
+const ORDER_INVALIDATED_EVENT = parseAbiItem(
+  "event OrderInvalidated(address indexed owner, bytes orderUid)"
+);
 
 interface RuntimeFlags {
   listenerOnly: boolean;
@@ -53,6 +65,7 @@ function readPositiveInt(envName: string, fallback: number): number {
 const MARKET_UPDATE_INTERVAL_MIN = readPositiveInt("MARKET_UPDATE_INTERVAL_MINUTES", 60);
 const POSITION_SELL_INTERVAL_MIN = readPositiveInt("POSITION_SELL_INTERVAL_MINUTES", 5);
 const DRAFT_JANITOR_INTERVAL_SEC = readPositiveInt("DRAFT_JANITOR_INTERVAL_SECONDS", 60);
+const ORDER_HEALTH_CHECK_INTERVAL_SEC = readPositiveInt("ORDER_HEALTH_CHECK_INTERVAL_SECONDS", 60);
 
 interface Subscriptions {
   unsubscribeAll: () => void;
@@ -66,30 +79,23 @@ async function startListener(): Promise<Subscriptions> {
   const composableCow = requireAddress("COMPOSABLE_COW");
   const gpv2 = requireAddress("GPV2SETTLEMENT");
 
-  const createdEvent = getAbiItem({
-    abi: composableCowAbi,
-    name: "ConditionalOrderCreated",
-  }) as AbiEvent;
-  const tradeEvent = getAbiItem({ abi: gpv2Abi, name: "Trade" }) as AbiEvent;
-  const invalidatedEvent = getAbiItem({ abi: gpv2Abi, name: "OrderInvalidated" }) as AbiEvent;
-
   const unsubCreated = ws.watchEvent({
     address: composableCow,
-    event: createdEvent,
-    onLogs: (logs: Log[]) => {
+    event: CONDITIONAL_ORDER_CREATED_EVENT,
+    onLogs: (logs) => {
       for (const log of logs) {
-        void handleConditionalOrderCreated(log);
+        void handleConditionalOrderCreated(log as Log);
       }
     },
   });
 
   const unsubTrade = ws.watchEvent({
     address: gpv2,
-    event: tradeEvent,
-    onLogs: (logs: Log[]) => {
+    event: TRADE_EVENT,
+    onLogs: (logs) => {
       for (const log of logs) {
         // Update DB first, then nudge the position-seller for prompt offload.
-        void handleTrade(log)
+        void handleTrade(log as Log)
           .then(() => triggerPositionSell())
           .catch((err) => {
             console.error("trade handler chain failed:", err);
@@ -100,10 +106,10 @@ async function startListener(): Promise<Subscriptions> {
 
   const unsubInvalidated = ws.watchEvent({
     address: gpv2,
-    event: invalidatedEvent,
-    onLogs: (logs: Log[]) => {
+    event: ORDER_INVALIDATED_EVENT,
+    onLogs: (logs) => {
       for (const log of logs) {
-        void handleOrderInvalidated(log);
+        void handleOrderInvalidated(log as Log);
       }
     },
   });
@@ -136,6 +142,11 @@ async function main(): Promise<void> {
 
     console.log(`listener: starting draft-janitor cron every ${DRAFT_JANITOR_INTERVAL_SEC}s`);
     startDraftJanitor(DRAFT_JANITOR_INTERVAL_SEC);
+
+    console.log(
+      `listener: starting order-health-check cron every ${ORDER_HEALTH_CHECK_INTERVAL_SEC}s`
+    );
+    startOrderHealthCheck(ORDER_HEALTH_CHECK_INTERVAL_SEC);
   }
 
   if (!flags.listenerOnly) {
@@ -150,6 +161,7 @@ async function main(): Promise<void> {
     if (!flags.listenerOnly && !flags.marketUpdateOnly) {
       stopPositionSeller();
       stopDraftJanitor();
+      stopOrderHealthCheck();
     }
     process.exit(0);
   };

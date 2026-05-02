@@ -1,4 +1,11 @@
-import { encodeAbiParameters, encodeFunctionData, keccak256, type Address, type Hex } from "viem";
+import {
+  encodeAbiParameters,
+  encodeFunctionData,
+  getAddress,
+  keccak256,
+  type Address,
+  type Hex,
+} from "viem";
 import { type PolyswapOrderData, type ConditionalOrderParams } from "../interfaces/PolyswapOrder";
 import composableCowAbi from "../../abi/composableCoW.json";
 
@@ -10,13 +17,13 @@ export interface TransactionData {
 }
 
 // Canonical Polygon ComposableCoW deployment address
-const COMPOSABLE_COW_ADDRESS: Address =
-  (process.env.COMPOSABLE_COW as Address | undefined) ??
-  "0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74";
+const COMPOSABLE_COW_ADDRESS: Address = getAddress(
+  process.env.COMPOSABLE_COW ?? "0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74"
+);
 
-const VALUE_FACTORY_ADDRESS: Address =
-  (process.env.VALUE_FACTORY as Address | undefined) ??
-  "0x52eD56Da04309Aca4c3FECC595298d80C2f16BAc";
+const VALUE_FACTORY_ADDRESS: Address = getAddress(
+  process.env.VALUE_FACTORY ?? "0x52eD56Da04309Aca4c3FECC595298d80C2f16BAc"
+);
 
 const CHAIN_ID = parseInt(process.env.CHAIN_ID ?? "137");
 
@@ -28,7 +35,7 @@ function getPolyswapHandlerAddress(): Address {
         "An empty handler address would produce silently broken calldata."
     );
   }
-  return addr as Address;
+  return getAddress(addr);
 }
 
 // Normalise a hex string to a valid bytes32 Hex value.
@@ -39,21 +46,30 @@ function formatBytes32(value: string): Hex {
     return "0x0000000000000000000000000000000000000000000000000000000000000000";
   }
   const stripped = value.startsWith("0x") ? value.slice(2) : value;
+  if (stripped.length > 64) {
+    throw new Error(`bytes32 value too long: ${value.length} chars (max 66 with 0x prefix)`);
+  }
   return `0x${stripped.padStart(64, "0")}` as Hex;
 }
 
+function toBigInt(value: string, field: string): bigint {
+  try {
+    return BigInt(value);
+  } catch {
+    throw new Error(`PolyswapOrderData.${field} is not a valid integer string: ${value}`);
+  }
+}
+
 export class TransactionEncodingService {
-  static encodePolyswapOrderData(orderData: PolyswapOrderData): Hex {
+  static encodePolyswapOrderData(orderData: PolyswapOrderData): string {
     if (!orderData.sellToken || !orderData.buyToken || !orderData.polymarketOrderHash) {
       throw new Error(
         "Missing required order data fields: sellToken, buyToken, or polymarketOrderHash"
       );
     }
 
-    const sellToken = (orderData.sellToken ||
-      "0x0000000000000000000000000000000000000000") as Address;
-    const buyToken = (orderData.buyToken ||
-      "0x0000000000000000000000000000000000000000") as Address;
+    const sellToken = orderData.sellToken as Address;
+    const buyToken = orderData.buyToken as Address;
     const receiver = (orderData.receiver ||
       "0x0000000000000000000000000000000000000000") as Address;
 
@@ -74,10 +90,10 @@ export class TransactionEncodingService {
         sellToken,
         buyToken,
         receiver,
-        BigInt(orderData.sellAmount || "0"),
-        BigInt(orderData.minBuyAmount || "0"),
-        BigInt(orderData.t0 || "0"),
-        BigInt(orderData.t || "0"),
+        toBigInt(orderData.sellAmount || "0", "sellAmount"),
+        toBigInt(orderData.minBuyAmount || "0", "minBuyAmount"),
+        toBigInt(orderData.t0 || "0", "t0"),
+        toBigInt(orderData.t || "0", "t"),
         formatBytes32(orderData.polymarketOrderHash),
         formatBytes32(
           orderData.appData || "0x0000000000000000000000000000000000000000000000000000000000000000"
@@ -110,10 +126,10 @@ export class TransactionEncodingService {
 
   static encodeCreateWithContextCallData(
     params: ConditionalOrderParams,
-    valueFactory: string = VALUE_FACTORY_ADDRESS,
-    data: string = "0x",
+    valueFactory: Address = VALUE_FACTORY_ADDRESS,
+    data: Hex = "0x",
     dispatch: boolean = true
-  ): Hex {
+  ): string {
     return encodeFunctionData({
       abi: composableCowAbi,
       functionName: "createWithContext",
@@ -133,9 +149,7 @@ export class TransactionEncodingService {
     };
   }
 
-  static calculateOrderHash(params: ConditionalOrderParams): Hex {
-    // Encodes ConditionalOrderParams as a tuple matching the on-chain struct:
-    // struct ConditionalOrderParams { address handler; bytes32 salt; bytes staticInput; }
+  static calculateOrderHash(params: ConditionalOrderParams): string {
     const encoded = encodeAbiParameters(
       [
         {

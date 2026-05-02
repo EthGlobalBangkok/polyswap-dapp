@@ -1,10 +1,11 @@
-import { IllusMarket, IllusTrigger, IllusWallet } from "./illustrations";
+import Image from "next/image";
 
 interface Step {
   n: string;
   title: string;
   body: string;
-  Illus: () => React.ReactNode;
+  src: string;
+  alt: string;
 }
 
 const STEPS: Step[] = [
@@ -12,19 +13,22 @@ const STEPS: Step[] = [
     n: "01",
     title: "Pick a question.",
     body: "Browse Polymarket questions about elections, rate cuts, ceasefires, token launches — anything that can move crypto.",
-    Illus: () => <IllusMarket size={280} />,
+    src: "/landing/poll.png",
+    alt: "A row of figures voting under a banner asking 'Will it happen?'",
   },
   {
     n: "02",
     title: "Set your trigger.",
     body: "Pick the swap (in & out, amount). Then say when it should fire — for example, when YES odds reach 70%.",
-    Illus: () => <IllusTrigger size={280} />,
+    src: "/landing/swap.png",
+    alt: "A chart climbing past a 70% threshold with a SWAP stamp",
   },
   {
     n: "03",
     title: "Sign once. Walk away.",
     body: "Your tokens stay in your wallet. We watch the odds, and when they cross your line, the swap fires automatically.",
-    Illus: () => <IllusWallet size={280} />,
+    src: "/landing/locked.png",
+    alt: "A wallet padlocked with sleep marks and a clock",
   },
 ];
 
@@ -54,7 +58,13 @@ export function HowItWorks() {
                 <h3 className="display text-2xl sm:text-3xl lg:text-[32px]">{s.title}</h3>
               </div>
               <div className="-mx-2 my-5 flex justify-center">
-                <s.Illus />
+                <Image
+                  src={s.src}
+                  alt={s.alt}
+                  width={280}
+                  height={220}
+                  className="h-auto w-[280px]"
+                />
               </div>
               <p className="font-serif text-base leading-snug text-ink-2 sm:text-lg">{s.body}</p>
             </div>

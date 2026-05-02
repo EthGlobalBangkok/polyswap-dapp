@@ -38,7 +38,7 @@ export function LandingHeader() {
             </a>
           ))}
           <Link href="/markets">
-            <Button variant="ink" size="sm">
+            <Button variant="ink" size="sm" style={{ cursor: "pointer" }}>
               Open app
               <Icon.arrowRight size={14} aria-hidden />
             </Button>

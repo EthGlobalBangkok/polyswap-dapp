@@ -1,9 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { Button, Reveal, RevealItem, RevealStack } from "@/components/primitives";
 import { Icon } from "@/components/icons";
-import { IllusHero } from "./illustrations";
 
 export function Hero() {
   return (
@@ -29,7 +29,7 @@ export function Hero() {
           <RevealItem>
             <div className="mt-7 flex flex-wrap items-center gap-4 lg:mt-9">
               <Link href="/markets">
-                <Button variant="accent" size="lg">
+                <Button variant="accent" size="lg" style={{ cursor: "pointer" }}>
                   Open the app
                   <Icon.arrowRight size={14} aria-hidden />
                 </Button>
@@ -56,7 +56,14 @@ export function Hero() {
           offset={20}
           delay={0.4}
         >
-          <IllusHero size={460} />
+          <Image
+            src="/landing/hero.png"
+            alt="A pressure gauge wired to a swap lever firing tokens when the odds rise on a Polymarket question"
+            width={600}
+            height={400}
+            priority
+            className="h-auto w-full max-w-[560px]"
+          />
         </Reveal>
       </div>
     </section>

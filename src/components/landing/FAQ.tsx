@@ -29,7 +29,7 @@ const FAQS: QA[] = [
   },
   {
     q: "What does it cost?",
-    a: "A 0.15% fee on the swap notional, taken only when a swap fires. Cancelled or expired swaps are free.",
+    a: "Their is NO fee at the moment ! Subject to change with a small fee on the executed swap only.",
   },
 ];
 

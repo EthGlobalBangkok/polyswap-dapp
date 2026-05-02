@@ -30,6 +30,14 @@ export const metadata: Metadata = {
   title: "Polyswap — swaps that wait",
   description:
     "Set a swap on Polygon and let it sit. It only fires when a Polymarket question crosses the threshold you choose. Your funds stay in your wallet until then.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+    ],
+    apple: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({

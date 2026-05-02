@@ -67,8 +67,8 @@ export function Footer() {
         </div>
 
         <div className="mt-10 flex flex-col gap-3 border-t border-rule-soft pt-6 text-xs text-ink-3 sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} Polyswap. Runs on Polygon. Non-custodial.</p>
-          <p className="num">v0.1 · build paper</p>
+          <p>© {new Date().getFullYear()} Polyswap</p>
+          <p className="num">v0.1 · Beta version</p>
         </div>
       </div>
     </footer>

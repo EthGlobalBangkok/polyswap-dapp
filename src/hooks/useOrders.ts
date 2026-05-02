@@ -28,6 +28,17 @@ export interface OrderViewModel {
   phase: "draft" | "live" | "filled" | "canceled" | "errored";
   /** On-chain order hash, populated once the listener observes ConditionalOrderCreated. Null while draft. */
   orderHash: Hex | null;
+  /** Most recent CoW conditional-order error name (e.g. PollTryAtBlock). */
+  lastErrorName: string | null;
+  /** Human-readable reason emitted alongside the conditional-order revert. */
+  lastErrorReason: string | null;
+  /**
+   * Block number (PollTryAtBlock) or epoch seconds (PollTryAtEpoch) the order
+   * said to retry at. Null for terminal / next-block variants.
+   */
+  lastErrorRetryAt: number | null;
+  /** Discrete CoW orderbook status (open / fulfilled / cancelled / …). */
+  cowOrderStatus: string | null;
 }
 
 const STALE = 30_000;
@@ -99,6 +110,13 @@ export function toOrderView(
     threshold: 0.7,
     phase: o.status,
     orderHash: o.order_hash ? (o.order_hash as Hex) : null,
+    lastErrorName: o.last_error_name ?? null,
+    lastErrorReason: o.last_error_reason ?? null,
+    lastErrorRetryAt:
+      o.last_error_retry_at !== null && o.last_error_retry_at !== undefined
+        ? Number(o.last_error_retry_at)
+        : null,
+    cowOrderStatus: o.cow_order_status ?? null,
   };
 }
 

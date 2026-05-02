@@ -130,6 +130,20 @@ export function SwapDetailPage({ orderId }: Props) {
               Fires when YES reaches {Math.round(order.threshold * 100)}% · expires{" "}
               {fmtDate(order.endTime)}
             </p>
+            {order.phase === "errored" && order.lastErrorReason && (
+              <p className="mt-2 border border-no bg-no/10 px-3 py-2 text-xs text-no">
+                Errored: {order.lastErrorReason}
+              </p>
+            )}
+            {order.phase === "live" && order.lastErrorReason && (
+              <p className="mt-2 text-xs text-ink-3">
+                Waiting: {order.lastErrorReason}
+                {order.lastErrorRetryAt &&
+                  order.lastErrorRetryAt > Math.floor(Date.now() / 1000) && (
+                    <> · retry around {new Date(order.lastErrorRetryAt * 1000).toLocaleString()}</>
+                  )}
+              </p>
+            )}
           </div>
           {cancellable && (
             <div className="flex flex-col items-end gap-1">

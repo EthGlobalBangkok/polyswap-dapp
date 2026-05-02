@@ -4,9 +4,9 @@ import { useCallback, useMemo, useState } from "react";
 import type { Side, TokenViewModel } from "@/types/design";
 
 /**
- * Static token list for the swap form. The legacy `apiService.getQuote` will
- * eventually drive the real price; for now this gives the UI deterministic
- * values to compute the receive amount and USD totals.
+ * Static token list for the swap form. These prices are used for the
+ * receive-amount estimate and USD totals; live prices are fetched via
+ * useTokenPrice when needed.
  */
 export const SWAP_TOKENS: ReadonlyArray<TokenViewModel> = [
   {

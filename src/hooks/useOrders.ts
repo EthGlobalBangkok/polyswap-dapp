@@ -5,15 +5,10 @@ import { useAccount } from "wagmi";
 import { apiService } from "@/services/api";
 import type { DatabasePolyswapOrder } from "@/backend/interfaces/PolyswapOrder";
 import type { SwapStatus } from "@/types/design";
+import { useTokens, type Token } from "@/hooks/useTokens";
 
-export interface TokenMeta {
-  chainId: number;
-  address: string;
-  name: string;
-  symbol: string;
-  decimals: number;
-  logoURI?: string;
-}
+// Re-export Token as TokenMeta so existing consumers of this module are not broken.
+export type { Token as TokenMeta };
 
 export interface OrderViewModel {
   id: string;
@@ -67,28 +62,15 @@ function syntheticSpark(seed: string): number[] {
   return out;
 }
 
-export function useTokens() {
-  return useQuery<TokenMeta[]>({
-    queryKey: ["tokens"],
-    queryFn: async () => {
-      const res = await fetch("/api/tokens");
-      const json = await res.json();
-      if (!json.success) throw new Error(json.message ?? "tokens fetch failed");
-      return json.tokens as TokenMeta[];
-    },
-    staleTime: 5 * 60_000,
-  });
-}
-
-function buildTokenMap(tokens: TokenMeta[] | undefined): Map<string, TokenMeta> {
-  const map = new Map<string, TokenMeta>();
+function buildTokenMap(tokens: Token[] | undefined): Map<string, Token> {
+  const map = new Map<string, Token>();
   for (const t of tokens ?? []) map.set(t.address.toLowerCase(), t);
   return map;
 }
 
 export function toOrderView(
   o: DatabasePolyswapOrder,
-  tokenMap: Map<string, TokenMeta>,
+  tokenMap: Map<string, Token>,
   marketTitle: string | null
 ): OrderViewModel {
   const sellMeta = tokenMap.get(o.sell_token.toLowerCase());

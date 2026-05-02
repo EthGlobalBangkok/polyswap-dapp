@@ -2,7 +2,77 @@
 // Market-related methods (getTopMarkets, searchMarkets, getMarketById,
 // getMarketBySlug, getMarketsByCategory) were removed in Phase 3 —
 // they are now handled by useMarketsData.ts + the Polymarket Gamma client.
+import type { Address, Hex } from "viem";
 import { type DatabasePolyswapOrder } from "../backend/interfaces/PolyswapOrder";
+
+// ---------------------------------------------------------------------------
+// PolySwap Order types (consolidated POST /polyswap/orders)
+// ---------------------------------------------------------------------------
+
+export interface CreatePolyswapOrderRequest {
+  sellToken: Address;
+  buyToken: Address;
+  sellAmount: string;
+  minBuyAmount?: string;
+  selectedOutcome: string;
+  betPercentage: number;
+  startDate?: string;
+  deadline?: string;
+  marketId: string;
+  owner: Address;
+}
+
+export interface PolyswapTxCall {
+  to: Address;
+  data: Hex;
+  value: string;
+}
+
+export interface CreatePolyswapOrderResponse {
+  orderId: number;
+  polymarketOrderHash: string;
+  orderHash: string;
+  tx: PolyswapTxCall;
+  batchTx: PolyswapTxCall[];
+  sellToken: Address;
+  sellAmount: string;
+  vaultRelayer: Address;
+}
+
+interface ApiSuccessEnvelope<T> {
+  success: true;
+  data: T;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isCreateOrderSuccess(
+  json: unknown
+): json is ApiSuccessEnvelope<CreatePolyswapOrderResponse> {
+  if (!isRecord(json)) return false;
+  if (json.success !== true) return false;
+  const data = json.data;
+  if (!isRecord(data)) return false;
+  return (
+    typeof data.orderId === "number" &&
+    typeof data.polymarketOrderHash === "string" &&
+    typeof data.orderHash === "string" &&
+    typeof data.sellToken === "string" &&
+    typeof data.sellAmount === "string" &&
+    typeof data.vaultRelayer === "string" &&
+    isRecord(data.tx) &&
+    Array.isArray(data.batchTx)
+  );
+}
+
+function readErrorMessage(json: unknown): string | undefined {
+  if (!isRecord(json)) return undefined;
+  const message = typeof json.message === "string" ? json.message : undefined;
+  const error = typeof json.error === "string" ? json.error : undefined;
+  return message ?? error;
+}
 
 class ApiService {
   private baseUrl = "/api"; // Use relative paths for Next.js API routes
@@ -33,46 +103,25 @@ class ApiService {
   // PolySwap Order flow
   // ---------------------------------------------------------------------------
 
-  async createPolyswapOrder(orderData: {
-    sellToken: string;
-    buyToken: string;
-    sellAmount: string;
-    minBuyAmount: string;
-    selectedOutcome: string;
-    betPercentage: string;
-    startDate: string;
-    deadline: string;
-    marketId: string;
-    marketTitle?: string;
-    marketDescription?: string;
-    clobTokenId?: string;
-    owner: string;
-  }): Promise<{
-    success: boolean;
-    data?: unknown;
-    message?: string;
-    error?: string;
-  }> {
-    try {
-      const response = await fetch(`${this.baseUrl}/polyswap/orders/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(orderData),
-      });
-      return response.json() as Promise<{
-        success: boolean;
-        data?: unknown;
-        message?: string;
-        error?: string;
-      }>;
-    } catch (error) {
-      console.error("Failed to create polyswap order:", error);
-      return {
-        success: false,
-        error: "Failed to create order",
-        message: error instanceof Error ? error.message : "Unknown error",
-      };
+  /**
+   * Single consolidated call to create a PolySwap order. The backend persists
+   * a draft, posts the Polymarket CLOB order, builds the on-chain calldata,
+   * and returns both a single-tx form and an approve+create batch.
+   */
+  async createPolyswapOrder(
+    body: CreatePolyswapOrderRequest
+  ): Promise<CreatePolyswapOrderResponse> {
+    const response = await fetch(`${this.baseUrl}/polyswap/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json: unknown = await response.json();
+    if (!response.ok || !isCreateOrderSuccess(json)) {
+      const message = readErrorMessage(json) ?? `HTTP ${response.status}`;
+      throw new Error(message);
     }
+    return json.data;
   }
 
   async createPolymarketOrder(orderHash: string): Promise<{

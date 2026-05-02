@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
-import type { Hash } from "viem";
+import { erc20Abi, type Address, type Hash, type Hex } from "viem";
+import { usePublicClient } from "wagmi";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button, DetailSkeleton } from "@/components/primitives";
 import { Icon } from "@/components/icons";
 import { useMarket, useRawMarket } from "@/hooks/useMarketsData";
@@ -10,6 +13,7 @@ import { useCreateOrder, describeSentence } from "@/hooks/useCreateOrder";
 import { useSafeAccount } from "@/hooks/safe/useSafeAccount";
 import { SafeSignModal } from "@/components/modals/SafeSignModal";
 import type { SafeCall } from "@/services/safe/types";
+import { apiService } from "@/services/api";
 import { MarketSummaryCard } from "./MarketSummaryCard";
 import { CreateForm } from "./CreateForm";
 import { RecapPanel } from "./RecapPanel";
@@ -24,10 +28,10 @@ interface Props {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function toSafeCall(tx: { to: string; data?: string; value?: string }): SafeCall {
+function toSafeCall(tx: { to: Address; data: Hex; value: string }): SafeCall {
   return {
-    to: tx.to as `0x${string}`,
-    data: (tx.data ?? "0x") as `0x${string}`,
+    to: tx.to,
+    data: tx.data,
     value: tx.value ? BigInt(tx.value) : 0n,
   };
 }
@@ -51,17 +55,18 @@ export function CreatePage({ marketId }: Props) {
   const { state, derived, set } = useCreateOrder();
   const { safeAddress, isReady: walletReady } = useSafeAccount();
   const wallet = useWalletModal();
+  const publicClient = usePublicClient();
+  const queryClient = useQueryClient();
+  const router = useRouter();
 
   // --- signing state ---
   const [signOpen, setSignOpen] = useState(false);
   const [calls, setCalls] = useState<SafeCall[] | null>(null);
-  const [isSetupOnly, setIsSetupOnly] = useState(false);
   const [signingError, setSigningError] = useState<string | null>(null);
   const [isPreparingTx, setIsPreparingTx] = useState(false);
 
   // Keep a stable ref to orderId so onConfirmed closure always sees latest value.
   const orderIdRef = useRef<number | null>(null);
-  const isSetupOnlyRef = useRef(false);
 
   const isConnected = Boolean(safeAddress);
 
@@ -70,11 +75,7 @@ export function CreatePage({ marketId }: Props) {
   // ---------------------------------------------------------------------------
 
   const handleReview = async () => {
-    if (!isConnected || !walletReady) {
-      wallet.open();
-      return;
-    }
-    if (!safeAddress) {
+    if (!isConnected || !walletReady || !safeAddress) {
       wallet.open();
       return;
     }
@@ -82,77 +83,50 @@ export function CreatePage({ marketId }: Props) {
       setSigningError("Market data unavailable. Please refresh and try again.");
       return;
     }
+    if (!publicClient) {
+      setSigningError("RPC client not ready. Please refresh and try again.");
+      return;
+    }
 
     setSigningError(null);
     setIsPreparingTx(true);
     try {
-      // 1. Compute sell amount in wei.
       const sellAmountWei = toWei(state.amountIn, state.fromToken.decimals);
 
-      // 2. Determine buyToken: the CLOB token ID for the selected outcome.
-      //    For YES outcome → index 0, NO → index 1 (standard Polymarket convention).
       const outcomeIndex = state.side === "YES" ? 0 : 1;
-      const buyToken = rawMarket.clobTokenIds?.[outcomeIndex] ?? rawMarket.clobTokenIds?.[0];
-      if (!buyToken) throw new Error("Market is missing CLOB token IDs.");
+      const buyTokenRaw = rawMarket.clobTokenIds?.[outcomeIndex] ?? rawMarket.clobTokenIds?.[0];
+      if (!buyTokenRaw) throw new Error("Market is missing CLOB token IDs.");
+      const buyToken = buyTokenRaw as Address;
 
-      // 3. Create draft order.
-      const createRes = await fetch("/api/polyswap/orders/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sellToken: state.fromToken.address,
-          buyToken,
-          sellAmount: sellAmountWei,
-          minBuyAmount: "1",
-          selectedOutcome: state.side === "YES" ? "Yes" : "No",
-          betPercentage: String(Math.round(state.threshold * 100)),
-          startDate: "now",
-          marketId: rawMarket.id,
-          owner: safeAddress,
-        }),
+      const order = await apiService.createPolyswapOrder({
+        sellToken: state.fromToken.address as Address,
+        buyToken,
+        sellAmount: sellAmountWei,
+        minBuyAmount: "1",
+        selectedOutcome: state.side === "YES" ? "Yes" : "No",
+        betPercentage: Math.round(state.threshold * 100),
+        startDate: "now",
+        marketId: rawMarket.id,
+        owner: safeAddress,
       });
-      const createJson = await createRes.json();
-      if (!createRes.ok || !createJson.success) {
-        throw new Error(createJson.message ?? createJson.error ?? "Failed to create order.");
-      }
-      const orderId: number = createJson.data.orderId;
-      orderIdRef.current = orderId;
 
-      // 4. Create the Polymarket CLOB order so the backend has an order hash.
-      const polyRes = await fetch("/api/polyswap/orders/polymarket", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ orderId }),
+      orderIdRef.current = order.orderId;
+
+      const allowance = await publicClient.readContract({
+        address: order.sellToken,
+        abi: erc20Abi,
+        functionName: "allowance",
+        args: [safeAddress, order.vaultRelayer],
       });
-      const polyJson = await polyRes.json();
-      if (!polyRes.ok || !polyJson.success) {
-        throw new Error(polyJson.message ?? polyJson.error ?? "Failed to create Polymarket order.");
-      }
 
-      // 5. Fetch the batch transaction (approval + main tx, possibly setup-only).
-      const batchRes = await fetch(`/api/polyswap/orders/id/${orderId}/batch-transaction`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ownerAddress: safeAddress }),
-      });
-      const batchJson = await batchRes.json();
-      if (!batchRes.ok || !batchJson.success) {
-        throw new Error(batchJson.message ?? batchJson.error ?? "Failed to prepare transaction.");
-      }
+      // If the vault relayer is already approved for at least the sell amount,
+      // skip the approve step and submit only the createWithContext call.
+      const callsList: SafeCall[] =
+        allowance >= BigInt(order.sellAmount)
+          ? [toSafeCall(order.tx)]
+          : order.batchTx.map(toSafeCall);
 
-      const batch = batchJson.data.batchTransaction;
-      const setupOnly: boolean = batch.setupOnlyBatch === true;
-      isSetupOnlyRef.current = setupOnly;
-      setIsSetupOnly(setupOnly);
-
-      // 6. Build SafeCall[] from the batch response.
-      const c: SafeCall[] = [];
-      if (batch.fallbackHandlerTransaction) c.push(toSafeCall(batch.fallbackHandlerTransaction));
-      if (batch.domainVerifierTransaction) c.push(toSafeCall(batch.domainVerifierTransaction));
-      if (batch.approvalTransaction) c.push(toSafeCall(batch.approvalTransaction));
-      if (!setupOnly) c.push(toSafeCall(batch.mainTransaction));
-
-      setCalls(c);
+      setCalls(callsList);
       setSignOpen(true);
     } catch (err) {
       setSigningError(err instanceof Error ? err.message : "Something went wrong.");
@@ -165,27 +139,18 @@ export function CreatePage({ marketId }: Props) {
   // After the Safe tx is confirmed on-chain
   // ---------------------------------------------------------------------------
 
-  const onConfirmed = async (onChainHash: Hash, _safeTxHash: Hash) => {
-    // The safeTxHash links execution back to the multisig approval record;
-    // backend doesn't currently store it but the underscore prefix signals
-    // we're aware of the parameter.
-    const orderId = orderIdRef.current;
-    // For setup-only batches there is no order to record — the main order will be
-    // submitted on the next "Review & sign" attempt, once setup is confirmed.
-    if (isSetupOnlyRef.current || !orderId) {
-      setSignOpen(false);
-      return;
-    }
-    try {
-      await fetch(`/api/polyswap/orders/id/${orderId}/transaction`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ transactionHash: onChainHash }),
-      });
-    } catch {
-      // Non-blocking: the order is on-chain; the PUT is a best-effort status update.
+  const onConfirmed = (_onChainHash: Hash, _safeTxHash: Hash) => {
+    // The draft row already exists; the listener flips it to live once the
+    // ConditionalOrderCreated event is observed. Invalidate the orders query
+    // so the next refetch picks the new row up.
+    if (safeAddress) {
+      queryClient.invalidateQueries({ queryKey: ["orders", safeAddress] });
     }
     setSignOpen(false);
+    const orderId = orderIdRef.current;
+    if (orderId !== null) {
+      router.push(`/orders/${orderId}`);
+    }
   };
 
   // ---------------------------------------------------------------------------
@@ -194,16 +159,8 @@ export function CreatePage({ marketId }: Props) {
 
   const modalSummary = useMemo(() => {
     if (!market) return undefined;
-    if (isSetupOnly) {
-      return (
-        <span>
-          Your Safe needs a one-time setup transaction first. After this is confirmed, click
-          &ldquo;Review &amp; sign&rdquo; again to send the order.
-        </span>
-      );
-    }
     return <span className="italic">{describeSentence(state, market.question)}</span>;
-  }, [market, state, isSetupOnly]);
+  }, [market, state]);
 
   // ---------------------------------------------------------------------------
   // Render

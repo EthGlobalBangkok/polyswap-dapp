@@ -119,9 +119,18 @@ The protocol places the Polymarket limit order with its own credentials. That MU
 [server] validate
          place Polymarket limit order (protocol credentials)
          insert DB row, status=draft, polymarket_order_hash set
-         return { orderId, polymarketHash, tx: { to, data, value }, batchTx? }
+         return {
+           orderId,
+           polymarketHash,
+           tx:      { to, data, value },          // bare createWithContext call
+           batchTx: [approveCall, createCall],    // approve + createWithContext
+           sellToken, sellAmount, vaultRelayer    // for the client allowance check
+         }
 
-[client] sign + broadcast tx via wallet (uses returned tx)
+[client] read allowance(safe, vaultRelayer) via useReadContract
+         pick batchTx if allowance < sellAmount, else pick tx
+         pass chosen calls to useSafeSignFlow.send()
+
 [client] wait for receipt via wagmi useWaitForTransactionReceipt
 [UI]     optimistically show "live" once receipt arrives
 
@@ -130,6 +139,39 @@ The protocol places the Polymarket limit order with its own credentials. That MU
 ```
 
 Replaces today's 4 round-trips: `POST /create` → `POST /polymarket` → `GET /transaction` → `PUT /transaction` (after signing).
+
+### ERC20 approval handling
+
+The CoW Protocol conditional order requires the user's Safe to have approved **GPv2VaultRelayer** (`0xC92E8bdf79f0507f65a392b0ab4667716BFE0110` on Polygon) to spend `sellToken` for at least `sellAmount`. Without it, the on-chain `createWithContext` call succeeds, the order registers, but **CoW Watcher's discrete fill tx reverts** at `transferFrom` — order never fills. This was an unhandled gotcha in the old flow: the `/batch-transaction` endpoint that bundled the approval was never wired into `services/api.ts`, so the bundle was built but never sent.
+
+In the new flow, the backend returns both a bare `tx` and a `batchTx` (`[approve, createWithContext]`) in a single response. The client:
+
+1. Reads `allowance(safe, vaultRelayer)` via `useReadContract`.
+2. Picks `batchTx` if `allowance < sellAmount`, else `tx`.
+3. Passes the chosen calls to `useSafeSignFlow.send()` — atomic via EIP-5792, MultiSend fallback otherwise.
+
+**Approval amount = `maxUint256`** by default (standard CoW pattern). User approves once per sell-token, revokes via Safe UI if they want. Saves gas on every subsequent order using the same token.
+
+### Gas estimation
+
+No manual gas estimation in client code. Both `sendCallsAsync` (EIP-5792) and `sendTransactionAsync` (MultiSend fallback) auto-estimate against the actual outgoing transaction (the multisend bundle, not the inner calls). The previous "approvals caused gas issues" symptom traced to the unwired batch endpoint, not to a gas-estimation bug — the wallet was being asked to sign just `createWithContext` without an approval, which simulates fine but later fails at fill time.
+
+Optional polish (UI-only, not required to ship): show a fee preview using viem's `simulateCalls` (atomic batch simulation that runs `[approve, create]` as one unit, so `create` sees `approve`'s state mutation). If we add this, do it in `hooks/useFeePreview` — keep it independent of the sign flow.
+
+### Batching — already implemented
+
+`useSafeSignFlow.send(calls)` already handles atomic batching:
+
+- EIP-5792 atomic capability detected → `wallet_sendCalls` (Safe iframe + capable WalletConnect-Safe).
+- Otherwise → `MultiSendCallOnly` via `multiSendEncoder.encodeMultiSend(calls)` with `sendTransactionAsync`.
+
+No new infrastructure needed. The refactor just makes sure `batchTx` from `POST /orders` flows into this hook unchanged. The existing `safeBatchService.ts` (386L) becomes unused and can be deleted — its responsibilities split between the backend (which now returns the calldata in `POST /orders` instead of `/batch-transaction`) and `useSafeSignFlow` (which already handles the wallet-side dispatch).
+
+### Re-using existing services
+
+- `src/services/erc20ApprovalService.ts` — keep for `checkApproval` / `createApprovalTransaction`. Used by the new `POST /orders` server-side helper to build the approve call.
+- `src/services/safeBatchService.ts` — **delete** entirely. Its job is now done by `POST /orders` (calldata assembly) + `useSafeSignFlow` (wallet dispatch).
+- `src/services/safeFallbackHandlerService.ts`, `src/services/safeDomainVerifierService.ts` — review during implementation; if unused after `safeBatchService` deletion, also delete.
 
 ### "Live" gap UX
 
@@ -392,7 +434,8 @@ Verified against the official docs and `ComposableCoW.sol` source on 2026-05-02:
 | `POST /api/polyswap/orders/polymarket`                                                                               | folded into `POST /orders`                                                                                           |
 | `GET /api/polyswap/orders/id/[id]/transaction`                                                                       | calldata returned in `POST /orders`                                                                                  |
 | `PUT /api/polyswap/orders/id/[id]/transaction`                                                                       | listener handles it; frontend optimistic                                                                             |
-| `POST /api/polyswap/orders/id/[id]/batch-transaction`                                                                | folded into `POST /orders`                                                                                           |
+| `POST /api/polyswap/orders/id/[id]/batch-transaction`                                                                | folded into `POST /orders` (returns both `tx` and `batchTx`)                                                         |
+| `src/services/safeBatchService.ts` (386L)                                                                            | replaced by `POST /orders` server calldata + `useSafeSignFlow` client dispatch                                       |
 | `POST /api/polyswap/orders/remove` (entire route)                                                                    | drafts → `DELETE /api/polyswap/orders/{id}`, live → on-chain remove + `POST /api/polyswap/orders/{id}/notify-remove` |
 | `PUT /api/polyswap/orders/remove`                                                                                    | same as above — entire `remove/route.ts` file is deleted                                                             |
 | `GET /api/markets/route`, `/markets/category/[category]`, `/markets/search`, `/markets/[identifier]`, `/markets/top` | one `/markets/search` route                                                                                          |
@@ -428,7 +471,7 @@ Plus quality wins: search uses `tsvector`, single creation round-trip, consisten
 
 ## 14. Open questions / follow-ups
 
-- Confirm `ComposableCoW` bytecode at `0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74` exists on Polygon (Polygonscan check during migration).
-- Confirm production Polymarket orders are still placed against CTF Exchange V1 vs V2 — clob-client 5.x supports both, but the EIP-712 domain differs. Probably fine but worth verifying before bumping in prod.
-- Decide which RPC provider to use for WebSocket subscriptions on Polygon (Alchemy / dRPC / QuickNode) and add a `RPC_URL_WSS` env var.
-- Janitor cadence: starting at 60s; can be tuned later.
+- Confirm `ComposableCoW` bytecode at `0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74` exists on Polygon (Polygonscan check during migration). : Yes i confirm
+- Confirm production Polymarket orders are still placed against CTF Exchange V1 vs V2 — clob-client 5.x supports both, but the EIP-712 domain differs. Probably fine but worth verifying before bumping in prod. : the polymarket contracts and used token has been changed but for now i only refacto the app to make it work like on the last polymarket version. one thing at a time.
+- Decide which RPC provider to use for WebSocket subscriptions on Polygon (Alchemy / dRPC / QuickNode) and add a `RPC_URL_WSS` env var. : I will use drpc
+- Janitor cadence: starting at 60s; can be tuned later. : need to be an env var or something easly modified.

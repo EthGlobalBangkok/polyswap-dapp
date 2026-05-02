@@ -1,6 +1,6 @@
 # Backend & API Refactor — Design
 
-**Status**: Draft, in progress (listener section pending discussion).
+**Status**: Draft, ready for user review.
 **Date**: 2026-05-02
 **Scope**: Frontend logic, API routes, backend services, and the blockchain listener for the PolySwap dApp. Excludes nothing in `src/` — but the existing Safe sign flow (`useSafeSignFlow` and friends) is already correct and is **not** being rewritten, only trimmed of the dead network calls around it.
 

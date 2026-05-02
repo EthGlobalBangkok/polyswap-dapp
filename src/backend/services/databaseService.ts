@@ -457,6 +457,13 @@ export class DatabaseService {
   }
 
   /**
+   * Delete a polyswap order by its numeric ID.
+   */
+  static async deletePolyswapOrderById(id: number): Promise<void> {
+    await query(`DELETE FROM polyswap_orders WHERE id = $1`, [id]);
+  }
+
+  /**
    * Update the Polymarket order hash on a draft order (by on-chain order_hash).
    */
   static async updateOrderPolymarketHash(

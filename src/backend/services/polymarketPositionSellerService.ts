@@ -1,4 +1,17 @@
-import { ethers } from "ethers";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  erc20Abi,
+  maxUint256,
+  parseAbiItem,
+  type Address,
+  type Hex,
+  type PublicClient,
+  type WalletClient,
+} from "viem";
+import { polygon } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
 import { AssetType } from "@polymarket/clob-client";
 import { getPolymarketOrderService } from "./polymarketOrderService";
 import { DatabaseService } from "./databaseService";
@@ -8,24 +21,50 @@ const POSITIONS_API_URL = "https://data-api.polymarket.com/positions";
 
 // Contract addresses on Polygon for CTF (Conditional Token Framework)
 // See: https://docs.polymarket.com/developers/CTF/deployment-resources
-const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"; // USDC on Polygon (6 decimals)
-const CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"; // Conditional Token Framework (ERC1155)
-const CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"; // CTFExchange
-const NEG_RISK_CTF_EXCHANGE = "0xC5d563A36AE78145C45a50134d48A1215220f80a"; // NegRiskCtfExchange
-const NEG_RISK_ADAPTER = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"; // NegRiskAdapter
+const USDC_ADDRESS: Address = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"; // USDC on Polygon (6 decimals)
+const CTF_ADDRESS: Address = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"; // Conditional Token Framework (ERC1155)
+const CTF_EXCHANGE: Address = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"; // CTFExchange
+const NEG_RISK_CTF_EXCHANGE: Address = "0xC5d563A36AE78145C45a50134d48A1215220f80a"; // NegRiskCtfExchange
+const NEG_RISK_ADAPTER: Address = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"; // NegRiskAdapter
 
-// ERC1155 ABI for approval and balance checking
+// ERC1155 ABI for approval and balance checking (viem JSON form)
 const ERC1155_ABI = [
-  "function isApprovedForAll(address account, address operator) view returns (bool)",
-  "function setApprovalForAll(address operator, bool approved)",
-  "function balanceOf(address account, uint256 id) view returns (uint256)",
-];
+  {
+    type: "function",
+    name: "isApprovedForAll",
+    stateMutability: "view",
+    inputs: [
+      { name: "account", type: "address" },
+      { name: "operator", type: "address" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "setApprovalForAll",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "operator", type: "address" },
+      { name: "approved", type: "bool" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [
+      { name: "account", type: "address" },
+      { name: "id", type: "uint256" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+] as const;
 
-// ERC20 ABI for USDC approval
-const ERC20_ABI = [
-  "function allowance(address owner, address spender) view returns (uint256)",
-  "function approve(address spender, uint256 amount) returns (bool)",
-];
+// CTF ERC1155 TransferSingle event (used to scan recent inbound transfers)
+const TRANSFER_SINGLE_EVENT = parseAbiItem(
+  "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)"
+);
 
 // Position interface matching Polymarket API response
 interface PolymarketPosition {
@@ -57,16 +96,16 @@ interface PolymarketPosition {
 export class PolymarketPositionSellerService {
   private static sellInterval: NodeJS.Timeout | null = null;
   private static isSelling = false;
-  private static ownerAddress: string | null = null;
-  private static wallet: ethers.Wallet | null = null;
-  private static provider: ethers.JsonRpcProvider | null = null;
+  private static ownerAddress: Address | null = null;
+  private static publicClient: PublicClient | null = null;
+  private static walletClient: WalletClient | null = null;
   private static ctfApproved = false;
 
   /**
    * Initialize the service and derive owner address from private key
    */
   private static async initialize(): Promise<void> {
-    if (this.ownerAddress && this.wallet && this.provider) return;
+    if (this.ownerAddress && this.publicClient && this.walletClient) return;
 
     const pk = process.env.PK;
     if (!pk) {
@@ -74,11 +113,19 @@ export class PolymarketPositionSellerService {
     }
 
     const rpcUrl = process.env.RPC_URL || "https://polygon-rpc.com";
-    this.provider = new ethers.JsonRpcProvider(rpcUrl);
+    const privateKey: Hex = (pk.startsWith("0x") ? pk : `0x${pk}`) as Hex;
+    const account = privateKeyToAccount(privateKey);
 
-    const privateKey = pk.startsWith("0x") ? pk : `0x${pk}`;
-    this.wallet = new ethers.Wallet(privateKey, this.provider);
-    this.ownerAddress = this.wallet.address;
+    this.publicClient = createPublicClient({
+      chain: polygon,
+      transport: http(rpcUrl),
+    });
+    this.walletClient = createWalletClient({
+      account,
+      chain: polygon,
+      transport: http(rpcUrl),
+    });
+    this.ownerAddress = account.address;
 
     console.log(`[PositionSeller] Initialized with address: ${this.ownerAddress}`);
 
@@ -94,36 +141,48 @@ export class PolymarketPositionSellerService {
    * This is required to be able to SELL positions
    */
   private static async ensureCTFApproval(): Promise<void> {
-    if (this.ctfApproved || !this.wallet || !this.ownerAddress) return;
+    if (this.ctfApproved || !this.walletClient || !this.publicClient || !this.ownerAddress) return;
 
     console.log("[PositionSeller] Checking CTF token approvals...");
 
     // All positions use the main CTF contract (ERC1155)
     // The NegRisk system uses the same CTF contract but with different exchange contracts
-    const operators = [
+    const operators: Array<{ name: string; address: Address }> = [
       { name: "CTFExchange", address: CTF_EXCHANGE },
       { name: "NegRiskCtfExchange", address: NEG_RISK_CTF_EXCHANGE },
       { name: "NegRiskAdapter", address: NEG_RISK_ADAPTER },
     ];
 
-    const ctfContract = new ethers.Contract(CTF_ADDRESS, ERC1155_ABI, this.wallet);
     let allApproved = true;
 
     for (const operator of operators) {
       try {
-        const isApproved = await ctfContract.isApprovedForAll(this.ownerAddress, operator.address);
+        const isApproved = await this.publicClient.readContract({
+          address: CTF_ADDRESS,
+          abi: ERC1155_ABI,
+          functionName: "isApprovedForAll",
+          args: [this.ownerAddress, operator.address],
+        });
 
         if (isApproved) {
           console.log(`[PositionSeller] ✅ CTF already approved for ${operator.name}`);
         } else {
           console.log(`[PositionSeller] Approving CTF for ${operator.name}...`);
-          const tx = await ctfContract.setApprovalForAll(operator.address, true);
-          console.log(`[PositionSeller] TX: ${tx.hash}`);
-          await tx.wait();
+          const txHash = await this.walletClient.writeContract({
+            account: this.walletClient.account!,
+            chain: polygon,
+            address: CTF_ADDRESS,
+            abi: ERC1155_ABI,
+            functionName: "setApprovalForAll",
+            args: [operator.address, true],
+          });
+          console.log(`[PositionSeller] TX: ${txHash}`);
+          await this.publicClient.waitForTransactionReceipt({ hash: txHash });
           console.log(`[PositionSeller] ✅ CTF approved for ${operator.name}`);
         }
-      } catch (error: any) {
-        console.error(`[PositionSeller] Error approving CTF for ${operator.name}:`, error.message);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[PositionSeller] Error approving CTF for ${operator.name}:`, message);
         allApproved = false;
       }
     }
@@ -146,15 +205,12 @@ export class PolymarketPositionSellerService {
    * Ensure USDC is approved for the CTF contract (required by Polymarket)
    */
   private static async ensureUSDCApproval(): Promise<void> {
-    if (!this.wallet || !this.ownerAddress) return;
+    if (!this.walletClient || !this.publicClient || !this.ownerAddress) return;
 
     console.log("[PositionSeller] Checking USDC approvals...");
 
-    const usdcContract = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, this.wallet);
-    const maxApproval = ethers.MaxUint256;
-
     // Contracts that need USDC approval
-    const spenders = [
+    const spenders: Array<{ name: string; address: Address }> = [
       { name: "CTF Contract", address: CTF_ADDRESS },
       { name: "CTFExchange", address: CTF_EXCHANGE },
       { name: "NegRiskCtfExchange", address: NEG_RISK_CTF_EXCHANGE },
@@ -163,19 +219,32 @@ export class PolymarketPositionSellerService {
 
     for (const spender of spenders) {
       try {
-        const currentAllowance = await usdcContract.allowance(this.ownerAddress, spender.address);
+        const currentAllowance = await this.publicClient.readContract({
+          address: USDC_ADDRESS,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [this.ownerAddress, spender.address],
+        });
 
         if (currentAllowance > 0n) {
           continue; // Already approved
         }
 
         console.log(`[PositionSeller] Approving USDC for ${spender.name}...`);
-        const tx = await usdcContract.approve(spender.address, maxApproval);
-        console.log(`[PositionSeller] TX: ${tx.hash}`);
-        await tx.wait();
+        const txHash = await this.walletClient.writeContract({
+          account: this.walletClient.account!,
+          chain: polygon,
+          address: USDC_ADDRESS,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [spender.address, maxUint256],
+        });
+        console.log(`[PositionSeller] TX: ${txHash}`);
+        await this.publicClient.waitForTransactionReceipt({ hash: txHash });
         console.log(`[PositionSeller] ✅ USDC approved for ${spender.name}`);
-      } catch (error: any) {
-        console.error(`[PositionSeller] Error approving USDC for ${spender.name}:`, error.message);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[PositionSeller] Error approving USDC for ${spender.name}:`, message);
       }
     }
   }
@@ -205,8 +274,9 @@ export class PolymarketPositionSellerService {
         console.log(
           `[PositionSeller] Conditional tokens - Balance: ${conditionalStatus.balance}, Allowance: ${conditionalStatus.allowance}`
         );
-      } catch (e: any) {
-        console.log(`[PositionSeller] Could not check conditional balance: ${e.message}`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.log(`[PositionSeller] Could not check conditional balance: ${message}`);
       }
 
       // Check current balance/allowance for collateral (USDC)
@@ -217,13 +287,15 @@ export class PolymarketPositionSellerService {
         console.log(
           `[PositionSeller] Collateral (USDC) - Balance: ${collateralStatus.balance}, Allowance: ${collateralStatus.allowance}`
         );
-      } catch (e: any) {
-        console.log(`[PositionSeller] Could not check collateral balance: ${e.message}`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.log(`[PositionSeller] Could not check collateral balance: ${message}`);
       }
 
       console.log("[PositionSeller] ✅ CLOB balance/allowance checked");
-    } catch (error: any) {
-      console.warn("[PositionSeller] Warning: Failed to sync CLOB allowance:", error.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn("[PositionSeller] Warning: Failed to sync CLOB allowance:", message);
     }
   }
 
@@ -231,16 +303,21 @@ export class PolymarketPositionSellerService {
    * Check the on-chain CTF token balance for a specific token ID
    */
   private static async getOnChainBalance(tokenId: string): Promise<bigint> {
-    if (!this.provider || !this.ownerAddress) {
+    if (!this.publicClient || !this.ownerAddress) {
       return 0n;
     }
 
     try {
-      const ctfContract = new ethers.Contract(CTF_ADDRESS, ERC1155_ABI, this.provider);
-      const balance = await ctfContract.balanceOf(this.ownerAddress, tokenId);
+      const balance = await this.publicClient.readContract({
+        address: CTF_ADDRESS,
+        abi: ERC1155_ABI,
+        functionName: "balanceOf",
+        args: [this.ownerAddress, BigInt(tokenId)],
+      });
       return balance;
-    } catch (error: any) {
-      console.error(`[PositionSeller] Error checking on-chain balance:`, error.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[PositionSeller] Error checking on-chain balance:`, message);
       return 0n;
     }
   }
@@ -337,8 +414,9 @@ export class PolymarketPositionSellerService {
       }
 
       console.log(`[PositionSeller] Found ${tokenIds.size} tokens with open SELL orders`);
-    } catch (error: any) {
-      console.warn(`[PositionSeller] Could not fetch open orders: ${error.message}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[PositionSeller] Could not fetch open orders: ${message}`);
     }
 
     return tokenIds;
@@ -537,35 +615,33 @@ export class PolymarketPositionSellerService {
   private static async scanOnChainPositions(): Promise<
     Array<PolymarketPosition & { fromAPI: boolean }>
   > {
-    if (!this.provider || !this.ownerAddress) return [];
+    if (!this.publicClient || !this.ownerAddress) return [];
 
     const positions: Array<PolymarketPosition & { fromAPI: boolean }> = [];
 
     try {
-      const ctfContract = new ethers.Contract(
-        CTF_ADDRESS,
-        [
-          ...ERC1155_ABI,
-          "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)",
-        ],
-        this.provider
-      );
-
       // Get recent transfer events to our address (last ~1000 blocks ≈ 30 mins on Polygon)
-      const currentBlock = await this.provider.getBlockNumber();
-      const fromBlock = currentBlock - 1000;
+      const currentBlock = await this.publicClient.getBlockNumber();
+      const fromBlock = currentBlock - 1000n;
 
-      const filter = ctfContract.filters.TransferSingle(null, null, this.ownerAddress);
-      const events = await ctfContract.queryFilter(filter, fromBlock, currentBlock);
+      const logs = await this.publicClient.getLogs({
+        address: CTF_ADDRESS,
+        event: TRANSFER_SINGLE_EVENT,
+        args: {
+          to: this.ownerAddress,
+        },
+        fromBlock,
+        toBlock: currentBlock,
+      });
 
-      console.log(`[PositionSeller] Found ${events.length} recent transfer events to wallet`);
+      console.log(`[PositionSeller] Found ${logs.length} recent transfer events to wallet`);
 
       // Get unique token IDs from events
       const tokenIds = new Set<string>();
-      for (const event of events) {
-        if ("args" in event && event.args) {
-          const tokenId = event.args.id.toString();
-          tokenIds.add(tokenId);
+      for (const log of logs) {
+        const id = log.args.id;
+        if (typeof id === "bigint") {
+          tokenIds.add(id.toString());
         }
       }
 
@@ -598,8 +674,9 @@ export class PolymarketPositionSellerService {
           });
         }
       }
-    } catch (error: any) {
-      console.warn(`[PositionSeller] Error scanning on-chain positions: ${error.message}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[PositionSeller] Error scanning on-chain positions: ${message}`);
     }
 
     return positions;
@@ -653,7 +730,7 @@ export class PolymarketPositionSellerService {
   static getStatus(): {
     isRunning: boolean;
     isSelling: boolean;
-    ownerAddress: string | null;
+    ownerAddress: Address | null;
   } {
     return {
       isRunning: this.sellInterval !== null,

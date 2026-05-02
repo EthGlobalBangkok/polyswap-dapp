@@ -166,10 +166,8 @@ function mergeMarket(lean: SearchMarket, gamma: GammaMarket): ApiMarket {
   }
 
   if (outcomes.length === 2) {
-    const options: MarketOption[] = outcomes.map((o, i) => ({
-      text: o,
-      odds: Number(((parseFloat(prices[i] ?? "0") || 0) * 100).toFixed(2)),
-    }));
+    // Non-Yes/No binary (e.g. "Team A" vs "Team B"): treat the first outcome's
+    // probability as yesOdds so toViewModel can display it without falling back to 0%.
     return {
       id: lean.id,
       title: lean.question,
@@ -177,7 +175,8 @@ function mergeMarket(lean: SearchMarket, gamma: GammaMarket): ApiMarket {
       endDate: lean.end_date ?? gamma.endDate,
       category: lean.category ?? "",
       type: "binary",
-      options,
+      yesOdds: Number(((parseFloat(prices[0] ?? "0") || 0) * 100).toFixed(2)),
+      noOdds: Number(((parseFloat(prices[1] ?? "0") || 0) * 100).toFixed(2)),
       slug: lean.slug,
       clobTokenIds,
       description: gamma.description,
@@ -241,7 +240,7 @@ async function searchAndHydrate(params: {
 }): Promise<ApiMarket[]> {
   const url = new URL("/api/markets/search", window.location.origin);
   if (params.sort) url.searchParams.set("sort", params.sort);
-  if (params.limit) url.searchParams.set("limit", String(params.limit));
+  if (params.limit !== undefined) url.searchParams.set("limit", String(params.limit));
   if (params.q) url.searchParams.set("q", params.q);
   if (params.category) url.searchParams.set("category", params.category);
 

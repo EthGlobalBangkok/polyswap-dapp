@@ -55,9 +55,9 @@ export async function fetchGammaMarketBySlug(slug: string): Promise<GammaMarket 
   const url = `${GAMMA_BASE}/markets?slug=${encodeURIComponent(slug)}&limit=1`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Gamma fetch failed: ${res.status}`);
-  // Gamma returns a plain array; cast is safe — we typed only the fields we use.
-  const arr = (await res.json()) as GammaMarket[];
-  return arr[0] ?? null;
+  const json: unknown = await res.json();
+  if (!Array.isArray(json)) throw new Error("Gamma API returned non-array response");
+  return (json as GammaMarket[])[0] ?? null;
 }
 
 /**
@@ -70,5 +70,7 @@ export async function fetchGammaMarketsByIds(ids: string[]): Promise<GammaMarket
   const url = `${GAMMA_BASE}/markets?${params}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Gamma fetch failed: ${res.status}`);
-  return (await res.json()) as GammaMarket[];
+  const json: unknown = await res.json();
+  if (!Array.isArray(json)) throw new Error("Gamma API returned non-array response");
+  return json as GammaMarket[];
 }

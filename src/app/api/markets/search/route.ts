@@ -18,20 +18,55 @@ import { DatabaseService } from "@/backend/services/databaseService";
  *
  * Response: { success: true, data: { markets: DatabaseMarket[], count: number } }
  */
+
+/**
+ * Parse a non-negative number from a raw query-param string.
+ * Returns the fallback when raw is null, null when the value is invalid.
+ */
+function parseNonNegativeNumber(raw: string | null, fallback: number): number | null {
+  if (raw === null) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
+
+/**
+ * Parse a positive integer from a raw query-param string.
+ * Returns the fallback when raw is null, null when the value is out-of-range.
+ */
+function parsePositiveInt(raw: string | null, fallback: number, max: number): number | null {
+  if (raw === null) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > max) return null;
+  return n;
+}
+
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
 
   const q = sp.get("q") ?? undefined;
   const category = sp.get("category") ?? undefined;
-  const volumeMin = sp.get("volumeMin") ? Number(sp.get("volumeMin")) : 0;
-  const liquidityMin = sp.get("liquidityMin") ? Number(sp.get("liquidityMin")) : 0;
+
+  const volumeMin = parseNonNegativeNumber(sp.get("volumeMin"), 0);
+  if (volumeMin === null)
+    return NextResponse.json({ success: false, error: "invalid volumeMin" }, { status: 400 });
+
+  const liquidityMin = parseNonNegativeNumber(sp.get("liquidityMin"), 0);
+  if (liquidityMin === null)
+    return NextResponse.json({ success: false, error: "invalid liquidityMin" }, { status: 400 });
+
+  const limit = parsePositiveInt(sp.get("limit"), 50, 100);
+  if (limit === null)
+    return NextResponse.json({ success: false, error: "invalid limit" }, { status: 400 });
+
+  const rawOffset = parseNonNegativeNumber(sp.get("offset"), 0);
+  if (rawOffset === null)
+    return NextResponse.json({ success: false, error: "invalid offset" }, { status: 400 });
+  const offset = Math.floor(rawOffset);
 
   const sortRaw = sp.get("sort") ?? "volume";
   const sort: "volume" | "liquidity" | "end_date" =
     sortRaw === "liquidity" || sortRaw === "end_date" ? sortRaw : "volume";
-
-  const limit = Math.min(Number(sp.get("limit") ?? 50), 100);
-  const offset = Math.max(Number(sp.get("offset") ?? 0), 0);
 
   try {
     const markets = await DatabaseService.searchMarkets({

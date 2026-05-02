@@ -1,5 +1,38 @@
 import { type NextRequest, NextResponse } from "next/server";
+import {
+  encodeFunctionData,
+  erc20Abi,
+  getAddress,
+  isAddress,
+  maxUint256,
+  type Address,
+  type Hex,
+} from "viem";
 import { DatabaseService } from "../../../../backend/services/databaseService";
+import { TransactionEncodingService } from "../../../../backend/services/transactionEncodingService";
+import { getPolymarketOrderService } from "../../../../backend/services/polymarketOrderService";
+import { type PolyswapOrderData } from "../../../../backend/interfaces/PolyswapOrder";
+import { getPostHogClient } from "../../../../lib/posthog-server";
+
+const VAULT_RELAYER: Address = getAddress("0xC92E8bdf79f0507f65a392b0ab4667716BFE0110");
+const COMPOSABLE_COW: Address = getAddress(
+  process.env.COMPOSABLE_COW ?? "0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74"
+);
+
+const APP_DATA_DEFAULT: Hex = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+interface CreateOrderRequestBody {
+  sellToken: unknown;
+  buyToken: unknown;
+  sellAmount: unknown;
+  minBuyAmount?: unknown;
+  selectedOutcome: unknown;
+  betPercentage: unknown;
+  startDate?: unknown;
+  deadline?: unknown;
+  marketId: unknown;
+  owner: unknown;
+}
 
 /**
  * @swagger
@@ -45,19 +78,6 @@ import { DatabaseService } from "../../../../backend/services/databaseService";
  *     responses:
  *       200:
  *         description: List of orders
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Order'
- *                 count:
- *                   type: integer
  *       400:
  *         description: Invalid block range
  *       500:
@@ -95,7 +115,6 @@ export async function GET(request: NextRequest) {
 
       orders = await DatabaseService.getPolyswapOrdersByBlockRange(fromBlockNum, toBlockNum);
     } else {
-      // For now, get all orders. In the future, we can add more filters
       orders = await DatabaseService.getPolyswapOrdersByOwner("", limitNum, offsetNum);
     }
 
@@ -122,6 +141,363 @@ export async function GET(request: NextRequest) {
       {
         success: false,
         error: "Failed to fetch orders",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * @swagger
+ * /api/polyswap/orders:
+ *   post:
+ *     tags:
+ *       - Orders
+ *     summary: Create a new order (consolidated)
+ *     description: >
+ *       Creates a draft DB row, places the Polymarket GTD order, builds
+ *       ComposableCoW calldata, and returns both a single-tx and an
+ *       approve+create batch — all in one round-trip.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - sellToken
+ *               - buyToken
+ *               - sellAmount
+ *               - selectedOutcome
+ *               - betPercentage
+ *               - marketId
+ *               - owner
+ *     responses:
+ *       200:
+ *         description: Order bundle created
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Market not found
+ *       502:
+ *         description: Polymarket placement failed
+ *       500:
+ *         description: Server error
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = (await request.json()) as CreateOrderRequestBody;
+
+    // --- Validate required fields ---
+    const requiredFields = [
+      "sellToken",
+      "buyToken",
+      "sellAmount",
+      "selectedOutcome",
+      "betPercentage",
+      "marketId",
+      "owner",
+    ] as const;
+
+    for (const field of requiredFields) {
+      if (body[field] === undefined || body[field] === null || body[field] === "") {
+        return NextResponse.json(
+          { success: false, error: `Missing required field: ${field}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Narrow typed fields
+    const sellTokenRaw = body.sellToken;
+    const buyTokenRaw = body.buyToken;
+    const ownerRaw = body.owner;
+
+    if (typeof sellTokenRaw !== "string" || !isAddress(sellTokenRaw)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid sellToken address" },
+        { status: 400 }
+      );
+    }
+    if (typeof buyTokenRaw !== "string" || !isAddress(buyTokenRaw)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid buyToken address" },
+        { status: 400 }
+      );
+    }
+    if (typeof ownerRaw !== "string" || !isAddress(ownerRaw)) {
+      return NextResponse.json({ success: false, error: "Invalid owner address" }, { status: 400 });
+    }
+
+    // isAddress is a type guard — these are now Address
+    const sellToken: Address = sellTokenRaw;
+    const buyToken: Address = buyTokenRaw;
+    const owner: Address = ownerRaw;
+
+    if (typeof body.sellAmount !== "string" || parseFloat(body.sellAmount) <= 0) {
+      return NextResponse.json(
+        { success: false, error: "sellAmount must be a positive number string" },
+        { status: 400 }
+      );
+    }
+    const sellAmount: string = body.sellAmount;
+
+    const minBuyAmount: string =
+      typeof body.minBuyAmount === "string" && body.minBuyAmount !== "" ? body.minBuyAmount : "1";
+    if (parseFloat(minBuyAmount) <= 0) {
+      return NextResponse.json(
+        { success: false, error: "minBuyAmount must be positive" },
+        { status: 400 }
+      );
+    }
+
+    if (typeof body.selectedOutcome !== "string" || body.selectedOutcome === "") {
+      return NextResponse.json(
+        { success: false, error: "selectedOutcome must be a non-empty string" },
+        { status: 400 }
+      );
+    }
+    const selectedOutcome: string = body.selectedOutcome;
+
+    const betPercentage = Number(body.betPercentage);
+    if (!isFinite(betPercentage) || betPercentage <= 0 || betPercentage > 100) {
+      return NextResponse.json(
+        { success: false, error: "betPercentage must be a finite number in (0, 100]" },
+        { status: 400 }
+      );
+    }
+
+    if (typeof body.marketId !== "string" || body.marketId === "") {
+      return NextResponse.json(
+        { success: false, error: "marketId must be a non-empty string" },
+        { status: 400 }
+      );
+    }
+    const marketId: string = body.marketId;
+
+    // --- Date handling ---
+    const now = new Date();
+    let startDate: Date;
+    if (!body.startDate || body.startDate === "now") {
+      startDate = new Date();
+    } else {
+      startDate = new Date(body.startDate as string);
+      // Reject start dates more than 60s in the past
+      if (startDate < new Date(now.getTime() - 60_000)) {
+        return NextResponse.json(
+          { success: false, error: "startDate must not be in the past" },
+          { status: 400 }
+        );
+      }
+    }
+
+    let deadline: Date;
+    if (!body.deadline) {
+      deadline = new Date(startDate);
+      deadline.setDate(deadline.getDate() + 14);
+    } else {
+      deadline = new Date(body.deadline as string);
+    }
+
+    if (deadline <= startDate) {
+      return NextResponse.json(
+        { success: false, error: "deadline must be after startDate" },
+        { status: 400 }
+      );
+    }
+
+    // --- Resolve market ---
+    const market = await DatabaseService.getMarketById(marketId);
+    if (!market) {
+      return NextResponse.json(
+        { success: false, error: "Market not found", message: `No market with id: ${marketId}` },
+        { status: 404 }
+      );
+    }
+
+    const clobTokenIds: string[] = market.clob_token_ids ?? [];
+    if (clobTokenIds.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Market has no CLOB token IDs" },
+        { status: 400 }
+      );
+    }
+
+    // --- Fetch outcomes from Gamma to map selectedOutcome → token index ---
+    let outcomes: string[] = [];
+    try {
+      const gammaUrl = `https://gamma-api.polymarket.com/markets?id=${encodeURIComponent(market.id)}&limit=1`;
+      const gammaRes = await fetch(gammaUrl);
+      if (gammaRes.ok) {
+        const gammaData: unknown = await gammaRes.json();
+        if (Array.isArray(gammaData) && gammaData.length > 0) {
+          const raw = gammaData[0] as Record<string, unknown>;
+          const rawOutcomes: unknown = raw["outcomes"];
+          if (typeof rawOutcomes === "string") {
+            const parsed: unknown = JSON.parse(rawOutcomes);
+            if (Array.isArray(parsed)) {
+              outcomes = parsed as string[];
+            }
+          }
+        }
+      }
+    } catch (gammaError) {
+      console.error("Failed to fetch outcomes from Gamma:", gammaError);
+    }
+
+    if (outcomes.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Could not determine market outcomes from Gamma" },
+        { status: 500 }
+      );
+    }
+
+    const outcomeIndex = outcomes.indexOf(selectedOutcome);
+    if (outcomeIndex === -1) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid outcome",
+          message: `'${selectedOutcome}' is not valid. Valid outcomes: ${outcomes.join(", ")}`,
+        },
+        { status: 400 }
+      );
+    }
+    if (outcomeIndex >= clobTokenIds.length) {
+      return NextResponse.json(
+        { success: false, error: "No CLOB token ID for the selected outcome" },
+        { status: 500 }
+      );
+    }
+
+    // --- Place Polymarket GTD order ---
+    let polymarketOrderHash: string;
+    try {
+      const polymarket = getPolymarketOrderService();
+      await polymarket.initialize();
+      const result = await polymarket.postGTDOrder({
+        // outcomeIndex < clobTokenIds.length is enforced above
+        tokenID: clobTokenIds[outcomeIndex]!,
+        price: betPercentage / 100,
+        side: "BUY",
+        // size=5 preserved from the original endpoint; actual sizing is a Phase 7+ concern
+        size: 5,
+        expiration: Math.floor(deadline.getTime() / 1000),
+      });
+      polymarketOrderHash = result.response.orderID;
+      if (!polymarketOrderHash) {
+        return NextResponse.json(
+          { success: false, error: "Polymarket did not return an order ID" },
+          { status: 502 }
+        );
+      }
+    } catch (polymarketError) {
+      console.error("Failed to place Polymarket order:", polymarketError);
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Polymarket order placement failed",
+          message:
+            polymarketError instanceof Error ? polymarketError.message : "Unknown Polymarket error",
+        },
+        { status: 502 }
+      );
+    }
+
+    // --- Build PolyswapOrderData ---
+    const orderData: PolyswapOrderData = {
+      sellToken,
+      buyToken,
+      receiver: owner,
+      sellAmount,
+      minBuyAmount,
+      t0: Math.floor(startDate.getTime() / 1000).toString(),
+      t: Math.floor(deadline.getTime() / 1000).toString(),
+      polymarketOrderHash,
+      appData: APP_DATA_DEFAULT,
+    };
+
+    // --- Build calldata ---
+    const params = TransactionEncodingService.createConditionalOrderParams(orderData);
+    const createCalldata = TransactionEncodingService.encodeCreateWithContextCallData(params);
+    const orderHash = TransactionEncodingService.calculateOrderHash(params);
+    const approveCalldata = encodeFunctionData({
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [VAULT_RELAYER, maxUint256],
+    });
+
+    // --- Insert draft DB row ---
+    let orderId: number;
+    try {
+      orderId = await DatabaseService.insertPolyswapOrderFromForm({
+        sellToken,
+        buyToken,
+        sellAmount,
+        minBuyAmount,
+        selectedOutcome,
+        startDate: startDate.toISOString(),
+        deadline: deadline.toISOString(),
+        marketId,
+        owner,
+        outcomeSelected: selectedOutcome,
+        betPercentageValue: betPercentage,
+      });
+    } catch (dbError) {
+      console.error("Failed to insert order into database:", dbError);
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Failed to save order",
+          message: dbError instanceof Error ? dbError.message : "Unknown DB error",
+        },
+        { status: 500 }
+      );
+    }
+
+    // Attach the Polymarket hash to the row immediately
+    await DatabaseService.updateOrderPolymarketHashById(orderId, polymarketOrderHash);
+
+    // --- PostHog analytics (same event as legacy /orders/create) ---
+    const posthog = getPostHogClient();
+    posthog.capture({
+      distinctId: owner,
+      event: "server_order_created",
+      properties: {
+        order_id: orderId,
+        market_id: marketId,
+        sell_token: sellToken,
+        buy_token: buyToken,
+        selected_outcome: selectedOutcome,
+        bet_percentage: betPercentage,
+        owner,
+      },
+    });
+
+    // --- Return bundle ---
+    return NextResponse.json({
+      success: true,
+      data: {
+        orderId,
+        polymarketOrderHash,
+        orderHash,
+        tx: { to: COMPOSABLE_COW, data: createCalldata, value: "0" },
+        batchTx: [
+          { to: sellToken, data: approveCalldata, value: "0" },
+          { to: COMPOSABLE_COW, data: createCalldata, value: "0" },
+        ],
+        sellToken,
+        sellAmount,
+        vaultRelayer: VAULT_RELAYER,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating order:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to create order",
         message: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }

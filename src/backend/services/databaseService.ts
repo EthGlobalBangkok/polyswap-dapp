@@ -169,7 +169,7 @@ export class DatabaseService {
     deadline: string;
     marketId: string;
     owner: string;
-    outcomeSelected: number;
+    outcomeSelected: string;
     betPercentageValue: number;
   }): Promise<number> {
     const sql = `

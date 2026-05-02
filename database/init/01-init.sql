@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS polyswap_orders (
   bet_percentage        DECIMAL(5, 2),
   status                VARCHAR(20) NOT NULL DEFAULT 'draft',
   order_uid             VARCHAR(114),
+  -- Phase 7: salt for getTradeableOrderWithSignature reconstruction (CoW conditional order params)
+  salt                  VARCHAR(66),
+  -- Phase 7: order failure visibility — populated by orderHealthCheck cron
+  last_error_name       VARCHAR(64),
+  last_error_reason     TEXT,
+  last_error_retry_at   BIGINT,
+  last_checked_at       TIMESTAMPTZ,
+  cow_order_status      VARCHAR(32),
   filled_at             TIMESTAMP WITH TIME ZONE,
   fill_transaction_hash VARCHAR(66),
   fill_block_number     BIGINT,
@@ -64,7 +72,7 @@ CREATE TABLE IF NOT EXISTS polyswap_orders (
   CONSTRAINT valid_sell_amount    CHECK (sell_amount > 0),
   CONSTRAINT valid_min_buy_amount CHECK (min_buy_amount > 0),
   CONSTRAINT valid_times          CHECK (end_time > start_time),
-  CONSTRAINT valid_status         CHECK (status IN ('draft', 'live', 'filled', 'canceled')),
+  CONSTRAINT valid_status         CHECK (status IN ('draft', 'live', 'filled', 'canceled', 'errored')),
   CONSTRAINT valid_bet_percentage CHECK (bet_percentage IS NULL OR (bet_percentage >= 0 AND bet_percentage <= 100)),
   CONSTRAINT fk_market            FOREIGN KEY (market_id) REFERENCES markets(id) ON DELETE SET NULL
 );

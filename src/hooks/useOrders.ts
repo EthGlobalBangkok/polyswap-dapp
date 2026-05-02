@@ -25,7 +25,7 @@ export interface OrderViewModel {
   /** Threshold used for visual feedback. Real value comes from order params later. */
   threshold: number;
   /** Underlying DB lifecycle status — used by cancel logic (off-chain delete vs. on-chain remove). */
-  phase: "draft" | "live" | "filled" | "canceled";
+  phase: "draft" | "live" | "filled" | "canceled" | "errored";
   /** On-chain order hash, populated once the listener observes ConditionalOrderCreated. Null while draft. */
   orderHash: Hex | null;
 }
@@ -37,6 +37,8 @@ function mapStatus(status: DatabasePolyswapOrder["status"]): SwapStatus {
     case "filled":
       return "done";
     case "canceled":
+      return "cancelled";
+    case "errored":
       return "cancelled";
     case "live":
       return "waiting";

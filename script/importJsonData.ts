@@ -3,19 +3,67 @@ import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { testConnection } from "../src/backend/db/database";
 import { DatabaseService } from "../src/backend/services/databaseService";
-import { Market } from "../src/backend/interfaces/Market";
+import { type Market } from "../src/backend/interfaces/Market";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// ---------------------------------------------------------------------------
+// The data.json file (populated by pnpm saveMarkets) contains the raw Gamma
+// API shape. Map it to the lean Market interface before upserting.
+// ---------------------------------------------------------------------------
+
+interface RawGammaMarket {
+  id: string;
+  slug?: string;
+  question?: string;
+  category?: string;
+  volume?: string | number;
+  liquidity?: string | number;
+  liquidityNum?: number;
+  endDate?: string;
+  clobTokenIds?: string; // JSON-encoded string array from Gamma
+  active?: boolean;
+}
+
+function mapToLean(raw: RawGammaMarket): Market | null {
+  if (!raw.id || !raw.slug || !raw.question) return null;
+
+  let clobTokenIds: string[] = [];
+  if (raw.clobTokenIds) {
+    try {
+      const parsed: unknown = JSON.parse(raw.clobTokenIds);
+      clobTokenIds = Array.isArray(parsed) ? (parsed as string[]) : [];
+    } catch {
+      clobTokenIds = [];
+    }
+  }
+
+  return {
+    id: raw.id,
+    slug: raw.slug,
+    question: raw.question,
+    category: raw.category ?? null,
+    volume: typeof raw.volume === "number" ? raw.volume : parseFloat(raw.volume ?? "0") || 0,
+    liquidity:
+      raw.liquidityNum !== undefined
+        ? raw.liquidityNum
+        : typeof raw.liquidity === "number"
+          ? raw.liquidity
+          : parseFloat(raw.liquidity ?? "0") || 0,
+    endDate: raw.endDate ? new Date(raw.endDate) : null,
+    clobTokenIds,
+    active: raw.active ?? true,
+  };
+}
+
 /**
- * Script to load market data from data.json and save it to the database
+ * Load market data from data.json and upsert into the lean markets table.
  */
 async function loadDataFromJson() {
   console.log("🚀 Starting data import from JSON file...");
 
   try {
-    // Test database connection first
     console.log("🔍 Testing database connection...");
     const isConnected = await testConnection();
     if (!isConnected) {
@@ -24,236 +72,69 @@ async function loadDataFromJson() {
     }
     console.log("✅ Database connected successfully!");
 
-    // Read the JSON file
     console.log("📖 Reading data.json file...");
     const jsonPath = resolve(__dirname, "../data.json");
     const jsonData = await fs.readFile(jsonPath, "utf-8");
-    const markets: Market[] = JSON.parse(jsonData);
+    const rawMarkets: RawGammaMarket[] = JSON.parse(jsonData) as RawGammaMarket[];
 
-    console.log(`📊 Found ${markets.length} markets in JSON file`);
+    console.log(`📊 Found ${rawMarkets.length} markets in JSON file`);
 
-    // Get current database statistics
-    console.log("📈 Getting current database statistics...");
-    const statsBefore = await DatabaseService.getMarketStats();
-    console.log("Current stats:", {
-      totalMarkets: statsBefore.totalMarkets,
-      totalVolume: statsBefore.totalVolume.toFixed(2),
-      avgVolume: statsBefore.avgVolume.toFixed(2),
-    });
-
-    // Process markets in batches to avoid overwhelming the database
     const batchSize = 100;
-    let processedCount = 0;
     let successCount = 0;
+    let skipCount = 0;
     let errorCount = 0;
 
-    console.log("💾 Starting bulk insert (processing in batches)...");
+    console.log("💾 Starting upsert (processing in batches)...");
 
-    for (let i = 0; i < markets.length; i += batchSize) {
-      const batch = markets.slice(i, i + batchSize);
+    for (let i = 0; i < rawMarkets.length; i += batchSize) {
+      const batch = rawMarkets.slice(i, i + batchSize);
       const batchNumber = Math.floor(i / batchSize) + 1;
-      const totalBatches = Math.ceil(markets.length / batchSize);
+      const totalBatches = Math.ceil(rawMarkets.length / batchSize);
 
       console.log(
         `🔄 Processing batch ${batchNumber}/${totalBatches} (${batch.length} markets)...`
       );
 
-      try {
-        await DatabaseService.insertMarkets(batch);
-        successCount += batch.length;
-      } catch (error) {
-        errorCount += batch.length;
-        console.error(
-          `❌ Error inserting batch ${batchNumber}:`,
-          error instanceof Error ? error.message : error
-        );
+      for (const raw of batch) {
+        const lean = mapToLean(raw);
+        if (!lean) {
+          skipCount++;
+          continue;
+        }
+        try {
+          await DatabaseService.upsertMarket(lean);
+          successCount++;
+        } catch (error) {
+          errorCount++;
+          console.error(
+            `❌ Error upserting market ${raw.id}:`,
+            error instanceof Error ? error.message : error
+          );
+        }
       }
 
-      processedCount += batch.length;
-
-      // Show progress every 500 markets
-      if (processedCount % 500 === 0) {
-        console.log(
-          `📊 Progress: ${processedCount}/${markets.length} markets processed (${successCount} success, ${errorCount} errors)`
-        );
-      }
-
-      // Small delay between batches to be gentle on the database
-      if (i + batchSize < markets.length) {
+      if (i + batchSize < rawMarkets.length) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
     }
 
-    console.log("✅ Bulk insert completed!");
+    const removed = await DatabaseService.removeEndedMarkets();
+
+    console.log("\n✅ Import completed!");
     console.log(
-      `📊 Final results: ${successCount} successful, ${errorCount} errors out of ${markets.length} total markets`
+      `📊 Results: ${successCount} upserted, ${skipCount} skipped, ${errorCount} errors, ${removed} ended markets removed`
     );
-
-    // Get updated database statistics
-    console.log("📈 Getting updated database statistics...");
-    const statsAfter = await DatabaseService.getMarketStats();
-    console.log("Updated stats:", {
-      totalMarkets: statsAfter.totalMarkets,
-      totalVolume: statsAfter.totalVolume.toFixed(2),
-      avgVolume: statsAfter.avgVolume.toFixed(2),
-      marketsEndingToday: statsAfter.marketsEndingToday,
-    });
-
-    console.log(
-      `📈 Added ${statsAfter.totalMarkets - statsBefore.totalMarkets} new markets to database`
-    );
-
-    // Show some sample queries
-    console.log("\n🔍 Running sample queries...");
-
-    // Find Trump-related markets
-    const trumpMarkets = await DatabaseService.searchMarkets("Trump");
-    console.log(`Found ${trumpMarkets.length} markets containing "Trump"`);
-
-    // Find high-volume markets
-    const highVolumeMarkets = await DatabaseService.getMarketsByVolume(100000);
-    console.log(`Found ${highVolumeMarkets.length} markets with volume > 100,000`);
-
-    // Find markets ending soon
-    const soonEndingMarkets = await DatabaseService.getMarketsEndingAfter(new Date());
-    console.log(`Found ${soonEndingMarkets.length} markets ending after today`);
-
-    // Show category distribution
-    console.log("\n📊 Category distribution:");
-    const categories = [
-      "Politics",
-      "Crypto",
-      "Economics",
-      "Sports",
-      "Entertainment",
-      "World",
-      "Technology",
-      "Other",
-    ];
-    for (const category of categories) {
-      const categoryMarkets = await DatabaseService.getMarketsByCategory(category, 1);
-      if (categoryMarkets.length > 0) {
-        console.log(`  ${category}: ${categoryMarkets.length} markets`);
-      }
-    }
-
-    console.log("\n✅ Data import completed successfully!");
   } catch (error) {
     console.error("❌ Error during data import:", error);
     throw error;
   }
 }
 
-/**
- * Alternative function to load data with filtering options
- */
-async function loadDataFromJsonWithFilters(options: {
-  minVolume?: number;
-  maxMarkets?: number;
-  onlyActive?: boolean;
-  endDateAfter?: Date;
-}) {
-  console.log("🚀 Starting filtered data import from JSON file...");
-  console.log("Filters:", options);
-
-  try {
-    // Test database connection first
-    const isConnected = await testConnection();
-    if (!isConnected) {
-      console.error("❌ Failed to connect to database");
-      return;
-    }
-
-    // Read and filter the JSON file
-    const jsonPath = resolve(__dirname, "../data.json");
-    const jsonData = await fs.readFile(jsonPath, "utf-8");
-    let markets: Market[] = JSON.parse(jsonData);
-
-    console.log(`📊 Found ${markets.length} total markets in JSON file`);
-
-    // Apply filters
-    if (options.minVolume !== undefined) {
-      markets = markets.filter((m) => parseFloat(m.volume) >= options.minVolume!);
-      console.log(`📊 After volume filter (>= ${options.minVolume}): ${markets.length} markets`);
-    }
-
-    if (options.onlyActive) {
-      markets = markets.filter((m) => m.active);
-      console.log(`📊 After active filter: ${markets.length} markets`);
-    }
-
-    if (options.endDateAfter) {
-      markets = markets.filter((m) => new Date(m.endDate) > options.endDateAfter!);
-      console.log(`📊 After end date filter: ${markets.length} markets`);
-    }
-
-    if (options.maxMarkets !== undefined && markets.length > options.maxMarkets) {
-      markets = markets.slice(0, options.maxMarkets);
-      console.log(`📊 After max limit: ${markets.length} markets`);
-    }
-
-    // Insert filtered markets
-    await DatabaseService.insertMarkets(markets);
-
-    console.log("✅ Filtered data import completed!");
-  } catch (error) {
-    console.error("❌ Error during filtered data import:", error);
-    throw error;
-  }
-}
-
 // Main execution
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const args = process.argv.slice(2);
-
-  if (args.includes("--help")) {
-    console.log(`
-Usage: npm run import:json [options]
-
-Options:
-  --filtered          Use filtered import
-  --min-volume N      Only import markets with volume >= N
-  --max-markets N     Limit to N markets
-  --active-only       Only import active markets
-  --future-only       Only import markets ending in the future
-  --help              Show this help message
-
-Examples:
-  npm run import:json
-  npm run import:json -- --filtered --min-volume 10000 --max-markets 100 --active-only
-`);
-    process.exit(0);
-  }
-
-  if (args.includes("--filtered")) {
-    const options: any = {};
-
-    const minVolumeIndex = args.indexOf("--min-volume");
-    if (minVolumeIndex !== -1 && args[minVolumeIndex + 1]) {
-      options.minVolume = parseFloat(args[minVolumeIndex + 1]);
-    }
-
-    const maxMarketsIndex = args.indexOf("--max-markets");
-    if (maxMarketsIndex !== -1 && args[maxMarketsIndex + 1]) {
-      options.maxMarkets = parseInt(args[maxMarketsIndex + 1]);
-    }
-
-    if (args.includes("--active-only")) {
-      options.onlyActive = true;
-    }
-
-    if (args.includes("--future-only")) {
-      options.endDateAfter = new Date();
-    }
-
-    loadDataFromJsonWithFilters(options)
-      .then(() => process.exit(0))
-      .catch(() => process.exit(1));
-  } else {
-    loadDataFromJson()
-      .then(() => process.exit(0))
-      .catch(() => process.exit(1));
-  }
+  loadDataFromJson()
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
 }
 
-export { loadDataFromJson, loadDataFromJsonWithFilters };
+export { loadDataFromJson };

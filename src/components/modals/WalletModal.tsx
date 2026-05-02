@@ -26,10 +26,6 @@ const META: Record<string, { label: string; blurb: string }> = {
     label: "WalletConnect",
     blurb: "Scan a QR or open in your wallet of choice.",
   },
-  safe: {
-    label: "Safe wallet",
-    blurb: "Auto-detected when this site is loaded inside Safe.",
-  },
 };
 
 function describe(c: Connector): { label: string; blurb: string } {
@@ -43,10 +39,15 @@ export function WalletModal({ open, onClose, onConnected }: Props) {
 
   const list = useMemo<ConnectorView[]>(
     () =>
-      connectors.map((c) => ({
-        connector: c,
-        ...describe(c),
-      })),
+      connectors
+        // Safe auto-connects when the dApp loads inside a Safe iframe (via the
+        // safe() connector's unstable_getInfoTimeout). Don't show it as a clickable
+        // option outside iframe context — it would just fail.
+        .filter((c) => c.id !== "safe")
+        .map((c) => ({
+          connector: c,
+          ...describe(c),
+        })),
     [connectors]
   );
 

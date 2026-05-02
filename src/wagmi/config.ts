@@ -11,6 +11,9 @@ if (!projectId) {
 
 export const config = createConfig({
   chains: [polygon],
+  // The dApp is Safe-only. Disable EIP-6963 auto-discovery so wagmi doesn't
+  // surface MetaMask/Rabby/Coinbase Wallet etc. in the connector list.
+  multiInjectedProviderDiscovery: false,
   transports: {
     [polygon.id]: http(process.env.NEXT_PUBLIC_RPC_URL),
   },

@@ -2,6 +2,7 @@ import { query } from "../db/database";
 import { type Market } from "../interfaces/Market";
 import { type DatabaseMarket } from "../interfaces/Database";
 import {
+  type PolyswapOrderData,
   type PolyswapOrderRecord,
   type DatabasePolyswapOrder,
   type SoldPosition,
@@ -283,6 +284,81 @@ export class DatabaseService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Idempotent upsert from a ConditionalOrderCreated on-chain event.
+   *
+   * - If a draft row exists for (polymarket_order_hash, owner) → upgrade it to
+   *   "live", fill in order_hash + tx coordinates. This is the standard path:
+   *   the frontend creates the draft via POST /orders before signing, and the
+   *   listener observes the event after the user signs and the tx mines.
+   * - Otherwise → insert a fresh "live" row. This is the catch-up path: the
+   *   listener saw the event but the draft was lost (e.g. backend was down
+   *   when the user submitted, or the order was created by a non-frontend path).
+   */
+  static async upsertLiveOrderFromEvent(input: {
+    owner: string;
+    orderHash: string;
+    handler: string;
+    data: PolyswapOrderData;
+    blockNumber: number;
+    transactionHash: string;
+    logIndex: number;
+  }): Promise<void> {
+    const ownerLc = input.owner.toLowerCase();
+
+    // 1. Try to upgrade an existing draft (matched by polymarket_order_hash + owner).
+    const draftResult = await query<{ id: number }>(
+      `SELECT id FROM polyswap_orders
+       WHERE polymarket_order_hash = $1 AND owner = $2 AND status = 'draft'
+       LIMIT 1`,
+      [input.data.polymarketOrderHash, ownerLc]
+    );
+
+    if (draftResult.rows[0]) {
+      await query(
+        `UPDATE polyswap_orders SET
+           status = 'live',
+           order_hash = $1,
+           handler = $2,
+           transaction_hash = $3,
+           block_number = $4,
+           log_index = $5,
+           app_data = $6,
+           updated_at = CURRENT_TIMESTAMP
+         WHERE id = $7`,
+        [
+          input.orderHash,
+          input.handler.toLowerCase(),
+          input.transactionHash,
+          input.blockNumber,
+          input.logIndex,
+          input.data.appData,
+          draftResult.rows[0].id,
+        ]
+      );
+      return;
+    }
+
+    // 2. Catch-up insert. Reuse existing upsert-on-order_hash via insertPolyswapOrder.
+    await this.insertPolyswapOrder({
+      orderHash: input.orderHash,
+      owner: ownerLc,
+      handler: input.handler.toLowerCase(),
+      sellToken: input.data.sellToken,
+      buyToken: input.data.buyToken,
+      sellAmount: input.data.sellAmount,
+      minBuyAmount: input.data.minBuyAmount,
+      startTime: parseInt(input.data.t0, 10),
+      endTime: parseInt(input.data.t, 10),
+      polymarketOrderHash: input.data.polymarketOrderHash,
+      appData: input.data.appData,
+      blockNumber: input.blockNumber,
+      transactionHash: input.transactionHash,
+      logIndex: input.logIndex,
+      createdAt: new Date(),
+    });
   }
 
   /**

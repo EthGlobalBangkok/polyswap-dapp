@@ -1,4 +1,4 @@
-import { Pool, type PoolClient } from "pg";
+import { Pool, type PoolClient, type QueryResult } from "pg";
 import { config as dotenvConfig } from "dotenv";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -56,7 +56,7 @@ export async function getClient(): Promise<PoolClient> {
 export async function query<T extends Record<string, any> = Record<string, unknown>>(
   text: string,
   params?: unknown[]
-): Promise<import("pg").QueryResult<T>> {
+): Promise<QueryResult<T>> {
   const client = await pool.connect();
   try {
     // params cast: pg accepts ValueExpression[] but our callers pass unknown[].

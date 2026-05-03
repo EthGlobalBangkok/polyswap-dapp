@@ -15,9 +15,10 @@ import {
 export interface SearchMarketsOptions {
   q?: string;
   category?: string;
+  categories?: string[];
   volumeMin?: number;
   liquidityMin?: number;
-  sort?: "volume" | "liquidity" | "end_date";
+  sort?: "volume" | "liquidity" | "end_date" | "interest";
   limit?: number;
   offset?: number;
 }
@@ -27,18 +28,20 @@ export class DatabaseService {
   // Markets — lean search-index
   // ============================================================
 
-  /**
-   * Upsert a single market into the lean search-index table.
-   * Uses ON CONFLICT (id) so re-running the market sync is idempotent.
-   */
   static async upsertMarket(market: Market): Promise<void> {
     await query(
-      `INSERT INTO markets (id, slug, question, category, volume, liquidity, end_date, clob_token_ids, active, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      `INSERT INTO markets (
+         id, slug, question, description, category, tags, outcomes,
+         volume, liquidity, end_date, clob_token_ids, active, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, NOW())
        ON CONFLICT (id) DO UPDATE SET
          slug           = EXCLUDED.slug,
          question       = EXCLUDED.question,
+         description    = EXCLUDED.description,
          category       = EXCLUDED.category,
+         tags           = EXCLUDED.tags,
+         outcomes       = EXCLUDED.outcomes,
          volume         = EXCLUDED.volume,
          liquidity      = EXCLUDED.liquidity,
          end_date       = EXCLUDED.end_date,
@@ -49,11 +52,14 @@ export class DatabaseService {
         market.id,
         market.slug,
         market.question,
+        market.description,
         market.category,
+        market.tags,
+        JSON.stringify(market.outcomes),
         market.volume,
         market.liquidity,
         market.endDate,
-        market.clobTokenIds, // TEXT[] — pg driver maps JS string[] directly
+        market.clobTokenIds,
         market.active,
       ]
     );
@@ -77,6 +83,7 @@ export class DatabaseService {
     const {
       q,
       category,
+      categories,
       volumeMin = 0,
       liquidityMin = 0,
       sort = "volume",
@@ -85,19 +92,34 @@ export class DatabaseService {
     } = opts;
 
     const wheres: string[] = ["active = TRUE", "volume >= $1", "liquidity >= $2"];
-    // params index starts at 3 after the two floor params above
     const params: unknown[] = [volumeMin, liquidityMin];
 
     if (category) {
       params.push(category);
-      wheres.push(`category = $${params.length}`);
+      wheres.push(`$${params.length} = ANY(tags)`);
     }
+
+    if (categories && categories.length > 0) {
+      params.push(categories);
+      wheres.push(`tags && $${params.length}::text[]`);
+    }
+
+    // Interest score: log-scaled blend of trading activity, market depth and
+    // closeness to resolution. Boosts deep, active markets that resolve soon
+    // over thin or far-future ones — beats raw volume for "what's hot".
+    const INTEREST_EXPR = `
+      (LN(GREATEST(volume, 0) + 1) * 0.6 +
+       LN(GREATEST(liquidity, 0) + 1) * 0.4) /
+      (1 + GREATEST(EXTRACT(EPOCH FROM (end_date - NOW())) / 86400.0, 1) / 30.0)
+    `;
 
     let orderBy: string;
     if (sort === "liquidity") {
       orderBy = "liquidity DESC";
     } else if (sort === "end_date") {
       orderBy = "end_date ASC";
+    } else if (sort === "interest") {
+      orderBy = `${INTEREST_EXPR} DESC`;
     } else {
       orderBy = "volume DESC";
     }
@@ -116,7 +138,7 @@ export class DatabaseService {
     const offsetIdx = params.length;
 
     const sql = `
-      SELECT id, slug, question, category, volume, liquidity, end_date, clob_token_ids, active, updated_at
+      SELECT id, slug, question, description, category, tags, outcomes, volume, liquidity, end_date, clob_token_ids, active, updated_at
       FROM markets
       WHERE ${wheres.join(" AND ")}
       ORDER BY ${orderBy}
@@ -132,7 +154,7 @@ export class DatabaseService {
    */
   static async getMarketById(id: string): Promise<DatabaseMarket | null> {
     const result = await query<DatabaseMarket>(
-      `SELECT id, slug, question, category, volume, liquidity, end_date, clob_token_ids, active, updated_at
+      `SELECT id, slug, question, description, category, tags, outcomes, volume, liquidity, end_date, clob_token_ids, active, updated_at
        FROM markets WHERE id = $1 LIMIT 1`,
       [id]
     );
@@ -145,7 +167,7 @@ export class DatabaseService {
    */
   static async getMarketBySlug(slug: string): Promise<DatabaseMarket | null> {
     const result = await query<DatabaseMarket>(
-      `SELECT id, slug, question, category, volume, liquidity, end_date, clob_token_ids, active, updated_at
+      `SELECT id, slug, question, description, category, tags, outcomes, volume, liquidity, end_date, clob_token_ids, active, updated_at
        FROM markets WHERE slug = $1 LIMIT 1`,
       [slug]
     );

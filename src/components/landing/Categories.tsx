@@ -9,7 +9,7 @@ interface Cat {
 
 const CATS: Cat[] = [
   {
-    k: "Macro",
+    k: "Economy",
     t: "Macro & rates",
     d: "Fed cuts, CPI, recession odds.",
   },

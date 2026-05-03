@@ -1,8 +1,5 @@
-// API service for communicating with the backend.
-// Market-related methods (getTopMarkets, searchMarkets, getMarketById,
-// getMarketBySlug, getMarketsByCategory) were removed in Phase 3 —
-// they are now handled by useMarketsData.ts + the Polymarket Gamma client.
 import type { Address, Hex } from "viem";
+import { type DatabaseMarket } from "../backend/interfaces/Database";
 import { type DatabasePolyswapOrder } from "../backend/interfaces/PolyswapOrder";
 
 // ---------------------------------------------------------------------------
@@ -113,15 +110,23 @@ class ApiService {
     return response.json();
   }
 
+  async getMarketBySlug(slug: string): Promise<DatabaseMarket | null> {
+    const response = await fetch(`${this.baseUrl}/markets/${encodeURIComponent(slug)}`);
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const json: unknown = await response.json();
+    if (!isRecord(json) || json.success !== true || !isRecord(json.data)) {
+      throw new Error("Invalid market response");
+    }
+    return json.data as unknown as DatabaseMarket;
+  }
+
   // ---------------------------------------------------------------------------
   // PolySwap Order flow
   // ---------------------------------------------------------------------------
 
-  /**
-   * Single consolidated call to create a PolySwap order. The backend persists
-   * a draft, posts the Polymarket CLOB order, builds the on-chain calldata,
-   * and returns both a single-tx form and an approve+create batch.
-   */
   async createPolyswapOrder(
     body: CreatePolyswapOrderRequest
   ): Promise<CreatePolyswapOrderResponse> {

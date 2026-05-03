@@ -46,6 +46,13 @@ export async function GET(req: NextRequest) {
 
   const q = sp.get("q") ?? undefined;
   const category = sp.get("category") ?? undefined;
+  const categoriesRaw = sp.get("categories");
+  const categories = categoriesRaw
+    ? categoriesRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : undefined;
 
   const volumeMin = parseNonNegativeNumber(sp.get("volumeMin"), 0);
   if (volumeMin === null)
@@ -65,13 +72,16 @@ export async function GET(req: NextRequest) {
   const offset = Math.floor(rawOffset);
 
   const sortRaw = sp.get("sort") ?? "volume";
-  const sort: "volume" | "liquidity" | "end_date" =
-    sortRaw === "liquidity" || sortRaw === "end_date" ? sortRaw : "volume";
+  const sort: "volume" | "liquidity" | "end_date" | "interest" =
+    sortRaw === "liquidity" || sortRaw === "end_date" || sortRaw === "interest"
+      ? sortRaw
+      : "volume";
 
   try {
     const markets = await DatabaseService.searchMarkets({
       q,
       category,
+      categories,
       volumeMin,
       liquidityMin,
       sort,

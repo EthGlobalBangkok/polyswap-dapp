@@ -7,7 +7,11 @@ import { MarketRow } from "./MarketRow";
 import { MarketsSkeleton } from "./MarketsSkeleton";
 import { MotionList, MotionItem } from "@/components/primitives";
 import { useSearchMarkets, useTopMarkets } from "@/hooks/useMarketsData";
-import type { MarketCategory, MarketViewModel } from "@/types/design";
+import {
+  CRYPTO_RELEVANT_CATEGORIES,
+  type MarketCategory,
+  type MarketViewModel,
+} from "@/types/design";
 
 function applyFilter(
   list: MarketViewModel[],
@@ -23,14 +27,11 @@ function applyFilter(
 }
 
 function countsBy(list: MarketViewModel[]): Record<CategoryFilterValue, number> {
-  const out: Record<CategoryFilterValue, number> = {
-    All: list.length,
-    Macro: 0,
-    Politics: 0,
-    Crypto: 0,
-    Geopolitics: 0,
-  };
-  for (const m of list) out[m.category]++;
+  const out = { All: list.length } as Record<CategoryFilterValue, number>;
+  for (const cat of CRYPTO_RELEVANT_CATEGORIES) out[cat] = 0;
+  for (const m of list) {
+    if (m.category in out) out[m.category]++;
+  }
   return out;
 }
 

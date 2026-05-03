@@ -1,76 +1,48 @@
-/**
- * Client-side direct fetches to Polymarket Gamma API.
- *
- * Live data (prices, outcomes, order-book depth) is fetched here rather than
- * stored in the DB. The DB holds only the lean search-index (id, slug, question,
- * category, volume, liquidity, end_date, clob_token_ids, active).
- */
+const CLOB_BASE = "https://clob.polymarket.com";
 
-const GAMMA_BASE = "https://gamma-api.polymarket.com";
+export type ClobSide = "BUY" | "SELL";
 
-/**
- * Raw shape returned by the Gamma /markets endpoint.
- * Only the fields we actually use are typed here. The API returns many more.
- */
-export interface GammaMarket {
-  id: string;
-  slug: string;
-  question: string;
-  description?: string;
-  /** JSON-encoded string array e.g. '["Yes","No"]' */
-  outcomes: string;
-  /** JSON-encoded string array of probabilities e.g. '["0.55","0.45"]' */
-  outcomePrices: string;
-  volume: string;
-  liquidity: string;
-  endDate: string;
-  /** JSON-encoded string array of token IDs */
-  clobTokenIds: string;
-  active: boolean;
-  closed: boolean;
-  category?: string;
-  lastTradePrice?: number;
-  bestBid?: number;
-  bestAsk?: number;
+export interface ClobPriceRequest {
+  token_id: string;
+  side: ClobSide;
 }
 
-/**
- * Decode the JSON-encoded string arrays that Gamma returns for outcomes/prices.
- * Returns an empty array if parsing fails.
- */
-export function parseGammaArray(jsonStr: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(jsonStr);
-    return Array.isArray(parsed) ? (parsed as string[]) : [];
-  } catch {
-    return [];
+export type ClobPricesResponse = Record<string, Record<ClobSide, string>>;
+
+export async function fetchClobPrices(requests: ClobPriceRequest[]): Promise<ClobPricesResponse> {
+  if (requests.length === 0) return {};
+  const res = await fetch(`${CLOB_BASE}/prices`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requests),
+  });
+  if (!res.ok) throw new Error(`CLOB /prices failed: ${res.status}`);
+  const json: unknown = await res.json();
+  if (json === null || typeof json !== "object") {
+    throw new Error("CLOB /prices returned non-object response");
   }
+  return json as ClobPricesResponse;
 }
 
 /**
- * Fetch a single market by its slug from Polymarket Gamma.
- * Returns null if not found or on error.
+ * Convenience: fetch BUY+SELL for every token, return the midpoint as a number
+ * in [0, 1]. Tokens with no price come back missing from the map.
  */
-export async function fetchGammaMarketBySlug(slug: string): Promise<GammaMarket | null> {
-  const url = `${GAMMA_BASE}/markets?slug=${encodeURIComponent(slug)}&limit=1`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Gamma fetch failed: ${res.status}`);
-  const json: unknown = await res.json();
-  if (!Array.isArray(json)) throw new Error("Gamma API returned non-array response");
-  return (json as GammaMarket[])[0] ?? null;
-}
-
-/**
- * Fetch multiple markets by their Gamma numeric IDs.
- * Returns an empty array if ids is empty.
- */
-export async function fetchGammaMarketsByIds(ids: string[]): Promise<GammaMarket[]> {
-  if (ids.length === 0) return [];
-  const params = ids.map((id) => `id=${encodeURIComponent(id)}`).join("&");
-  const url = `${GAMMA_BASE}/markets?${params}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Gamma fetch failed: ${res.status}`);
-  const json: unknown = await res.json();
-  if (!Array.isArray(json)) throw new Error("Gamma API returned non-array response");
-  return json as GammaMarket[];
+export async function fetchClobMidpoints(tokenIds: string[]): Promise<Map<string, number>> {
+  if (tokenIds.length === 0) return new Map();
+  const requests: ClobPriceRequest[] = tokenIds.flatMap((token_id) => [
+    { token_id, side: "BUY" as ClobSide },
+    { token_id, side: "SELL" as ClobSide },
+  ]);
+  const prices = await fetchClobPrices(requests);
+  const out = new Map<string, number>();
+  for (const tokenId of tokenIds) {
+    const sides = prices[tokenId];
+    if (!sides) continue;
+    const buy = Number(sides.BUY);
+    const sell = Number(sides.SELL);
+    if (!Number.isFinite(buy) || !Number.isFinite(sell)) continue;
+    out.set(tokenId, (buy + sell) / 2);
+  }
+  return out;
 }

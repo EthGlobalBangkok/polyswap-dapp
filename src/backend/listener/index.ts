@@ -55,6 +55,28 @@ function requireAddress(envName: string): Address {
   return v as Address;
 }
 
+function requireEnv(names: readonly string[]): void {
+  const missing = names.filter((n) => !process.env[n]);
+  if (missing.length > 0) {
+    throw new Error(`listener: missing required env vars: ${missing.join(", ")}`);
+  }
+}
+
+const LISTENER_ENV: readonly string[] = [
+  "WSS_RPC_URL",
+  "RPC_URL",
+  "COMPOSABLE_COW",
+  "GPV2SETTLEMENT",
+  "NEXT_PUBLIC_POLYSWAP_HANDLER",
+];
+
+const ORDER_PLACEMENT_ENV: readonly string[] = [
+  "PK",
+  "CLOB_API_KEY",
+  "CLOB_SECRET",
+  "CLOB_PASS_PHRASE",
+];
+
 function readPositiveInt(envName: string, fallback: number): number {
   const raw = process.env[envName];
   if (!raw) return fallback;
@@ -125,6 +147,13 @@ async function startListener(): Promise<Subscriptions> {
 
 async function main(): Promise<void> {
   const flags = readArgs();
+
+  if (!flags.marketUpdateOnly) {
+    requireEnv(LISTENER_ENV);
+  }
+  if (!flags.listenerOnly && !flags.marketUpdateOnly) {
+    requireEnv(ORDER_PLACEMENT_ENV);
+  }
 
   await testConnection();
   console.log("listener: database connection verified");

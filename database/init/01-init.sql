@@ -1,26 +1,43 @@
 \c polyswap;
 
 -- ============================================================
--- Markets: lean search-index only.
--- Live data (prices, outcomes, depth) is fetched client-side
--- from Polymarket Gamma. Only static/searchable fields live here.
+-- Markets: lean search-index. Live odds come from CLOB at runtime;
+-- only static/searchable fields persist here.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS markets (
   id             VARCHAR(80) PRIMARY KEY,
   slug           VARCHAR(255) NOT NULL UNIQUE,
   question       TEXT NOT NULL,
+  description    TEXT,
   category       VARCHAR(64),
+  tags           TEXT[] NOT NULL DEFAULT '{}',
+  outcomes       JSONB NOT NULL DEFAULT '[]'::jsonb,
   volume         NUMERIC(30, 6) DEFAULT 0,
   liquidity      NUMERIC(30, 6) DEFAULT 0,
   end_date       TIMESTAMPTZ,
   clob_token_ids TEXT[],
   active         BOOLEAN DEFAULT TRUE,
   updated_at     TIMESTAMPTZ DEFAULT NOW(),
-  -- Full-text search vector; auto-maintained by Postgres (requires pg >= 12)
-  search_vec     TSVECTOR GENERATED ALWAYS AS (to_tsvector('english', question)) STORED
+  search_vec     TSVECTOR
 );
 
+CREATE OR REPLACE FUNCTION markets_search_vec_update() RETURNS TRIGGER AS $$
+BEGIN
+  NEW.search_vec :=
+    setweight(to_tsvector('english', NEW.question), 'A') ||
+    setweight(to_tsvector('simple',  regexp_replace(NEW.tags::text, '[{},"]', ' ', 'g')), 'B') ||
+    setweight(to_tsvector('simple',  NEW.slug), 'C') ||
+    setweight(to_tsvector('english', coalesce(NEW.description, '')), 'D');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER markets_search_vec_trigger
+  BEFORE INSERT OR UPDATE ON markets
+  FOR EACH ROW EXECUTE FUNCTION markets_search_vec_update();
+
 CREATE INDEX IF NOT EXISTS markets_search_vec_idx       ON markets USING GIN (search_vec);
+CREATE INDEX IF NOT EXISTS markets_tags_gin_idx         ON markets USING GIN (tags);
 CREATE INDEX IF NOT EXISTS markets_category_idx         ON markets (category);
 CREATE INDEX IF NOT EXISTS markets_volume_idx           ON markets (volume DESC);
 CREATE INDEX IF NOT EXISTS markets_liquidity_idx        ON markets (liquidity DESC);

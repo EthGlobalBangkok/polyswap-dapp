@@ -8,51 +8,36 @@ import { type Market } from "../src/backend/interfaces/Market";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ---------------------------------------------------------------------------
-// The data.json file (populated by pnpm saveMarkets) contains the raw Gamma
-// API shape. Map it to the lean Market interface before upserting.
-// ---------------------------------------------------------------------------
-
-interface RawGammaMarket {
+interface SerializedMarket {
   id: string;
   slug?: string;
   question?: string;
-  category?: string;
-  volume?: string | number;
-  liquidity?: string | number;
-  liquidityNum?: number;
-  endDate?: string;
-  clobTokenIds?: string; // JSON-encoded string array from Gamma
+  description?: string | null;
+  category?: string | null;
+  tags?: string[];
+  outcomes?: string[];
+  volume?: number;
+  liquidity?: number;
+  endDate?: string | null;
+  clobTokenIds?: string[];
   active?: boolean;
 }
 
-function mapToLean(raw: RawGammaMarket): Market | null {
+function reviveMarket(raw: SerializedMarket): Market | null {
   if (!raw.id || !raw.slug || !raw.question) return null;
-
-  let clobTokenIds: string[] = [];
-  if (raw.clobTokenIds) {
-    try {
-      const parsed: unknown = JSON.parse(raw.clobTokenIds);
-      clobTokenIds = Array.isArray(parsed) ? (parsed as string[]) : [];
-    } catch {
-      clobTokenIds = [];
-    }
-  }
 
   return {
     id: raw.id,
     slug: raw.slug,
     question: raw.question,
+    description: raw.description ?? null,
     category: raw.category ?? null,
-    volume: typeof raw.volume === "number" ? raw.volume : parseFloat(raw.volume ?? "0") || 0,
-    liquidity:
-      raw.liquidityNum !== undefined
-        ? raw.liquidityNum
-        : typeof raw.liquidity === "number"
-          ? raw.liquidity
-          : parseFloat(raw.liquidity ?? "0") || 0,
+    tags: Array.isArray(raw.tags) ? raw.tags : [],
+    outcomes: Array.isArray(raw.outcomes) ? raw.outcomes : [],
+    volume: typeof raw.volume === "number" ? raw.volume : 0,
+    liquidity: typeof raw.liquidity === "number" ? raw.liquidity : 0,
     endDate: raw.endDate ? new Date(raw.endDate) : null,
-    clobTokenIds,
+    clobTokenIds: Array.isArray(raw.clobTokenIds) ? raw.clobTokenIds : [],
     active: raw.active ?? true,
   };
 }
@@ -75,14 +60,16 @@ async function loadDataFromJson() {
     console.log("📖 Reading data.json file...");
     const jsonPath = resolve(__dirname, "../data.json");
     const jsonData = await fs.readFile(jsonPath, "utf-8");
-    const rawMarkets: RawGammaMarket[] = JSON.parse(jsonData) as RawGammaMarket[];
+    const rawMarkets: SerializedMarket[] = JSON.parse(jsonData) as SerializedMarket[];
 
     console.log(`📊 Found ${rawMarkets.length} markets in JSON file`);
 
-    const batchSize = 100;
+    const batchSize = 1000;
     let successCount = 0;
     let skipCount = 0;
     let errorCount = 0;
+
+    const removed = await DatabaseService.removeEndedMarkets();
 
     console.log("💾 Starting upsert (processing in batches)...");
 
@@ -96,7 +83,7 @@ async function loadDataFromJson() {
       );
 
       for (const raw of batch) {
-        const lean = mapToLean(raw);
+        const lean = reviveMarket(raw);
         if (!lean) {
           skipCount++;
           continue;
@@ -117,8 +104,6 @@ async function loadDataFromJson() {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
     }
-
-    const removed = await DatabaseService.removeEndedMarkets();
 
     console.log("\n✅ Import completed!");
     console.log(

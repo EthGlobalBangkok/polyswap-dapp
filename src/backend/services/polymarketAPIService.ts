@@ -1,47 +1,76 @@
 import { type Market } from "../interfaces/Market";
 
-// Raw shape returned by Polymarket Gamma API — only the fields we use.
-// The API returns many more fields; we type only what we read.
 interface GammaApiMarket {
   id: string;
   slug?: string;
   question?: string;
-  // category lives on the parent event, not the market itself
+  description?: string;
+  outcomes?: string;
   volume?: string | number;
   volumeNum?: number;
   liquidity?: string | number;
   liquidityNum?: number;
   liquidityClob?: number;
   endDate?: string;
-  clobTokenIds?: string; // JSON-encoded string array
+  clobTokenIds?: string;
   active?: boolean;
-  events?: Array<{
-    category?: string;
-  }>;
+}
+
+interface GammaApiTag {
+  label?: string;
+}
+
+interface GammaApiEvent {
+  tags?: GammaApiTag[];
+  markets?: GammaApiMarket[];
 }
 
 export interface GetOpenMarketsOptions {
-  endDateMin?: string; // ISO date string, e.g. "2025-07-24T12:00:00Z"
-  limit?: number; // Defaults to 1000 per page
-  maxNb?: number; // Optional total cap
+  endDateMin?: string;
+  limit?: number;
+  maxNb?: number;
+}
+
+// Ordered priority list mirroring Polymarket's homepage navigation.
+// First match against a market's tags wins as the primary category.
+const CANONICAL_CATEGORIES: readonly string[] = [
+  "Politics",
+  "Elections",
+  "Geopolitics",
+  "Crypto",
+  "Sports",
+  "Soccer",
+  "Esports",
+  "Tech",
+  "AI",
+  "Culture",
+  "Finance",
+  "Economy",
+  "Weather",
+];
+
+function derivePrimaryCategory(tags: readonly string[]): string | null {
+  if (tags.length === 0) return null;
+  const tagSet = new Set(tags);
+  for (const canonical of CANONICAL_CATEGORIES) {
+    if (tagSet.has(canonical)) return canonical;
+  }
+  return null;
 }
 
 export class PolymarketAPIService {
   private static readonly BASE_URL =
     process.env.POLYMARKET_API_URL ?? "https://gamma-api.polymarket.com";
 
-  /**
-   * Fetch all active, non-closed markets from Polymarket Gamma with
-   * pagination. Maps each result to the lean Market interface.
-   */
+  // Uses /events because /markets does not return tag labels.
   static async getOpenMarkets(options: GetOpenMarketsOptions = {}): Promise<Market[]> {
-    const { endDateMin, maxNb, limit: pageLimit = 1000 } = options;
+    const { endDateMin, maxNb, limit: pageLimit = 500 } = options;
     const allMarkets: Market[] = [];
     let offset = 0;
 
     try {
       do {
-        const url = new URL(`${this.BASE_URL}/markets`);
+        const url = new URL(`${this.BASE_URL}/events`);
         url.searchParams.set("active", "true");
         url.searchParams.set("closed", "false");
         if (endDateMin) {
@@ -55,26 +84,29 @@ export class PolymarketAPIService {
           throw new Error(`Gamma API error: ${response.status}`);
         }
 
-        // Gamma returns a plain array
         const raw: unknown = await response.json();
         if (!Array.isArray(raw)) {
           throw new Error(`Unexpected Gamma response: ${JSON.stringify(raw)}`);
         }
-        // Safe cast: raw is the array we fetched from the known endpoint
-        const page = raw as GammaApiMarket[];
+        const page = raw as GammaApiEvent[];
 
         if (page.length === 0) break;
 
-        for (const item of page) {
-          const lean = this.toLeanMarket(item);
-          if (lean) allMarkets.push(lean);
+        for (const event of page) {
+          const tags = (event.tags ?? [])
+            .map((t) => t.label)
+            .filter((l): l is string => typeof l === "string" && l.length > 0);
+          const category = derivePrimaryCategory(tags);
+          for (const market of event.markets ?? []) {
+            const lean = this.toLeanMarket(market, tags, category);
+            if (lean) allMarkets.push(lean);
+          }
         }
 
         offset += page.length;
 
         if (maxNb && allMarkets.length >= maxNb) break;
 
-        // Be polite to the API
         await new Promise((resolve) => setTimeout(resolve, 50));
       } while (true);
     } catch (error) {
@@ -88,17 +120,13 @@ export class PolymarketAPIService {
     return allMarkets;
   }
 
-  /**
-   * Map a raw Gamma API market to the lean Market interface.
-   * Returns null when required fields (id, slug, question) are missing.
-   */
-  private static toLeanMarket(raw: GammaApiMarket): Market | null {
+  private static toLeanMarket(
+    raw: GammaApiMarket,
+    tags: string[],
+    category: string | null
+  ): Market | null {
     if (!raw.id || !raw.slug || !raw.question) return null;
 
-    // Category lives on the first parent event (if any)
-    const category = raw.events?.[0]?.category ?? null;
-
-    // Volume: prefer volumeNum (already numeric), else parse string
     const volume =
       raw.volumeNum !== undefined
         ? raw.volumeNum
@@ -106,7 +134,6 @@ export class PolymarketAPIService {
           ? raw.volume
           : parseFloat(raw.volume ?? "0") || 0;
 
-    // Liquidity: prefer liquidityClob > liquidityNum > string
     const liquidity =
       raw.liquidityClob !== undefined
         ? raw.liquidityClob
@@ -116,7 +143,6 @@ export class PolymarketAPIService {
             ? raw.liquidity
             : parseFloat(raw.liquidity ?? "0") || 0;
 
-    // clobTokenIds arrives as a JSON-encoded string from Gamma, e.g. '["123","456"]'
     let clobTokenIds: string[] = [];
     if (raw.clobTokenIds) {
       try {
@@ -127,11 +153,24 @@ export class PolymarketAPIService {
       }
     }
 
+    let outcomes: string[] = [];
+    if (raw.outcomes) {
+      try {
+        const parsed: unknown = JSON.parse(raw.outcomes);
+        outcomes = Array.isArray(parsed) ? (parsed as string[]) : [];
+      } catch {
+        outcomes = [];
+      }
+    }
+
     return {
       id: raw.id,
       slug: raw.slug,
       question: raw.question,
+      description: raw.description ?? null,
       category,
+      tags,
+      outcomes,
       volume,
       liquidity,
       endDate: raw.endDate ? new Date(raw.endDate) : null,

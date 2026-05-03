@@ -2,17 +2,18 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
-  fetchGammaMarketBySlug,
-  fetchGammaMarketsByIds,
-  parseGammaArray,
-  type GammaMarket,
+  fetchClobPrices,
+  type ClobPriceRequest,
+  type ClobPricesResponse,
 } from "@/services/polymarket";
-import type { MarketCategory, MarketViewModel, Side } from "@/types/design";
-
-// ---------------------------------------------------------------------------
-// Re-export ApiMarket so components that import it from here continue to work.
-// The shape is intentionally kept identical to the old services/api.ts definition.
-// ---------------------------------------------------------------------------
+import { apiService } from "@/services/api";
+import {
+  CRYPTO_RELEVANT_CATEGORIES,
+  MARKET_CATEGORIES,
+  type MarketCategory,
+  type MarketViewModel,
+  type Side,
+} from "@/types/design";
 
 export interface MarketOption {
   text: string;
@@ -36,15 +37,14 @@ export interface ApiMarket {
   description?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Lean shape returned by GET /api/markets/search
-// ---------------------------------------------------------------------------
-
 interface SearchMarket {
   id: string;
   slug: string;
   question: string;
+  description: string | null;
   category: string | null;
+  tags: string[];
+  outcomes: string[];
   volume: number;
   liquidity: number;
   end_date: string | null;
@@ -60,60 +60,17 @@ interface SearchResponse {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Category normalisation (unchanged from original)
-// ---------------------------------------------------------------------------
-
-const DESIGN_CATEGORIES: ReadonlyArray<MarketCategory> = [
-  "Macro",
-  "Politics",
-  "Crypto",
-  "Geopolitics",
-];
-
-const CATEGORY_ALIASES: Record<string, MarketCategory> = {
-  // Macro & rates
-  macro: "Macro",
-  economy: "Macro",
-  economics: "Macro",
-  finance: "Macro",
-  fed: "Macro",
-  rates: "Macro",
-  inflation: "Macro",
-  // Politics & regulation
-  politics: "Politics",
-  political: "Politics",
-  regulation: "Politics",
-  elections: "Politics",
-  policy: "Politics",
-  // Crypto catalysts
-  crypto: "Crypto",
-  cryptocurrency: "Crypto",
-  cryptocurrencies: "Crypto",
-  airdrops: "Crypto",
-  airdrop: "Crypto",
-  bitcoin: "Crypto",
-  ethereum: "Crypto",
-  // Geopolitics
-  geopolitics: "Geopolitics",
-  wars: "Geopolitics",
-  war: "Geopolitics",
-  conflict: "Geopolitics",
-  sanctions: "Geopolitics",
-};
+const CANONICAL_BY_LOWER: ReadonlyMap<string, MarketCategory> = new Map(
+  MARKET_CATEGORIES.map((c) => [c.toLowerCase(), c])
+);
 
 export function normalizeCategory(raw: string): MarketCategory | null {
-  const key = raw.trim().toLowerCase();
-  return CATEGORY_ALIASES[key] ?? null;
+  return CANONICAL_BY_LOWER.get(raw.trim().toLowerCase()) ?? null;
 }
 
 export function isDesignCategory(c: string): c is MarketCategory {
-  return (DESIGN_CATEGORIES as ReadonlyArray<string>).includes(c);
+  return CANONICAL_BY_LOWER.has(c.toLowerCase());
 }
-
-// ---------------------------------------------------------------------------
-// Synthetic sparkline (unchanged from original)
-// ---------------------------------------------------------------------------
 
 function syntheticSpark(seed: string, current: number): number[] {
   let hash = 0;
@@ -122,7 +79,7 @@ function syntheticSpark(seed: string, current: number): number[] {
   }
   const rand = () => {
     hash = (hash * 9301 + 49297) | 0;
-    return ((hash % 1000) + 1000) / 1000 - 1.5; // -0.5..0.5
+    return ((hash % 1000) + 1000) / 1000 - 1.5;
   };
   const out: number[] = [];
   let v = Math.max(0.05, current - rand() * 0.3);
@@ -134,15 +91,22 @@ function syntheticSpark(seed: string, current: number): number[] {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Merge a lean DB market + live Gamma data → ApiMarket
-// Returns null when the Gamma record is unavailable.
-// ---------------------------------------------------------------------------
+function midpointPercent(prices: ClobPricesResponse, tokenId: string | undefined): number {
+  if (!tokenId) return 0;
+  const sides = prices[tokenId];
+  if (!sides) return 0;
+  const buy = Number(sides.BUY);
+  const sell = Number(sides.SELL);
+  if (!Number.isFinite(buy) || !Number.isFinite(sell)) return 0;
+  return Number((((buy + sell) / 2) * 100).toFixed(2));
+}
 
-function mergeMarket(lean: SearchMarket, gamma: GammaMarket): ApiMarket {
-  const outcomes = parseGammaArray(gamma.outcomes);
-  const prices = parseGammaArray(gamma.outcomePrices);
-  const clobTokenIds = parseGammaArray(gamma.clobTokenIds);
+function mergeMarket(lean: SearchMarket, prices: ClobPricesResponse): ApiMarket {
+  const outcomes = lean.outcomes;
+  const clobTokenIds = lean.clob_token_ids;
+  const endDate = lean.end_date ?? "";
+  const category = lean.category ?? "";
+  const description = lean.description ?? undefined;
 
   const isTraditionalBinary =
     outcomes.length === 2 && outcomes.includes("Yes") && outcomes.includes("No");
@@ -154,57 +118,50 @@ function mergeMarket(lean: SearchMarket, gamma: GammaMarket): ApiMarket {
       id: lean.id,
       title: lean.question,
       volume: lean.volume,
-      endDate: lean.end_date ?? gamma.endDate,
-      category: lean.category ?? "",
+      endDate,
+      category,
       type: "binary",
-      yesOdds: Number(((parseFloat(prices[yesIdx] ?? "0") || 0) * 100).toFixed(2)),
-      noOdds: Number(((parseFloat(prices[noIdx] ?? "0") || 0) * 100).toFixed(2)),
+      yesOdds: midpointPercent(prices, clobTokenIds[yesIdx]),
+      noOdds: midpointPercent(prices, clobTokenIds[noIdx]),
       slug: lean.slug,
       clobTokenIds,
-      description: gamma.description,
+      description,
     };
   }
 
   if (outcomes.length === 2) {
-    // Non-Yes/No binary (e.g. "Team A" vs "Team B"): treat the first outcome's
-    // probability as yesOdds so toViewModel can display it without falling back to 0%.
     return {
       id: lean.id,
       title: lean.question,
       volume: lean.volume,
-      endDate: lean.end_date ?? gamma.endDate,
-      category: lean.category ?? "",
+      endDate,
+      category,
       type: "binary",
-      yesOdds: Number(((parseFloat(prices[0] ?? "0") || 0) * 100).toFixed(2)),
-      noOdds: Number(((parseFloat(prices[1] ?? "0") || 0) * 100).toFixed(2)),
+      yesOdds: midpointPercent(prices, clobTokenIds[0]),
+      noOdds: midpointPercent(prices, clobTokenIds[1]),
       slug: lean.slug,
       clobTokenIds,
-      description: gamma.description,
+      description,
     };
   }
 
-  // Multi-choice
-  const options: MarketOption[] = outcomes.map((o, i) => ({
-    text: o,
-    odds: Number(((parseFloat(prices[i] ?? "0") || 0) * 100).toFixed(2)),
+  const options: MarketOption[] = outcomes.map((label, i) => ({
+    text: label,
+    odds: midpointPercent(prices, clobTokenIds[i]),
   }));
   return {
     id: lean.id,
     title: lean.question,
     volume: lean.volume,
-    endDate: lean.end_date ?? gamma.endDate,
-    category: lean.category ?? "",
+    endDate,
+    category,
     type: "multi-choice",
     options,
     slug: lean.slug,
     clobTokenIds,
-    description: gamma.description,
+    description,
   };
 }
-
-// ---------------------------------------------------------------------------
-// toViewModel: ApiMarket → MarketViewModel (unchanged shape)
-// ---------------------------------------------------------------------------
 
 export function toViewModel(api: ApiMarket): MarketViewModel | null {
   const category = normalizeCategory(api.category);
@@ -222,27 +179,34 @@ export function toViewModel(api: ApiMarket): MarketViewModel | null {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
 const STALE = 60_000;
 
-/**
- * Fetch lean markets from the backend search endpoint, then hydrate each with
- * live Gamma data. Returns `ApiMarket[]`.
- */
+function tokenPriceRequests(markets: SearchMarket[]): ClobPriceRequest[] {
+  const requests: ClobPriceRequest[] = [];
+  for (const m of markets) {
+    for (const tokenId of m.clob_token_ids) {
+      requests.push({ token_id: tokenId, side: "BUY" });
+      requests.push({ token_id: tokenId, side: "SELL" });
+    }
+  }
+  return requests;
+}
+
 async function searchAndHydrate(params: {
   sort?: string;
   limit?: number;
   q?: string;
   category?: string;
+  categories?: ReadonlyArray<string>;
 }): Promise<ApiMarket[]> {
   const url = new URL("/api/markets/search", window.location.origin);
   if (params.sort) url.searchParams.set("sort", params.sort);
   if (params.limit !== undefined) url.searchParams.set("limit", String(params.limit));
   if (params.q) url.searchParams.set("q", params.q);
   if (params.category) url.searchParams.set("category", params.category);
+  if (params.categories && params.categories.length > 0) {
+    url.searchParams.set("categories", params.categories.join(","));
+  }
 
   const res = await fetch(url.toString());
   if (!res.ok) throw new Error(`markets/search failed: ${res.status}`);
@@ -253,27 +217,45 @@ async function searchAndHydrate(params: {
   const leanMarkets = json.data.markets;
   if (leanMarkets.length === 0) return [];
 
-  // Fetch live Gamma data for all returned market IDs in one request
-  const gammaMarkets = await fetchGammaMarketsByIds(leanMarkets.map((m) => m.id));
-  const gammaById = new Map(gammaMarkets.map((g) => [g.id, g]));
+  const prices = await fetchClobPrices(tokenPriceRequests(leanMarkets));
 
-  const result: ApiMarket[] = [];
-  for (const lean of leanMarkets) {
-    const gamma = gammaById.get(lean.id);
-    if (!gamma) continue; // Skip if Gamma doesn't have it (recently closed etc.)
-    result.push(mergeMarket(lean, gamma));
-  }
-  return result;
+  return leanMarkets.map((lean) => mergeMarket(lean, prices));
 }
 
-// ---------------------------------------------------------------------------
-// Public hooks
-// ---------------------------------------------------------------------------
+async function fetchSingleMarket(slug: string): Promise<ApiMarket | null> {
+  const lean = await apiService.getMarketBySlug(slug);
+  if (!lean) return null;
+  const endDate =
+    lean.end_date instanceof Date
+      ? lean.end_date.toISOString()
+      : (lean.end_date as unknown as string | null);
+  const search: SearchMarket = {
+    id: lean.id,
+    slug: lean.slug,
+    question: lean.question,
+    description: lean.description,
+    category: lean.category,
+    tags: lean.tags,
+    outcomes: lean.outcomes,
+    volume: lean.volume,
+    liquidity: lean.liquidity,
+    end_date: endDate,
+    clob_token_ids: lean.clob_token_ids,
+    active: lean.active,
+  };
+  const prices = await fetchClobPrices(tokenPriceRequests([search]));
+  return mergeMarket(search, prices);
+}
 
 export function useTopMarkets() {
   return useQuery({
-    queryKey: ["markets", "top"],
-    queryFn: () => searchAndHydrate({ sort: "volume", limit: 20 }),
+    queryKey: ["markets", "top", CRYPTO_RELEVANT_CATEGORIES.join(",")],
+    queryFn: () =>
+      searchAndHydrate({
+        sort: "interest",
+        limit: 100,
+        categories: CRYPTO_RELEVANT_CATEGORIES,
+      }),
     staleTime: STALE,
     select: (markets) => markets.map(toViewModel).filter((m): m is MarketViewModel => m !== null),
   });
@@ -287,6 +269,7 @@ export function useSearchMarkets(queryStr: string, category: MarketCategory | nu
       searchAndHydrate({
         q: queryStr.trim() || undefined,
         category: category ?? undefined,
+        sort: "interest",
         limit: 100,
       }),
     enabled,
@@ -295,59 +278,19 @@ export function useSearchMarkets(queryStr: string, category: MarketCategory | nu
   });
 }
 
-/**
- * Fetch a single market by slug and merge with live Gamma data.
- * Returns MarketViewModel (transformed) or null.
- */
 export function useMarket(identifier: string) {
   return useQuery({
     queryKey: ["market", identifier],
-    queryFn: async (): Promise<ApiMarket | null> => {
-      const gamma = await fetchGammaMarketBySlug(identifier);
-      if (!gamma) return null;
-      // Build a lean record from Gamma data (slug is the identifier)
-      const lean: SearchMarket = {
-        id: gamma.id,
-        slug: gamma.slug,
-        question: gamma.question,
-        category: gamma.category ?? null,
-        volume: parseFloat(gamma.volume) || 0,
-        liquidity: parseFloat(gamma.liquidity) || 0,
-        end_date: gamma.endDate,
-        clob_token_ids: parseGammaArray(gamma.clobTokenIds),
-        active: gamma.active,
-      };
-      return mergeMarket(lean, gamma);
-    },
+    queryFn: () => fetchSingleMarket(identifier),
     staleTime: STALE,
     select: (api) => (api ? toViewModel(api) : null),
   });
 }
 
-/**
- * Same fetch as `useMarket` but returns the raw `ApiMarket` without
- * transforming to `MarketViewModel`. Use this when you need fields that
- * `toViewModel` discards (e.g. `clobTokenIds`, `conditionId`).
- */
 export function useRawMarket(identifier: string) {
   return useQuery({
     queryKey: ["market", identifier],
-    queryFn: async (): Promise<ApiMarket | null> => {
-      const gamma = await fetchGammaMarketBySlug(identifier);
-      if (!gamma) return null;
-      const lean: SearchMarket = {
-        id: gamma.id,
-        slug: gamma.slug,
-        question: gamma.question,
-        category: gamma.category ?? null,
-        volume: parseFloat(gamma.volume) || 0,
-        liquidity: parseFloat(gamma.liquidity) || 0,
-        end_date: gamma.endDate,
-        clob_token_ids: parseGammaArray(gamma.clobTokenIds),
-        active: gamma.active,
-      };
-      return mergeMarket(lean, gamma);
-    },
+    queryFn: () => fetchSingleMarket(identifier),
     staleTime: STALE,
   });
 }

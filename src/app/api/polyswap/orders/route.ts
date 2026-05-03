@@ -34,6 +34,18 @@ interface CreateOrderRequestBody {
   owner: unknown;
 }
 
+function parseBoundedInt(
+  raw: string | null,
+  fallback: number,
+  min: number,
+  max: number
+): number | null {
+  if (raw === null) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < min || n > max) return null;
+  return n;
+}
+
 /**
  * @swagger
  * /api/polyswap/orders:
@@ -86,36 +98,55 @@ interface CreateOrderRequestBody {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = searchParams.get("limit") || "100";
-    const offset = searchParams.get("offset") || "0";
+
+    const limitNum = parseBoundedInt(searchParams.get("limit"), 100, 1, 500);
+    if (limitNum === null) {
+      return NextResponse.json(
+        { success: false, error: "Invalid limit (must be an integer 1..500)" },
+        { status: 400 }
+      );
+    }
+    const offsetNum = parseBoundedInt(searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
+    if (offsetNum === null) {
+      return NextResponse.json(
+        { success: false, error: "Invalid offset (must be a non-negative integer)" },
+        { status: 400 }
+      );
+    }
+
     const fromBlock = searchParams.get("fromBlock");
     const toBlock = searchParams.get("toBlock");
-    const sellToken = searchParams.get("sellToken");
-    const buyToken = searchParams.get("buyToken");
+    const ownerRaw = searchParams.get("owner");
 
-    const limitNum = Math.min(parseInt(limit) || 100, 500);
-    const offsetNum = Math.max(parseInt(offset) || 0, 0);
+    if (ownerRaw !== null && !isAddress(ownerRaw)) {
+      return NextResponse.json({ success: false, error: "Invalid owner address" }, { status: 400 });
+    }
 
     let orders;
 
-    if (fromBlock && toBlock) {
-      const fromBlockNum = parseInt(fromBlock);
-      const toBlockNum = parseInt(toBlock);
-
-      if (isNaN(fromBlockNum) || isNaN(toBlockNum) || fromBlockNum > toBlockNum) {
+    if (fromBlock !== null || toBlock !== null) {
+      if (fromBlock === null || toBlock === null) {
         return NextResponse.json(
-          {
-            success: false,
-            error: "Invalid block range",
-            message: "Please provide valid fromBlock and toBlock numbers",
-          },
+          { success: false, error: "fromBlock and toBlock must be provided together" },
           { status: 400 }
         );
+      }
+      const fromBlockNum = Number(fromBlock);
+      const toBlockNum = Number(toBlock);
+
+      if (
+        !Number.isInteger(fromBlockNum) ||
+        !Number.isInteger(toBlockNum) ||
+        fromBlockNum < 0 ||
+        toBlockNum < 0 ||
+        fromBlockNum > toBlockNum
+      ) {
+        return NextResponse.json({ success: false, error: "Invalid block range" }, { status: 400 });
       }
 
       orders = await DatabaseService.getPolyswapOrdersByBlockRange(fromBlockNum, toBlockNum);
     } else {
-      orders = await DatabaseService.getPolyswapOrdersByOwner("", limitNum, offsetNum);
+      orders = await DatabaseService.getPolyswapOrdersByOwner(ownerRaw ?? "", limitNum, offsetNum);
     }
 
     return NextResponse.json({
@@ -128,10 +159,9 @@ export async function GET(request: NextRequest) {
         hasMore: orders.length === limitNum,
       },
       filters: {
-        fromBlock: fromBlock ? parseInt(fromBlock) : undefined,
-        toBlock: toBlock ? parseInt(toBlock) : undefined,
-        sellToken,
-        buyToken,
+        owner: ownerRaw,
+        fromBlock: fromBlock !== null ? Number(fromBlock) : undefined,
+        toBlock: toBlock !== null ? Number(toBlock) : undefined,
       },
       message: "Orders retrieved successfully",
     });
@@ -200,13 +230,17 @@ export async function POST(request: NextRequest) {
       "owner",
     ] as const;
 
-    for (const field of requiredFields) {
-      if (body[field] === undefined || body[field] === null || body[field] === "") {
-        return NextResponse.json(
-          { success: false, error: `Missing required field: ${field}` },
-          { status: 400 }
-        );
-      }
+    const missing = requiredFields.filter(
+      (f) => body[f] === undefined || body[f] === null || body[f] === ""
+    );
+    if (missing.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Missing required field${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
+        },
+        { status: 400 }
+      );
     }
 
     // Narrow typed fields
@@ -338,31 +372,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // --- Fetch outcomes from Gamma to map selectedOutcome → token index ---
-    let outcomes: string[] = [];
-    try {
-      const gammaUrl = `https://gamma-api.polymarket.com/markets?id=${encodeURIComponent(market.id)}&limit=1`;
-      const gammaRes = await fetch(gammaUrl);
-      if (gammaRes.ok) {
-        const gammaData: unknown = await gammaRes.json();
-        if (Array.isArray(gammaData) && gammaData.length > 0) {
-          const raw = gammaData[0] as Record<string, unknown>;
-          const rawOutcomes: unknown = raw["outcomes"];
-          if (typeof rawOutcomes === "string") {
-            const parsed: unknown = JSON.parse(rawOutcomes);
-            if (Array.isArray(parsed)) {
-              outcomes = parsed as string[];
-            }
-          }
-        }
-      }
-    } catch (gammaError) {
-      console.error("Failed to fetch outcomes from Gamma:", gammaError);
-    }
-
+    const outcomes: string[] = Array.isArray(market.outcomes) ? market.outcomes : [];
     if (outcomes.length === 0) {
       return NextResponse.json(
-        { success: false, error: "Could not determine market outcomes from Gamma" },
+        { success: false, error: "Market has no outcomes recorded" },
         { status: 500 }
       );
     }

@@ -83,7 +83,7 @@ export async function GET(
         offset: offsetNum,
         hasMore: orders.length === limitNum,
       },
-      message: "Orders retrieved successfully from blockchain events",
+      message: "Orders retrieved successfully",
     });
   } catch (error) {
     console.error("Error fetching orders:", error);

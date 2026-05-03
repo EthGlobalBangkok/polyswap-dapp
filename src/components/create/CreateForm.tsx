@@ -37,9 +37,6 @@ export function CreateForm({ market, state, derived, estimates, set }: Props) {
     }));
   }, [fetchedTokens]);
 
-  // Auto-pick sensible defaults from the fetched list once it arrives. Only
-  // fills slots the user hasn't already chosen, so re-runs don't clobber
-  // selections.
   useEffect(() => {
     if (tokens.length === 0) return;
 
@@ -66,8 +63,6 @@ export function CreateForm({ market, state, derived, estimates, set }: Props) {
 
   const { data: history = [] } = useMarketPriceHistory(market.yesTokenId, 60);
   const yesSparkData = history.map((h) => h.p);
-  // NO is just the complement of YES — flip the existing series instead of
-  // refetching, so the chart updates instantly when the user toggles sides.
   const sparkData = state.side === "YES" ? yesSparkData : yesSparkData.map((p) => 1 - p);
   const currentOutcomePrice =
     state.side === "YES" ? market.yesProbability : 1 - market.yesProbability;
@@ -182,10 +177,6 @@ function TokenPickerSkeleton({ loading }: { loading: boolean }) {
   );
 }
 
-/**
- * Map CoW Protocol's machine-readable `errorType` codes to user-facing copy.
- * Falls back to the API's own description when the code is unknown.
- */
 function formatQuoteError(errorType: string | null, message: string | null): string {
   switch (errorType) {
     case "NoLiquidity":

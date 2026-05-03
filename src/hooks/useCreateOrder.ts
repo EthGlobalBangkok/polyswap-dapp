@@ -8,9 +8,7 @@ export type Expiry = "7d" | "30d" | "until-resolution";
 export interface CreateFormState {
   side: Side;
   threshold: number;
-  /** Null until the user picks a token (auto-filled from the fetched list). */
   fromToken: TokenViewModel | null;
-  /** Null until the user picks a token (auto-filled from the fetched list). */
   toToken: TokenViewModel | null;
   amountIn: string;
   expiry: Expiry;
@@ -40,10 +38,6 @@ export interface UseCreateOrderReturn {
   reset: () => void;
 }
 
-/**
- * Pure, presentational form hook. Submission is wired separately through
- * the SafeSignModal so the form state is decoupled from network side-effects.
- */
 export function useCreateOrder(): UseCreateOrderReturn {
   const [state, setState] = useState<CreateFormState>(INITIAL);
 

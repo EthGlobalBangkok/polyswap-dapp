@@ -13,9 +13,7 @@ interface Props {
   options: ReadonlyArray<TokenViewModel>;
   onChange: (next: TokenViewModel) => void;
   disabled?: boolean;
-  /** When true, fetch wallet balances and surface owned tokens at the top. */
   showBalances?: boolean;
-  /** Modal title — falls back to "Select a token". */
   title?: string;
 }
 
@@ -46,8 +44,6 @@ export function TokenPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
-  // Resolve to the latest version of `value` from the live options list so the
-  // trigger button picks up logoURI once the fetched list arrives.
   const currentToken = useMemo(
     () => options.find((t) => t.address.toLowerCase() === value.address.toLowerCase()) ?? value,
     [options, value]
@@ -55,7 +51,6 @@ export function TokenPicker({
 
   const { balances } = useTokenBalances(options, { enabled: open && showBalances });
 
-  // Lock body scroll while modal is open.
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -65,7 +60,6 @@ export function TokenPicker({
     };
   }, [open]);
 
-  // Close on Escape.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -324,11 +318,6 @@ function AddressLink({
   href: string;
   symbol: string;
   address: string;
-  /**
-   * When true, the link is layered over the balance and only revealed on row
-   * hover (or keyboard focus). When false, it's the row's only right-aligned
-   * content and is always visible.
-   */
   overlay: boolean;
 }) {
   return (

@@ -115,18 +115,14 @@ export function CreatePage({ marketId }: Props) {
     try {
       const sellAmountWei = toWei(state.amountIn, state.fromToken.decimals);
 
-      const outcomeIndex = state.side === "YES" ? 0 : 1;
-      const buyTokenRaw = rawMarket.clobTokenIds?.[outcomeIndex] ?? rawMarket.clobTokenIds?.[0];
-      if (!buyTokenRaw) throw new Error("Market is missing CLOB token IDs.");
-      if (!isAddress(buyTokenRaw)) {
-        throw new Error(`Market clob token id is not a valid address: ${buyTokenRaw}`);
-      }
-      const buyToken: Address = buyTokenRaw;
-
       if (!isAddress(state.fromToken.address)) {
         throw new Error(`Sell token address is not a valid address: ${state.fromToken.address}`);
       }
+      if (!isAddress(state.toToken.address)) {
+        throw new Error(`Buy token address is not a valid address: ${state.toToken.address}`);
+      }
       const sellToken: Address = state.fromToken.address;
+      const buyToken: Address = state.toToken.address;
 
       const order = await apiService.createPolyswapOrder({
         sellToken,

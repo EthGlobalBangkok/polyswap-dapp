@@ -26,11 +26,6 @@ const ETH_ADDRESS = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 /** 30-second stale time — quotes expire quickly. */
 const STALE_MS = 30_000;
 
-/**
- * Structured error from the CoW order book quote endpoint. `errorType` is the
- * stable machine-readable code (e.g. "NoLiquidity", "UnsupportedToken",
- * "SellAmountDoesNotCoverFee"); `description` is the human-readable string.
- */
 export class CowQuoteError extends Error {
   readonly errorType: string | null;
   readonly description: string | null;
@@ -160,7 +155,7 @@ async function fetchCowQuote(params: Required<QuoteParams>): Promise<QuoteResult
         if (typeof obj.description === "string") description = obj.description;
       }
     } catch {
-      // Body wasn't JSON — leave fields null and fall back to the status code.
+      // not JSON
     }
     throw new CowQuoteError(
       description ?? `CoW quote API error (${res.status})`,
@@ -238,5 +233,9 @@ export function useQuote(params: QuoteParams | null) {
     },
     enabled,
     staleTime: STALE_MS,
+    retry: (failureCount, error) => {
+      if (error instanceof CowQuoteError && error.errorType !== null) return false;
+      return failureCount < 2;
+    },
   });
 }

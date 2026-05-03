@@ -6,18 +6,10 @@ import { useAccount, useReadContracts } from "wagmi";
 import type { TokenViewModel } from "@/types/design";
 
 export interface UseTokenBalancesResult {
-  /** Map keyed by lower-cased token address. Only contains successful reads. */
   balances: ReadonlyMap<string, bigint>;
   isLoading: boolean;
 }
 
-/**
- * Read ERC20 `balanceOf` for the connected wallet across the given tokens via
- * a single multicall. Returns zero entries for tokens that fail to decode.
- *
- * Pass `enabled: false` to skip the network call entirely (e.g. while a modal
- * is closed) — useful since the balanceOf list can be large.
- */
 export function useTokenBalances(
   tokens: ReadonlyArray<TokenViewModel>,
   options: { enabled?: boolean } = {}

@@ -1,16 +1,17 @@
 import { Icon } from "@/components/icons";
 import { fmtNum, fmtUSD } from "@/lib/format";
 import { describeSentence } from "@/hooks/useCreateOrder";
-import type { CreateFormDerived, CreateFormState } from "@/hooks/useCreateOrder";
+import type { CreateFormState } from "@/hooks/useCreateOrder";
+import type { SwapEstimates } from "@/hooks/useSwapEstimates";
 import type { MarketViewModel } from "@/types/design";
 
 interface Props {
   market: MarketViewModel;
   state: CreateFormState;
-  derived: CreateFormDerived;
+  estimates: SwapEstimates;
 }
 
-export function RecapPanel({ market, state, derived }: Props) {
+export function RecapPanel({ market, state, estimates }: Props) {
   const sentence = describeSentence(state, market.question);
   const expiryLabel =
     state.expiry === "7d"
@@ -18,6 +19,9 @@ export function RecapPanel({ market, state, derived }: Props) {
       : state.expiry === "30d"
         ? "in 30 days"
         : "when the market resolves";
+
+  const fromSymbol = state.fromToken?.symbol ?? "—";
+  const toSymbol = state.toToken?.symbol ?? "—";
 
   return (
     <div className="space-y-4">
@@ -30,16 +34,16 @@ export function RecapPanel({ market, state, derived }: Props) {
         <p className="eyebrow mb-3">Recap</p>
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
           <Row k="Trigger" v={`${state.side} reaches ${Math.round(state.threshold * 100)}%`} />
-          <Row k="You send" v={`${state.amountIn || "0"} ${state.fromToken.symbol}`} />
+          <Row k="You send" v={`${state.amountIn || "0"} ${fromSymbol}`} />
           <Row
             k="You receive"
             v={
-              derived.amountOutEstimate > 0
-                ? `~${fmtNum(derived.amountOutEstimate, 4)} ${state.toToken.symbol}`
-                : `— ${state.toToken.symbol}`
+              estimates.amountOutEstimate > 0
+                ? `~${fmtNum(estimates.amountOutEstimate, 4)} ${toSymbol}`
+                : `— ${toSymbol}`
             }
           />
-          <Row k="Notional" v={fmtUSD(derived.amountInUsd)} />
+          <Row k="Notional" v={estimates.amountInUsd > 0 ? fmtUSD(estimates.amountInUsd) : "—"} />
           <Row k="Expires" v={expiryLabel} />
           <Row k="Slippage" v={`${state.slippagePct}%`} />
         </dl>

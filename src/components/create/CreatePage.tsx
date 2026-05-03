@@ -10,6 +10,7 @@ import { Button, DetailSkeleton } from "@/components/primitives";
 import { Icon } from "@/components/icons";
 import { useMarket, useRawMarket } from "@/hooks/useMarketsData";
 import { useCreateOrder, describeSentence } from "@/hooks/useCreateOrder";
+import { useSwapEstimates } from "@/hooks/useSwapEstimates";
 import { useSafeAccount } from "@/hooks/safe/useSafeAccount";
 import { SafeSignModal } from "@/components/modals/SafeSignModal";
 import type { SafeCall } from "@/services/safe/types";
@@ -54,6 +55,12 @@ export function CreatePage({ marketId }: Props) {
   const { data: rawMarket } = useRawMarket(marketId);
   const { state, derived, set } = useCreateOrder();
   const { safeAddress, isReady: walletReady } = useSafeAccount();
+  const estimates = useSwapEstimates({
+    fromToken: state.fromToken,
+    toToken: state.toToken,
+    amountIn: state.amountIn,
+    userAddress: safeAddress,
+  });
   const wallet = useWalletModal();
   const publicClient = usePublicClient();
   const queryClient = useQueryClient();
@@ -85,6 +92,21 @@ export function CreatePage({ marketId }: Props) {
     }
     if (!publicClient) {
       setSigningError("RPC client not ready. Please refresh and try again.");
+      return;
+    }
+
+    if (!state.fromToken || !state.toToken) {
+      setSigningError("Pick the tokens you want to swap.");
+      return;
+    }
+    if (estimates.isQuoteError) {
+      setSigningError(
+        estimates.quoteErrorType === "NoLiquidity"
+          ? "No liquidity for this pair — the order would never settle. Pick a different pair."
+          : `Can't sign: CoW Protocol returned ${
+              estimates.quoteErrorType ?? "an error"
+            }${estimates.quoteErrorMessage ? ` — ${estimates.quoteErrorMessage}` : ""}.`
+      );
       return;
     }
 
@@ -211,7 +233,13 @@ export function CreatePage({ marketId }: Props) {
       <div className="grid gap-6 py-6 lg:grid-cols-12 lg:gap-10 lg:py-10">
         <div className="space-y-5 lg:col-span-7 lg:space-y-6">
           <MarketSummaryCard market={market} />
-          <CreateForm market={market} state={state} derived={derived} set={set} />
+          <CreateForm
+            market={market}
+            state={state}
+            derived={derived}
+            estimates={estimates}
+            set={set}
+          />
 
           {signingError && (
             <p className="border border-no bg-no/10 px-3 py-2 text-xs text-no">{signingError}</p>
@@ -222,7 +250,7 @@ export function CreatePage({ marketId }: Props) {
             <Button
               variant="accent"
               size="lg"
-              disabled={!derived.isValid || isPreparingTx}
+              disabled={!derived.isValid || isPreparingTx || estimates.isQuoteError}
               onClick={() => void handleReview()}
             >
               {isPreparingTx ? "Preparing…" : "Review and sign"}
@@ -233,7 +261,7 @@ export function CreatePage({ marketId }: Props) {
 
         <aside className="lg:col-span-5">
           <div className="lg:sticky lg:top-6">
-            <RecapPanel market={market} state={state} derived={derived} />
+            <RecapPanel market={market} state={state} estimates={estimates} />
           </div>
         </aside>
       </div>
@@ -244,13 +272,13 @@ export function CreatePage({ marketId }: Props) {
           <div className="min-w-0">
             <p className="truncate text-[11px] text-ink-3">Total in</p>
             <p className="num truncate text-base font-semibold">
-              {derived.amountInUsd > 0 ? fmtUSD(derived.amountInUsd) : "—"}
+              {estimates.amountInUsd > 0 ? fmtUSD(estimates.amountInUsd) : "—"}
             </p>
           </div>
           <Button
             variant="accent"
             size="md"
-            disabled={!derived.isValid || isPreparingTx}
+            disabled={!derived.isValid || isPreparingTx || estimates.isQuoteError}
             onClick={() => void handleReview()}
             className="shrink-0"
           >

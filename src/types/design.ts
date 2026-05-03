@@ -64,11 +64,12 @@ export interface MarketViewModel {
 export interface TokenViewModel {
   symbol: string;
   name: string;
-  priceUsd: number;
   /** Polygon contract address for this token. */
   address: `0x${string}`;
   /** Token decimals (e.g. 6 for USDC, 18 for WETH). */
   decimals: number;
+  /** Real token logo URL from the CoW token lists, when available. */
+  logoURI?: string;
 }
 
 export interface SwapViewModel {

@@ -5,6 +5,7 @@ export { Tag } from "./Tag";
 export { Button } from "./Button";
 export type { ButtonProps } from "./Button";
 export { TokenGlyph } from "./TokenGlyph";
+export { TokenLogo } from "./TokenLogo";
 export { Stamp } from "./Stamp";
 export { Marquee } from "./Marquee";
 export { Modal } from "./Modal";

@@ -27,6 +27,29 @@ const ETH_ADDRESS = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 const STALE_MS = 30_000;
 
 /**
+ * Structured error from the CoW order book quote endpoint. `errorType` is the
+ * stable machine-readable code (e.g. "NoLiquidity", "UnsupportedToken",
+ * "SellAmountDoesNotCoverFee"); `description` is the human-readable string.
+ */
+export class CowQuoteError extends Error {
+  readonly errorType: string | null;
+  readonly description: string | null;
+  readonly status: number;
+  constructor(
+    message: string,
+    errorType: string | null,
+    description: string | null,
+    status: number
+  ) {
+    super(message);
+    this.name = "CowQuoteError";
+    this.errorType = errorType;
+    this.description = description;
+    this.status = status;
+  }
+}
+
+/**
  * Returns true only when `s` is a valid decimal integer string that parses to
  * a positive BigInt. Protects the `enabled` guard from throwing on inputs like
  * ".", "1e18", or "abc" — which BigInt() would turn into a SyntaxError.
@@ -127,7 +150,24 @@ async function fetchCowQuote(params: Required<QuoteParams>): Promise<QuoteResult
 
   if (!res.ok) {
     const errorText = await res.text();
-    throw new Error(`CoW quote API error (${res.status}): ${errorText}`);
+    let errorType: string | null = null;
+    let description: string | null = null;
+    try {
+      const parsed: unknown = JSON.parse(errorText);
+      if (parsed && typeof parsed === "object") {
+        const obj = parsed as Record<string, unknown>;
+        if (typeof obj.errorType === "string") errorType = obj.errorType;
+        if (typeof obj.description === "string") description = obj.description;
+      }
+    } catch {
+      // Body wasn't JSON — leave fields null and fall back to the status code.
+    }
+    throw new CowQuoteError(
+      description ?? `CoW quote API error (${res.status})`,
+      errorType,
+      description,
+      res.status
+    );
   }
 
   const json: unknown = await res.json();

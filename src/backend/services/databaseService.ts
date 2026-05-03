@@ -23,6 +23,21 @@ export interface SearchMarketsOptions {
   offset?: number;
 }
 
+/**
+ * Convert a free-form search input into a Postgres `to_tsquery` string with
+ * prefix matching on every term (e.g. `"nvid stoc"` → `"nvid:* & stoc:*"`),
+ * so partial words match. Returns null when nothing usable is left.
+ */
+function buildPrefixTsQuery(input: string): string | null {
+  const terms = input
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 0);
+  if (terms.length === 0) return null;
+  return terms.map((t) => `${t}:*`).join(" & ");
+}
+
 export class DatabaseService {
   // ============================================================
   // Markets — lean search-index
@@ -31,12 +46,13 @@ export class DatabaseService {
   static async upsertMarket(market: Market): Promise<void> {
     await query(
       `INSERT INTO markets (
-         id, slug, question, description, category, tags, outcomes,
+         id, slug, event_slug, question, description, category, tags, outcomes,
          volume, liquidity, end_date, clob_token_ids, active, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, NOW())
        ON CONFLICT (id) DO UPDATE SET
          slug           = EXCLUDED.slug,
+         event_slug     = EXCLUDED.event_slug,
          question       = EXCLUDED.question,
          description    = EXCLUDED.description,
          category       = EXCLUDED.category,
@@ -51,6 +67,7 @@ export class DatabaseService {
       [
         market.id,
         market.slug,
+        market.eventSlug,
         market.question,
         market.description,
         market.category,
@@ -63,6 +80,44 @@ export class DatabaseService {
         market.active,
       ]
     );
+  }
+
+  /**
+   * Rebuild the search-suggestion table from the active markets. Atomic via
+   * DELETE + INSERT in a single statement so the dropdown never sees an
+   * empty result mid-refresh.
+   */
+  static async refreshTagIndex(): Promise<number> {
+    await query(`DELETE FROM tag_index`, []);
+    const result = await query<{ tag: string }>(
+      `INSERT INTO tag_index (tag, market_count)
+       SELECT tag, COUNT(*)::int
+       FROM markets, unnest(tags) AS tag
+       WHERE active = TRUE
+       GROUP BY tag
+       RETURNING tag`,
+      []
+    );
+    return result.rows.length;
+  }
+
+  /**
+   * Look up tag suggestions by case-insensitive prefix, ordered by popularity.
+   */
+  static async getTagSuggestions(
+    prefix: string,
+    limit: number
+  ): Promise<Array<{ tag: string; count: number }>> {
+    if (prefix.length === 0) return [];
+    const result = await query<{ tag: string; market_count: number }>(
+      `SELECT tag, market_count
+       FROM tag_index
+       WHERE lower(tag) LIKE $1
+       ORDER BY market_count DESC, tag ASC
+       LIMIT $2`,
+      [`${prefix.toLowerCase()}%`, limit]
+    );
+    return result.rows.map((r) => ({ tag: r.tag, count: r.market_count }));
   }
 
   /**
@@ -79,6 +134,68 @@ export class DatabaseService {
    * When `q` is provided, uses Postgres tsvector for full-text search.
    * Supports category filter, volume/liquidity minimums, sort, and pagination.
    */
+  /**
+   * Build the (wheres, params) pair for searchMarkets / countMarkets so the
+   * filter logic stays in one place.
+   */
+  private static buildSearchFilter(opts: SearchMarketsOptions): {
+    wheres: string[];
+    params: unknown[];
+  } {
+    const { q, category, categories, volumeMin = 0, liquidityMin = 0 } = opts;
+    const wheres: string[] = ["active = TRUE", "volume >= $1", "liquidity >= $2"];
+    const params: unknown[] = [volumeMin, liquidityMin];
+
+    if (category) {
+      params.push(category);
+      wheres.push(`category = $${params.length}`);
+    }
+    if (categories && categories.length > 0) {
+      params.push(categories);
+      wheres.push(`category = ANY($${params.length}::text[])`);
+    }
+    if (q) {
+      const tsq = buildPrefixTsQuery(q);
+      if (tsq !== null) {
+        params.push(tsq);
+        wheres.push(`search_vec @@ to_tsquery('simple', $${params.length})`);
+      }
+    }
+    return { wheres, params };
+  }
+
+  /**
+   * Count markets matching the same filter that `searchMarkets` would apply.
+   * Used for paginated UIs that need a "page X of Y".
+   */
+  static async countMarkets(opts: SearchMarketsOptions): Promise<number> {
+    const { wheres, params } = this.buildSearchFilter(opts);
+    const sql = `SELECT COUNT(*)::int AS total FROM markets WHERE ${wheres.join(" AND ")}`;
+    const result = await query<{ total: number }>(sql, params);
+    return result.rows[0]?.total ?? 0;
+  }
+
+  /**
+   * Counts markets grouped by their primary category (the column), restricted
+   * to the supplied set. Mirrors the strict filter that `searchMarkets` uses
+   * with `category = $`, so the pill numbers match the rows you see when
+   * clicking through.
+   */
+  static async getMarketCountsByCategory(categories: string[]): Promise<Record<string, number>> {
+    if (categories.length === 0) return {};
+    const result = await query<{ category: string; total: number }>(
+      `SELECT category, COUNT(*)::int AS total
+       FROM markets
+       WHERE active = TRUE AND category = ANY($1::text[])
+       GROUP BY category`,
+      [categories]
+    );
+    const out: Record<string, number> = {};
+    for (const c of categories) out[c] = 0;
+    for (const row of result.rows) out[row.category] = row.total;
+    return out;
+  }
+
   static async searchMarkets(opts: SearchMarketsOptions): Promise<DatabaseMarket[]> {
     const {
       q,
@@ -96,12 +213,12 @@ export class DatabaseService {
 
     if (category) {
       params.push(category);
-      wheres.push(`$${params.length} = ANY(tags)`);
+      wheres.push(`category = $${params.length}`);
     }
 
     if (categories && categories.length > 0) {
       params.push(categories);
-      wheres.push(`tags && $${params.length}::text[]`);
+      wheres.push(`category = ANY($${params.length}::text[])`);
     }
 
     // Interest score: log-scaled blend of trading activity, market depth and
@@ -125,12 +242,11 @@ export class DatabaseService {
     }
 
     if (q) {
-      params.push(q);
-      const qIdx = params.length;
-      wheres.push(`search_vec @@ plainto_tsquery('english', $${qIdx})`);
-      // When full-text query is present, rank by relevance then volume tiebreaker.
-      // qIdx is referenced twice: once for the filter (above) and once here for ts_rank.
-      orderBy = `ts_rank(search_vec, plainto_tsquery('english', $${qIdx})) DESC, volume DESC`;
+      const tsq = buildPrefixTsQuery(q);
+      if (tsq !== null) {
+        params.push(tsq);
+        wheres.push(`search_vec @@ to_tsquery('simple', $${params.length})`);
+      }
     }
 
     params.push(limit, offset);
@@ -138,7 +254,7 @@ export class DatabaseService {
     const offsetIdx = params.length;
 
     const sql = `
-      SELECT id, slug, question, description, category, tags, outcomes, volume, liquidity, end_date, clob_token_ids, active, updated_at
+      SELECT id, slug, event_slug, question, description, category, tags, outcomes, volume, liquidity, end_date, clob_token_ids, active, updated_at
       FROM markets
       WHERE ${wheres.join(" AND ")}
       ORDER BY ${orderBy}
@@ -154,7 +270,7 @@ export class DatabaseService {
    */
   static async getMarketById(id: string): Promise<DatabaseMarket | null> {
     const result = await query<DatabaseMarket>(
-      `SELECT id, slug, question, description, category, tags, outcomes, volume, liquidity, end_date, clob_token_ids, active, updated_at
+      `SELECT id, slug, event_slug, question, description, category, tags, outcomes, volume, liquidity, end_date, clob_token_ids, active, updated_at
        FROM markets WHERE id = $1 LIMIT 1`,
       [id]
     );
@@ -167,7 +283,7 @@ export class DatabaseService {
    */
   static async getMarketBySlug(slug: string): Promise<DatabaseMarket | null> {
     const result = await query<DatabaseMarket>(
-      `SELECT id, slug, question, description, category, tags, outcomes, volume, liquidity, end_date, clob_token_ids, active, updated_at
+      `SELECT id, slug, event_slug, question, description, category, tags, outcomes, volume, liquidity, end_date, clob_token_ids, active, updated_at
        FROM markets WHERE slug = $1 LIMIT 1`,
       [slug]
     );

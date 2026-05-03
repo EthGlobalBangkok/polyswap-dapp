@@ -1,66 +1,50 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { CategoryFilter, type CategoryFilterValue } from "./CategoryFilter";
-import { SearchInput } from "./SearchInput";
+import { SearchInputWithSuggestions } from "./SearchInputWithSuggestions";
 import { MarketRow } from "./MarketRow";
 import { MarketsSkeleton } from "./MarketsSkeleton";
+import { Pagination } from "./Pagination";
 import { MotionList, MotionItem } from "@/components/primitives";
-import { useSearchMarkets, useTopMarkets } from "@/hooks/useMarketsData";
-import {
-  CRYPTO_RELEVANT_CATEGORIES,
-  type MarketCategory,
-  type MarketViewModel,
-} from "@/types/design";
+import { useMarketsPage } from "@/hooks/useMarketsData";
+import { type MarketCategory } from "@/types/design";
 
-function applyFilter(
-  list: MarketViewModel[],
-  category: CategoryFilterValue,
-  query: string
-): MarketViewModel[] {
-  const q = query.trim().toLowerCase();
-  return list.filter((m) => {
-    if (category !== "All" && m.category !== category) return false;
-    if (q && !m.question.toLowerCase().includes(q)) return false;
-    return true;
-  });
-}
-
-function countsBy(list: MarketViewModel[]): Record<CategoryFilterValue, number> {
-  const out = { All: list.length } as Record<CategoryFilterValue, number>;
-  for (const cat of CRYPTO_RELEVANT_CATEGORIES) out[cat] = 0;
-  for (const m of list) {
-    if (m.category in out) out[m.category]++;
-  }
-  return out;
-}
+const PAGE_SIZE = 20;
 
 export function MarketsList() {
+  const router = useRouter();
   const [category, setCategory] = useState<CategoryFilterValue>("All");
-  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
 
-  const top = useTopMarkets();
   const searchCat: MarketCategory | null = category === "All" ? null : category;
-  const search = useSearchMarkets(query, searchCat);
 
-  const useSearchResults = query.trim().length > 0 || category !== "All";
-  const sourceData = useSearchResults ? search.data : top.data;
-  const isLoading = useSearchResults ? search.isLoading : top.isLoading;
-  const isError = useSearchResults ? search.isError : top.isError;
+  const { data, isLoading, isError } = useMarketsPage({
+    page,
+    pageSize: PAGE_SIZE,
+    category: searchCat,
+  });
 
-  const items = useMemo<MarketViewModel[]>(
-    () => applyFilter(sourceData ?? [], category, query),
-    [sourceData, category, query]
-  );
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
 
-  const counts = useMemo(() => countsBy(top.data ?? []), [top.data]);
+  const handleCategoryChange = (next: CategoryFilterValue) => {
+    setCategory(next);
+    setPage(1);
+  };
 
-  // Re-key the list on category/query changes so the stagger replays.
-  const listKey = `${category}-${query.trim().toLowerCase()}`;
+  const handleSearchSubmit = (q: string) => {
+    const trimmed = q.trim();
+    if (trimmed.length > 0) {
+      router.push(`/markets/search?q=${encodeURIComponent(trimmed)}`);
+    }
+  };
+
+  const listKey = `${category}-${page}`;
 
   return (
     <div>
-      {/* Masthead block */}
       <div className="border-b border-ink">
         <div className="grid items-end gap-6 py-10 lg:grid-cols-12 lg:gap-10 lg:py-14">
           <div className="lg:col-span-7">
@@ -72,17 +56,17 @@ export function MarketsList() {
             </h1>
           </div>
           <div className="lg:col-span-5">
-            <SearchInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Search questions"
+            <SearchInputWithSuggestions
+              value=""
+              onSubmit={handleSearchSubmit}
+              placeholder="Search questions, tags, slugs"
               className="w-full"
             />
           </div>
         </div>
       </div>
 
-      <CategoryFilter value={category} onChange={setCategory} counts={counts} />
+      <CategoryFilter value={category} onChange={handleCategoryChange} />
 
       {isLoading && <MarketsSkeleton />}
       {isError && (
@@ -94,18 +78,21 @@ export function MarketsList() {
         <div className="border-b border-rule-soft px-6 py-16 text-center sm:px-8 lg:py-20">
           <p className="font-serif text-xl text-ink sm:text-2xl">Nothing fits that brief.</p>
           <p className="mt-2 text-sm text-ink-3">
-            Try a wider net — clear the search, or pick a different category above.
+            Try a wider net — pick a different category above, or use search.
           </p>
         </div>
       )}
       {!isLoading && !isError && items.length > 0 && (
-        <MotionList key={listKey} className="-mx-4 sm:mx-0">
-          {items.map((m) => (
-            <MotionItem key={m.id}>
-              <MarketRow market={m} />
-            </MotionItem>
-          ))}
-        </MotionList>
+        <>
+          <MotionList key={listKey} className="-mx-4 sm:mx-0">
+            {items.map((m) => (
+              <MotionItem key={m.id}>
+                <MarketRow market={m} displayCategory={searchCat ?? undefined} />
+              </MotionItem>
+            ))}
+          </MotionList>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
+        </>
       )}
     </div>
   );

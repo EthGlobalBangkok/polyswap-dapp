@@ -7,6 +7,7 @@
 CREATE TABLE IF NOT EXISTS markets (
   id             VARCHAR(80) PRIMARY KEY,
   slug           VARCHAR(255) NOT NULL UNIQUE,
+  event_slug     VARCHAR(255),
   question       TEXT NOT NULL,
   description    TEXT,
   category       VARCHAR(64),
@@ -38,6 +39,15 @@ CREATE TRIGGER markets_search_vec_trigger
 
 CREATE INDEX IF NOT EXISTS markets_search_vec_idx       ON markets USING GIN (search_vec);
 CREATE INDEX IF NOT EXISTS markets_tags_gin_idx         ON markets USING GIN (tags);
+
+-- Pre-aggregated tag → market_count for the search suggestion dropdown.
+-- Refreshed after each market sync via DatabaseService.refreshTagIndex().
+CREATE TABLE IF NOT EXISTS tag_index (
+  tag           TEXT PRIMARY KEY,
+  market_count  INT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tag_index_lower_idx ON tag_index (lower(tag) text_pattern_ops);
+CREATE INDEX IF NOT EXISTS tag_index_count_idx ON tag_index (market_count DESC);
 CREATE INDEX IF NOT EXISTS markets_category_idx         ON markets (category);
 CREATE INDEX IF NOT EXISTS markets_volume_idx           ON markets (volume DESC);
 CREATE INDEX IF NOT EXISTS markets_liquidity_idx        ON markets (liquidity DESC);

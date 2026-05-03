@@ -1,24 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { Icon } from "@/components/icons";
 import { cn } from "@/lib/cn";
 
 interface Props {
   value: string;
-  onChange: (next: string) => void;
+  /** Fires on Enter or when the clear (×) button is pressed. */
+  onSubmit: (next: string) => void;
   placeholder?: string;
   className?: string;
-  /** Debounce in ms; defaults to 200. */
-  debounceMs?: number;
 }
 
 export function SearchInput({
   value,
-  onChange,
+  onSubmit,
   placeholder = "Search questions",
   className,
-  debounceMs = 200,
 }: Props) {
   const [local, setLocal] = useState(value);
 
@@ -26,11 +24,17 @@ export function SearchInput({
     setLocal(value);
   }, [value]);
 
-  useEffect(() => {
-    if (local === value) return;
-    const t = setTimeout(() => onChange(local), debounceMs);
-    return () => clearTimeout(t);
-  }, [local, value, onChange, debounceMs]);
+  const submit = (next: string) => {
+    if (next === value) return;
+    onSubmit(next);
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submit(local.trim());
+    }
+  };
 
   return (
     <label
@@ -47,6 +51,7 @@ export function SearchInput({
         type="search"
         value={local}
         onChange={(e) => setLocal(e.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className="w-full bg-transparent px-3 py-3 text-base outline-none placeholder:text-ink-3 [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
         aria-label="Search markets"
@@ -56,7 +61,7 @@ export function SearchInput({
           type="button"
           onClick={() => {
             setLocal("");
-            onChange("");
+            submit("");
           }}
           className="px-3 text-ink-3 hover:text-ink"
           aria-label="Clear search"

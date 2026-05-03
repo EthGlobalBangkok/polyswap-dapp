@@ -49,12 +49,16 @@ export type Side = "YES" | "NO";
 
 export interface MarketViewModel {
   id: string;
+  slug: string;
+  /** Parent event slug — what Polymarket's URL needs (`/event/<slug>`). */
+  eventSlug: string | null;
+  /** CLOB token id for the YES side, used to fetch real price history. */
+  yesTokenId: string | null;
   category: MarketCategory;
   question: string;
   yesProbability: number;
   volume24h: number;
   endsAt: string;
-  spark: number[];
 }
 
 export interface TokenViewModel {

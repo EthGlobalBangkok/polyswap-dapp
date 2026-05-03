@@ -1,6 +1,8 @@
 export interface Market {
   id: string;
   slug: string;
+  /** Parent event slug — distinct from `slug` for events with multiple markets. */
+  eventSlug: string | null;
   question: string;
   description: string | null;
   category: string | null;

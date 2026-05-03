@@ -11,15 +11,13 @@ const ENTRIES: ReadonlyArray<CategoryFilterValue> = ["All", ...CRYPTO_RELEVANT_C
 interface Props {
   value: CategoryFilterValue;
   onChange: (next: CategoryFilterValue) => void;
-  counts?: Partial<Record<CategoryFilterValue, number>>;
 }
 
-export function CategoryFilter({ value, onChange, counts }: Props) {
+export function CategoryFilter({ value, onChange }: Props) {
   return (
     <div className="-mx-4 flex gap-2 overflow-x-auto border-b border-ink px-4 py-3 sm:mx-0 sm:px-0">
       {ENTRIES.map((cat) => {
         const active = value === cat;
-        const count = counts?.[cat];
         return (
           <button
             key={cat}
@@ -33,9 +31,6 @@ export function CategoryFilter({ value, onChange, counts }: Props) {
           >
             {cat !== "All" && <CategoryIcon category={cat} size={14} />}
             <span className="font-serif text-sm lg:text-base">{cat}</span>
-            {typeof count === "number" && (
-              <span className="num text-[11px] opacity-60">{count}</span>
-            )}
           </button>
         );
       })}

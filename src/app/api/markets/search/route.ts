@@ -78,20 +78,15 @@ export async function GET(req: NextRequest) {
       : "volume";
 
   try {
-    const markets = await DatabaseService.searchMarkets({
-      q,
-      category,
-      categories,
-      volumeMin,
-      liquidityMin,
-      sort,
-      limit,
-      offset,
-    });
+    const filterOpts = { q, category, categories, volumeMin, liquidityMin };
+    const [markets, total] = await Promise.all([
+      DatabaseService.searchMarkets({ ...filterOpts, sort, limit, offset }),
+      DatabaseService.countMarkets(filterOpts),
+    ]);
 
     return NextResponse.json({
       success: true,
-      data: { markets, count: markets.length },
+      data: { markets, count: markets.length, total },
     });
   } catch (err) {
     console.error("Market search error:", err);

@@ -2,7 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  fetchClobPriceHistory,
   fetchClobPrices,
+  type ClobHistoryPoint,
   type ClobPriceRequest,
   type ClobPricesResponse,
 } from "@/services/polymarket";
@@ -29,6 +31,8 @@ export interface ApiMarket {
   type: "binary" | "multi-choice";
   yesOdds?: number;
   noOdds?: number;
+  /** Token id mapped to the displayed YES probability (for fetching history). */
+  yesTokenId?: string;
   options?: MarketOption[];
   conditionId?: string;
   slug: string;
@@ -40,6 +44,7 @@ export interface ApiMarket {
 interface SearchMarket {
   id: string;
   slug: string;
+  event_slug: string | null;
   question: string;
   description: string | null;
   category: string | null;
@@ -57,6 +62,15 @@ interface SearchResponse {
   data: {
     markets: SearchMarket[];
     count: number;
+    total: number;
+  };
+}
+
+interface CountsResponse {
+  success: boolean;
+  data: {
+    byCategory: Record<string, number>;
+    total: number;
   };
 }
 
@@ -70,25 +84,6 @@ export function normalizeCategory(raw: string): MarketCategory | null {
 
 export function isDesignCategory(c: string): c is MarketCategory {
   return CANONICAL_BY_LOWER.has(c.toLowerCase());
-}
-
-function syntheticSpark(seed: string, current: number): number[] {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash * 31 + seed.charCodeAt(i)) | 0;
-  }
-  const rand = () => {
-    hash = (hash * 9301 + 49297) | 0;
-    return ((hash % 1000) + 1000) / 1000 - 1.5;
-  };
-  const out: number[] = [];
-  let v = Math.max(0.05, current - rand() * 0.3);
-  for (let i = 0; i < 60; i++) {
-    v = Math.max(0.02, Math.min(0.98, v + rand() * 0.05));
-    out.push(v);
-  }
-  out[out.length - 1] = current;
-  return out;
 }
 
 function midpointPercent(prices: ClobPricesResponse, tokenId: string | undefined): number {
@@ -107,6 +102,9 @@ function mergeMarket(lean: SearchMarket, prices: ClobPricesResponse): ApiMarket 
   const endDate = lean.end_date ?? "";
   const category = lean.category ?? "";
   const description = lean.description ?? undefined;
+  // Postgres NUMERIC arrives as string over JSON — coerce up-front so
+  // downstream formatters (fmtUSD) don't fall back to the em-dash placeholder.
+  const volume = Number(lean.volume) || 0;
 
   const isTraditionalBinary =
     outcomes.length === 2 && outcomes.includes("Yes") && outcomes.includes("No");
@@ -117,13 +115,15 @@ function mergeMarket(lean: SearchMarket, prices: ClobPricesResponse): ApiMarket 
     return {
       id: lean.id,
       title: lean.question,
-      volume: lean.volume,
+      volume,
       endDate,
       category,
       type: "binary",
       yesOdds: midpointPercent(prices, clobTokenIds[yesIdx]),
       noOdds: midpointPercent(prices, clobTokenIds[noIdx]),
+      yesTokenId: clobTokenIds[yesIdx],
       slug: lean.slug,
+      eventSlug: lean.event_slug ?? undefined,
       clobTokenIds,
       description,
     };
@@ -133,13 +133,15 @@ function mergeMarket(lean: SearchMarket, prices: ClobPricesResponse): ApiMarket 
     return {
       id: lean.id,
       title: lean.question,
-      volume: lean.volume,
+      volume,
       endDate,
       category,
       type: "binary",
       yesOdds: midpointPercent(prices, clobTokenIds[0]),
       noOdds: midpointPercent(prices, clobTokenIds[1]),
+      yesTokenId: clobTokenIds[0],
       slug: lean.slug,
+      eventSlug: lean.event_slug ?? undefined,
       clobTokenIds,
       description,
     };
@@ -152,12 +154,13 @@ function mergeMarket(lean: SearchMarket, prices: ClobPricesResponse): ApiMarket 
   return {
     id: lean.id,
     title: lean.question,
-    volume: lean.volume,
+    volume,
     endDate,
     category,
     type: "multi-choice",
     options,
     slug: lean.slug,
+    eventSlug: lean.event_slug ?? undefined,
     clobTokenIds,
     description,
   };
@@ -167,15 +170,19 @@ export function toViewModel(api: ApiMarket): MarketViewModel | null {
   const category = normalizeCategory(api.category);
   if (!category) return null;
   if (api.type !== "binary") return null;
-  const yes = api.yesOdds ?? 0;
+  // yesOdds arrives as a 0..100 percentage (from CLOB midpoint × 100); the
+  // view model exposes a 0..1 probability that the row component scales.
+  const yesProbability = (api.yesOdds ?? 0) / 100;
   return {
     id: api.id,
+    slug: api.slug,
+    eventSlug: api.eventSlug ?? null,
+    yesTokenId: api.yesTokenId ?? null,
     category,
     question: api.title,
-    yesProbability: yes,
+    yesProbability,
     volume24h: api.volume,
     endsAt: api.endDate,
-    spark: syntheticSpark(api.id, yes),
   };
 }
 
@@ -192,16 +199,23 @@ function tokenPriceRequests(markets: SearchMarket[]): ClobPriceRequest[] {
   return requests;
 }
 
+interface SearchAndHydrateResult {
+  items: ApiMarket[];
+  total: number;
+}
+
 async function searchAndHydrate(params: {
   sort?: string;
   limit?: number;
+  offset?: number;
   q?: string;
   category?: string;
   categories?: ReadonlyArray<string>;
-}): Promise<ApiMarket[]> {
+}): Promise<SearchAndHydrateResult> {
   const url = new URL("/api/markets/search", window.location.origin);
   if (params.sort) url.searchParams.set("sort", params.sort);
   if (params.limit !== undefined) url.searchParams.set("limit", String(params.limit));
+  if (params.offset !== undefined) url.searchParams.set("offset", String(params.offset));
   if (params.q) url.searchParams.set("q", params.q);
   if (params.category) url.searchParams.set("category", params.category);
   if (params.categories && params.categories.length > 0) {
@@ -215,11 +229,15 @@ async function searchAndHydrate(params: {
   if (!json.success) throw new Error("markets/search returned success=false");
 
   const leanMarkets = json.data.markets;
-  if (leanMarkets.length === 0) return [];
+  const total = json.data.total ?? 0;
+  if (leanMarkets.length === 0) return { items: [], total };
 
   const prices = await fetchClobPrices(tokenPriceRequests(leanMarkets));
 
-  return leanMarkets.map((lean) => mergeMarket(lean, prices));
+  return {
+    items: leanMarkets.map((lean) => mergeMarket(lean, prices)),
+    total,
+  };
 }
 
 async function fetchSingleMarket(slug: string): Promise<ApiMarket | null> {
@@ -232,13 +250,14 @@ async function fetchSingleMarket(slug: string): Promise<ApiMarket | null> {
   const search: SearchMarket = {
     id: lean.id,
     slug: lean.slug,
+    event_slug: lean.event_slug,
     question: lean.question,
     description: lean.description,
     category: lean.category,
     tags: lean.tags,
     outcomes: lean.outcomes,
-    volume: lean.volume,
-    liquidity: lean.liquidity,
+    volume: Number(lean.volume) || 0,
+    liquidity: Number(lean.liquidity) || 0,
     end_date: endDate,
     clob_token_ids: lean.clob_token_ids,
     active: lean.active,
@@ -247,34 +266,103 @@ async function fetchSingleMarket(slug: string): Promise<ApiMarket | null> {
   return mergeMarket(search, prices);
 }
 
-export function useTopMarkets() {
+interface UseMarketsPageParams {
+  page: number;
+  pageSize: number;
+  q?: string;
+  category: MarketCategory | null;
+}
+
+export function useMarketsPage({ page, pageSize, q, category }: UseMarketsPageParams) {
+  const trimmed = q?.trim() ?? "";
+  const offset = (page - 1) * pageSize;
   return useQuery({
-    queryKey: ["markets", "top", CRYPTO_RELEVANT_CATEGORIES.join(",")],
+    queryKey: ["markets", "page", trimmed, category, page, pageSize],
     queryFn: () =>
       searchAndHydrate({
+        q: trimmed.length > 0 ? trimmed : undefined,
+        category: category ?? undefined,
+        // When no specific category is selected and no search term, restrict
+        // to crypto-relevant tags so the default view stays on-topic.
+        categories:
+          category === null && trimmed.length === 0 ? CRYPTO_RELEVANT_CATEGORIES : undefined,
         sort: "interest",
-        limit: 100,
-        categories: CRYPTO_RELEVANT_CATEGORIES,
+        limit: pageSize,
+        offset,
       }),
     staleTime: STALE,
-    select: (markets) => markets.map(toViewModel).filter((m): m is MarketViewModel => m !== null),
+    select: ({ items, total }) => ({
+      items: items.map(toViewModel).filter((m): m is MarketViewModel => m !== null),
+      total,
+    }),
   });
 }
 
-export function useSearchMarkets(queryStr: string, category: MarketCategory | null) {
-  const enabled = queryStr.trim().length > 0 || category !== null;
+/**
+ * Real Polymarket CLOB price history for the YES side of a binary market.
+ * `days` clips to the most recent N days; pass 0 for the full series.
+ */
+export function useMarketPriceHistory(tokenId: string | null | undefined, days = 60) {
   return useQuery({
-    queryKey: ["markets", "search", queryStr, category],
-    queryFn: () =>
-      searchAndHydrate({
-        q: queryStr.trim() || undefined,
-        category: category ?? undefined,
-        sort: "interest",
-        limit: 100,
-      }),
-    enabled,
+    queryKey: ["market-history", tokenId, days],
+    queryFn: async (): Promise<ClobHistoryPoint[]> => {
+      if (!tokenId) return [];
+      const all = await fetchClobPriceHistory(tokenId);
+      if (days <= 0 || all.length === 0) return all;
+      const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+      const sliced = all.filter((p) => p.t >= cutoff);
+      return sliced.length >= 2 ? sliced : all;
+    },
+    enabled: typeof tokenId === "string" && tokenId.length > 0,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export interface TagSuggestion {
+  tag: string;
+  count: number;
+}
+
+interface SuggestResponse {
+  success: boolean;
+  data: TagSuggestion[];
+}
+
+export function useSearchSuggestions(prefix: string, enabled = true) {
+  const trimmed = prefix.trim();
+  return useQuery({
+    queryKey: ["markets", "suggest", trimmed],
+    queryFn: async (): Promise<TagSuggestion[]> => {
+      if (trimmed.length === 0) return [];
+      const url = new URL("/api/markets/suggest", window.location.origin);
+      url.searchParams.set("q", trimmed);
+      url.searchParams.set("limit", "8");
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error(`markets/suggest failed: ${res.status}`);
+      const json = (await res.json()) as SuggestResponse;
+      if (!json.success) throw new Error("markets/suggest returned success=false");
+      return json.data;
+    },
+    enabled: enabled && trimmed.length > 0,
     staleTime: STALE,
-    select: (markets) => markets.map(toViewModel).filter((m): m is MarketViewModel => m !== null),
+  });
+}
+
+export function useCategoryCounts(categories: ReadonlyArray<string>) {
+  const key = categories.join(",");
+  return useQuery({
+    queryKey: ["markets", "counts", key],
+    queryFn: async (): Promise<{ byCategory: Record<string, number>; total: number }> => {
+      if (categories.length === 0) return { byCategory: {}, total: 0 };
+      const url = new URL("/api/markets/counts", window.location.origin);
+      url.searchParams.set("categories", key);
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error(`markets/counts failed: ${res.status}`);
+      const json = (await res.json()) as CountsResponse;
+      if (!json.success) throw new Error("markets/counts returned success=false");
+      return json.data;
+    },
+    staleTime: STALE,
   });
 }
 

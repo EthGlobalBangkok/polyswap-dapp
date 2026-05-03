@@ -84,6 +84,8 @@ const CATEGORY_ICON: Record<MarketCategory, keyof typeof Icon> = {
   Weather: "cloudSun",
 };
 
+export { PolymarketIcon } from "./PolymarketIcon";
+
 export function CategoryIcon({
   category,
   size = 16,

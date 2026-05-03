@@ -3,11 +3,18 @@
 import { Tape } from "@/components/primitives";
 import { TransitionLink } from "@/components/layout";
 import { CategoryIcon, Icon } from "@/components/icons";
+import { useMarketPriceHistory } from "@/hooks/useMarketsData";
 import { fmtUSD, fmtDate } from "@/lib/format";
 import type { MarketViewModel } from "@/types/design";
 
 interface Props {
   market: MarketViewModel;
+  /**
+   * When the row is rendered inside a category-filtered list, surface that
+   * category in the icon + label instead of the priority-derived primary —
+   * keeps the row visually consistent with the filter the user clicked.
+   */
+  displayCategory?: MarketViewModel["category"];
 }
 
 /**
@@ -16,9 +23,14 @@ interface Props {
  * title morphs into the detail page heading via the View Transitions API
  * (where supported — falls back to immediate navigation).
  */
-export function MarketRow({ market }: Props) {
-  const yesPct = Math.round(market.yesProbability * 100);
+export function MarketRow({ market, displayCategory }: Props) {
+  const yesValue = market.yesProbability * 100;
+  const yesPct = yesValue % 1 === 0 ? yesValue.toFixed(0) : yesValue.toFixed(1);
+  const category = displayCategory ?? market.category;
   const titleVTName = `market-title-${market.id}`;
+
+  const { data: history = [] } = useMarketPriceHistory(market.yesTokenId, 60);
+  const sparkData = history.map((h) => h.p);
 
   return (
     <TransitionLink
@@ -29,7 +41,7 @@ export function MarketRow({ market }: Props) {
       {/* Desktop layout */}
       <div className="hidden items-center gap-4 px-6 py-4 lg:grid lg:grid-cols-[28px_1fr_120px_180px_120px_64px]">
         <span className="text-ink">
-          <CategoryIcon category={market.category} size={18} />
+          <CategoryIcon category={category} size={18} />
         </span>
         <div className="min-w-0">
           <p
@@ -39,7 +51,7 @@ export function MarketRow({ market }: Props) {
             {market.question}
           </p>
           <p className="mt-1 text-xs text-ink-3">
-            {market.category} · ends {fmtDate(market.endsAt)}
+            {category} · ends {fmtDate(market.endsAt)}
           </p>
         </div>
         <div className="text-right">
@@ -47,9 +59,12 @@ export function MarketRow({ market }: Props) {
           <p className="mt-0.5 text-[11px] text-ink-3">YES</p>
         </div>
         <div className="overflow-hidden">
-          <Tape data={market.spark} threshold={0.7} side="YES" width={160} height={42} animate />
+          <Tape data={sparkData} showThreshold={false} side="YES" width={160} height={42} animate />
         </div>
-        <p className="num text-right text-sm">{fmtUSD(market.volume24h, { compact: true })}</p>
+        <p className="text-right text-sm">
+          <span className="text-[11px] uppercase tracking-wide text-ink-3">vol </span>
+          <span className="num">{fmtUSD(market.volume24h, { compact: true })}</span>
+        </p>
         <span
           aria-hidden
           className="text-ink-3 transition-transform group-hover:translate-x-1 group-hover:text-ink"
@@ -62,11 +77,12 @@ export function MarketRow({ market }: Props) {
       <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 lg:hidden">
         <div className="flex items-center justify-between gap-3">
           <span className="flex items-center gap-2 text-xs text-ink-3">
-            <CategoryIcon category={market.category} size={14} />
-            {market.category}
+            <CategoryIcon category={category} size={14} />
+            {category}
           </span>
-          <span className="num text-xs text-ink-3">
-            {fmtUSD(market.volume24h, { compact: true })}
+          <span className="text-xs text-ink-3">
+            <span className="uppercase tracking-wide">vol </span>
+            <span className="num">{fmtUSD(market.volume24h, { compact: true })}</span>
           </span>
         </div>
         <p
@@ -82,8 +98,8 @@ export function MarketRow({ market }: Props) {
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">
             <Tape
-              data={market.spark}
-              threshold={0.7}
+              data={sparkData}
+              showThreshold={false}
               side="YES"
               width={220}
               height={48}

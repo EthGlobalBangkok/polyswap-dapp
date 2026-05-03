@@ -21,6 +21,7 @@ interface GammaApiTag {
 }
 
 interface GammaApiEvent {
+  slug?: string;
   tags?: GammaApiTag[];
   markets?: GammaApiMarket[];
 }
@@ -31,8 +32,6 @@ export interface GetOpenMarketsOptions {
   maxNb?: number;
 }
 
-// Ordered priority list mirroring Polymarket's homepage navigation.
-// First match against a market's tags wins as the primary category.
 const CANONICAL_CATEGORIES: readonly string[] = [
   "Politics",
   "Elections",
@@ -97,8 +96,9 @@ export class PolymarketAPIService {
             .map((t) => t.label)
             .filter((l): l is string => typeof l === "string" && l.length > 0);
           const category = derivePrimaryCategory(tags);
+          const eventSlug = event.slug ?? null;
           for (const market of event.markets ?? []) {
-            const lean = this.toLeanMarket(market, tags, category);
+            const lean = this.toLeanMarket(market, tags, category, eventSlug);
             if (lean) allMarkets.push(lean);
           }
         }
@@ -123,7 +123,8 @@ export class PolymarketAPIService {
   private static toLeanMarket(
     raw: GammaApiMarket,
     tags: string[],
-    category: string | null
+    category: string | null,
+    eventSlug: string | null
   ): Market | null {
     if (!raw.id || !raw.slug || !raw.question) return null;
 
@@ -166,6 +167,7 @@ export class PolymarketAPIService {
     return {
       id: raw.id,
       slug: raw.slug,
+      eventSlug,
       question: raw.question,
       description: raw.description ?? null,
       category,

@@ -1,6 +1,7 @@
 export interface DatabaseMarket {
   id: string;
   slug: string;
+  event_slug: string | null;
   question: string;
   description: string | null;
   category: string | null;

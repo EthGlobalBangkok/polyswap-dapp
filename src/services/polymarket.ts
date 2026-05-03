@@ -24,6 +24,34 @@ export async function fetchClobPrices(requests: ClobPriceRequest[]): Promise<Clo
   return json as ClobPricesResponse;
 }
 
+export interface ClobHistoryPoint {
+  /** Unix seconds. */
+  t: number;
+  /** Price in [0, 1]. */
+  p: number;
+}
+
+/**
+ * Real trade history for a single CLOB token, as Polymarket's web charts use.
+ * `interval=max` is the only one that consistently returns data; we slice
+ * client-side to whatever window the caller wants.
+ */
+export async function fetchClobPriceHistory(tokenId: string): Promise<ClobHistoryPoint[]> {
+  if (!tokenId) return [];
+  const url = `${CLOB_BASE}/prices-history?market=${encodeURIComponent(tokenId)}&interval=max`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`CLOB /prices-history failed: ${res.status}`);
+  const json: unknown = await res.json();
+  if (
+    json === null ||
+    typeof json !== "object" ||
+    !Array.isArray((json as { history?: unknown }).history)
+  ) {
+    return [];
+  }
+  return (json as { history: ClobHistoryPoint[] }).history;
+}
+
 /**
  * Convenience: fetch BUY+SELL for every token, return the midpoint as a number
  * in [0, 1]. Tokens with no price come back missing from the map.

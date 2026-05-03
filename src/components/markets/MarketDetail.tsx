@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMarket } from "@/hooks/useMarketsData";
+import { useMarket, useMarketPriceHistory } from "@/hooks/useMarketsData";
 import { Button, DetailSkeleton, Tag, Tape, Dial } from "@/components/primitives";
-import { CategoryIcon, Icon } from "@/components/icons";
+import { CategoryIcon, Icon, PolymarketIcon } from "@/components/icons";
 import { fmtUSD, fmtDate } from "@/lib/format";
 
 interface Props {
@@ -12,6 +12,7 @@ interface Props {
 
 export function MarketDetail({ identifier }: Props) {
   const { data, isLoading, isError } = useMarket(identifier);
+  const { data: history = [] } = useMarketPriceHistory(data?.yesTokenId, 60);
 
   if (isLoading) {
     return <DetailSkeleton />;
@@ -30,6 +31,16 @@ export function MarketDetail({ identifier }: Props) {
 
   const yesPct = Math.round(data.yesProbability * 100);
 
+  // If the trade history spans fewer than 60 days the market was likely
+  // created recently — say so instead of pretending it's a 60-day window.
+  const spanSeconds = history.length >= 2 ? history[history.length - 1]!.t - history[0]!.t : 0;
+  const chartRangeLabel =
+    history.length < 2
+      ? "no history yet"
+      : spanSeconds >= 60 * 86400
+        ? "last 60 days"
+        : "since market creation";
+
   return (
     <div className="pb-24">
       <div className="border-b border-ink py-6 lg:py-8">
@@ -46,12 +57,25 @@ export function MarketDetail({ identifier }: Props) {
           </Tag>
           <span className="text-xs text-ink-3">Ends {fmtDate(data.endsAt)}</span>
         </div>
-        <h1
-          className="mt-4 max-w-[820px] font-serif text-3xl leading-[1.1] sm:text-4xl lg:mt-5 lg:text-[44px]"
-          style={{ viewTransitionName: `market-title-${data.id}` }}
-        >
-          {data.question}
-        </h1>
+        <div className="mt-4 flex flex-wrap items-start justify-between gap-4 lg:mt-5">
+          <h1
+            className="max-w-[820px] font-serif text-3xl leading-[1.1] sm:text-4xl lg:text-[44px]"
+            style={{ viewTransitionName: `market-title-${data.id}` }}
+          >
+            {data.question}
+          </h1>
+          <a
+            href={`https://polymarket.com/event/${data.eventSlug ?? data.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-flex shrink-0 items-center gap-2 border border-ink bg-paper px-3 py-2 text-sm text-ink transition-colors hover:bg-paper-2"
+            aria-label="View this market on Polymarket"
+          >
+            <PolymarketIcon size={28} className="text-ink" />
+            <span>Polymarket</span>
+            <Icon.arrowUpRight size={18} aria-hidden />
+          </a>
+        </div>
       </div>
 
       <div className="grid gap-10 py-8 lg:grid-cols-12 lg:py-12">
@@ -65,21 +89,35 @@ export function MarketDetail({ identifier }: Props) {
 
           {/* Chart */}
           <section>
-            <p className="eyebrow mb-3">Probability of YES · last 60 days</p>
+            <p className="eyebrow mb-3">Probability of YES · {chartRangeLabel}</p>
             <div className="overflow-hidden border border-ink bg-paper p-4 lg:p-6">
-              <Tape
-                data={data.spark}
-                threshold={0.7}
-                side="YES"
-                width={760}
-                height={220}
-                className="w-full"
-                animate
-              />
-              <div className="mt-3 flex items-center justify-between text-xs text-ink-3">
-                <span>0%</span>
-                <span className="text-accent">— — Sample trigger 70%</span>
-                <span>100%</span>
+              <div className="flex items-stretch gap-3">
+                <div className="num flex flex-col justify-between py-1 text-[11px] text-ink-3">
+                  <span>100%</span>
+                  <span>75%</span>
+                  <span>50%</span>
+                  <span>25%</span>
+                  <span>0%</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  {history.length >= 2 ? (
+                    <Tape
+                      data={history.map((h) => h.p)}
+                      timestamps={history.map((h) => h.t)}
+                      showThreshold={false}
+                      side="YES"
+                      width={760}
+                      height={220}
+                      className="w-full"
+                      animate
+                      interactive
+                    />
+                  ) : (
+                    <div className="flex h-[220px] items-center justify-center text-sm text-ink-3">
+                      No trade history yet.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </section>
@@ -100,7 +138,7 @@ export function MarketDetail({ identifier }: Props) {
           <div className="lg:sticky lg:top-6 lg:space-y-6">
             <div className="border border-ink bg-paper-2 p-6">
               <div className="flex items-center gap-4">
-                <Dial current={data.yesProbability} threshold={0.7} side="YES" size={64} animate />
+                <Dial current={data.yesProbability} threshold={1} side="YES" size={64} animate />
                 <div>
                   <p className="num text-2xl font-semibold">{yesPct}%</p>
                   <p className="text-xs text-ink-3">YES today</p>

@@ -1,0 +1,34 @@
+import { type NextRequest, NextResponse } from "next/server";
+import { DatabaseService } from "@/backend/services/databaseService";
+
+const MAX_LIMIT = 20;
+const DEFAULT_LIMIT = 8;
+const MAX_PREFIX_LEN = 80;
+
+export async function GET(req: NextRequest) {
+  const sp = req.nextUrl.searchParams;
+  const raw = (sp.get("q") ?? "").trim();
+  // Drop punctuation; the index stores raw labels and we only need a
+  // simple prefix match on alphanumerics + spaces.
+  const prefix = raw.replace(/[^A-Za-z0-9 ]/g, "").slice(0, MAX_PREFIX_LEN);
+
+  if (prefix.length === 0) {
+    return NextResponse.json({ success: true, data: [] });
+  }
+
+  const limitRaw = sp.get("limit");
+  const limit = limitRaw
+    ? Math.min(Math.max(parseInt(limitRaw, 10) || DEFAULT_LIMIT, 1), MAX_LIMIT)
+    : DEFAULT_LIMIT;
+
+  try {
+    const suggestions = await DatabaseService.getTagSuggestions(prefix, limit);
+    return NextResponse.json({ success: true, data: suggestions });
+  } catch (err) {
+    console.error("Suggest error:", err);
+    return NextResponse.json(
+      { success: false, error: err instanceof Error ? err.message : "suggest failed" },
+      { status: 500 }
+    );
+  }
+}

@@ -11,6 +11,7 @@ const __dirname = dirname(__filename);
 interface SerializedMarket {
   id: string;
   slug?: string;
+  eventSlug?: string | null;
   question?: string;
   description?: string | null;
   category?: string | null;
@@ -29,6 +30,7 @@ function reviveMarket(raw: SerializedMarket): Market | null {
   return {
     id: raw.id,
     slug: raw.slug,
+    eventSlug: raw.eventSlug ?? null,
     question: raw.question,
     description: raw.description ?? null,
     category: raw.category ?? null,
@@ -105,9 +107,11 @@ async function loadDataFromJson() {
       }
     }
 
+    const tagCount = await DatabaseService.refreshTagIndex();
+
     console.log("\n✅ Import completed!");
     console.log(
-      `📊 Results: ${successCount} upserted, ${skipCount} skipped, ${errorCount} errors, ${removed} ended markets removed`
+      `📊 Results: ${successCount} upserted, ${skipCount} skipped, ${errorCount} errors, ${removed} ended markets removed, ${tagCount} tags indexed`
     );
   } catch (error) {
     console.error("❌ Error during data import:", error);

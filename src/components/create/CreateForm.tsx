@@ -7,6 +7,7 @@ import { ThresholdSlider } from "./ThresholdSlider";
 import { TokenPicker } from "./TokenPicker";
 import { AdvancedOptions } from "./AdvancedOptions";
 import { SWAP_TOKENS, type CreateFormDerived, type CreateFormState } from "@/hooks/useCreateOrder";
+import { useMarketPriceHistory } from "@/hooks/useMarketsData";
 import type { MarketViewModel } from "@/types/design";
 
 interface Props {
@@ -18,6 +19,8 @@ interface Props {
 
 export function CreateForm({ market, state, derived, set }: Props) {
   const tokens = [...SWAP_TOKENS];
+  const { data: history = [] } = useMarketPriceHistory(market.yesTokenId, 60);
+  const sparkData = history.map((h) => h.p);
   const distancePts = (state.threshold - market.yesProbability) * 100;
   const wouldFireNow =
     state.side === "YES"
@@ -34,7 +37,7 @@ export function CreateForm({ market, state, derived, set }: Props) {
           <ThresholdSlider value={state.threshold} onChange={(v) => set("threshold", v)} />
           <div className="overflow-hidden border border-rule-soft bg-paper-2 p-3">
             <Tape
-              data={market.spark}
+              data={sparkData}
               threshold={state.threshold}
               side={state.side}
               width={520}

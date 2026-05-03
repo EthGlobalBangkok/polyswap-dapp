@@ -51,7 +51,10 @@ export class MarketUpdateService {
       }
 
       const removed = await DatabaseService.removeEndedMarkets();
-      console.log(`market sync: upserted ${markets.length}, removed ${removed} ended`);
+      const tagCount = await DatabaseService.refreshTagIndex();
+      console.log(
+        `market sync: upserted ${markets.length}, removed ${removed} ended, ${tagCount} tags indexed`
+      );
     } catch (error) {
       Sentry.captureException(error);
       console.error("Market update failed:", error);

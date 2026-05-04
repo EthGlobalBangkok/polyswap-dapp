@@ -23,11 +23,24 @@ export interface SearchMarketsOptions {
   offset?: number;
 }
 
-/**
- * Convert a free-form search input into a Postgres `to_tsquery` string with
- * prefix matching on every term (e.g. `"nvid stoc"` → `"nvid:* & stoc:*"`),
- * so partial words match. Returns null when nothing usable is left.
- */
+const INTEREST_MIN_VOLUME = 10_000;
+
+const INTEREST_CATEGORY_BOOSTS: Record<string, number> = {
+  Economy: 1.1,
+  Crypto: 1.05,
+};
+
+const INTEREST_NOISE_REGEX = [
+  "how many tweets",
+  "number of tweets",
+  "tweet count",
+  "tweets in \\d{4}",
+  "tweets between",
+  "tweets per",
+  "posts? \\d+(-\\d+)? tweets",
+  "posts? \\d+\\+? tweets",
+].join("|");
+
 function buildPrefixTsQuery(input: string): string | null {
   const terms = input
     .toLowerCase()
@@ -39,10 +52,6 @@ function buildPrefixTsQuery(input: string): string | null {
 }
 
 export class DatabaseService {
-  // ============================================================
-  // Markets — lean search-index
-  // ============================================================
-
   static async upsertMarket(market: Market): Promise<void> {
     await query(
       `INSERT INTO markets (
@@ -236,7 +245,22 @@ export class DatabaseService {
     } else if (sort === "end_date") {
       orderBy = "end_date ASC";
     } else if (sort === "interest") {
-      orderBy = `${INTEREST_EXPR} DESC`;
+      if (!category) {
+        wheres.push("end_date > NOW() + INTERVAL '48 hours'");
+        wheres.push(`volume >= ${INTEREST_MIN_VOLUME}`);
+      }
+      if (!q) {
+        wheres.push(`question !~* '${INTEREST_NOISE_REGEX}'`);
+      }
+      const boostCases = !category
+        ? Object.entries(INTEREST_CATEGORY_BOOSTS)
+            .map(([cat, mult]) => `WHEN '${cat}' THEN ${mult}`)
+            .join(" ")
+        : "";
+      const scoreExpr = boostCases
+        ? `(${INTEREST_EXPR}) * (CASE category ${boostCases} ELSE 1 END)`
+        : INTEREST_EXPR;
+      orderBy = `${scoreExpr} DESC`;
     } else {
       orderBy = "volume DESC";
     }

@@ -404,18 +404,6 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Place Polymarket GTD order ---
-    // TEMPORARY BYPASS: Polymarket CLOB rejects this region's IP, so live GTD
-    // placement is currently impossible. While we test the end-to-end flow with
-    // the Polymarket-mock + PolyswapHandler, return a deterministic fake
-    // orderHash. Restore the real call below once CLOB is reachable from the
-    // deploy region.
-    const polymarketOrderHash: string = `0x${Date.now().toString(16).padStart(64, "0")}`.slice(
-      0,
-      66
-    );
-    log.warn(`POLYMARKET BYPASS ACTIVE — using fake orderHash=${polymarketOrderHash}`);
-
-    /* Re-enable when CLOB is reachable:
     let polymarketOrderHash: string;
     try {
       const polymarket = getPolymarketOrderService();
@@ -443,7 +431,6 @@ export async function POST(request: NextRequest) {
         { status: 502 }
       );
     }
-    */
 
     // --- Build PolyswapOrderData ---
     const orderData: PolyswapOrderData = {

@@ -39,6 +39,8 @@ export interface OrderViewModel {
   lastErrorRetryAt: number | null;
   /** Discrete CoW orderbook status (open / fulfilled / cancelled / …). */
   cowOrderStatus: string | null;
+  /** Set by the listener once the on-chain Trade event for this order is observed. */
+  filledAt: Date | null;
 }
 
 const STALE = 30_000;
@@ -117,6 +119,7 @@ export function toOrderView(
         ? Number(o.last_error_retry_at)
         : null,
     cowOrderStatus: o.cow_order_status ?? null,
+    filledAt: o.filled_at ? new Date(o.filled_at) : null,
   };
 }
 

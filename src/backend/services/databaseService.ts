@@ -113,6 +113,7 @@ function toPolyswapOrderRow(o: PrismaPolyswapOrder): DatabasePolyswapOrder {
     last_error_retry_at: o.lastErrorRetryAt === null ? null : o.lastErrorRetryAt.toString(),
     last_checked_at: o.lastCheckedAt,
     cow_order_status: (o.cowOrderStatus as CowOrderStatus | null) ?? null,
+    filled_at: o.filledAt ?? null,
     created_at: o.createdAt,
     updated_at: o.updatedAt,
   };

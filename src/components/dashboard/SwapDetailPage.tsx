@@ -9,6 +9,7 @@ import { Button, DetailSkeleton, Dial, Status, Tape, TokenGlyph } from "@/compon
 import { Icon } from "@/components/icons";
 import { fmtDate, fmtNum, fmtPointsAway } from "@/lib/format";
 import { useOrder } from "@/hooks/useOrders";
+import { useMarket, useMarketPriceHistory } from "@/hooks/useMarketsData";
 import { useRemoveOrder } from "@/hooks/useRemoveOrder";
 import { SafeSignModal } from "@/components/modals/SafeSignModal";
 import type { SafeCall } from "@/services/safe/types";
@@ -21,6 +22,10 @@ interface Props {
 export function SwapDetailPage({ orderId }: Props) {
   const { order, isLoading, isError, walletConnected } = useOrder(orderId);
   const { address } = useAccount();
+  // Real Polymarket YES-side history. Falls back to synthetic spark on the
+  // chart when unavailable (no marketId yet, fetch in flight, or non-binary).
+  const { data: market } = useMarket(order?.marketId ?? "");
+  const { data: priceHistory = [] } = useMarketPriceHistory(market?.yesTokenId, 60);
   const router = useRouter();
   const queryClient = useQueryClient();
   const { deleteDraft, buildRemoveLiveCalls, notifyRemoval, pending, error } = useRemoveOrder();
@@ -99,15 +104,21 @@ export function SwapDetailPage({ orderId }: Props) {
     );
   }
 
-  const currentOdds = order.spark[order.spark.length - 1] ?? 0;
+  // Prefer real CLOB history; fall back to the synthetic spark when none yet.
+  const useRealHistory = priceHistory.length >= 2;
+  const chartData = useRealHistory ? priceHistory.map((p) => p.p) : order.spark;
+  const chartTimestamps = useRealHistory ? priceHistory.map((p) => p.t) : undefined;
+  const currentOdds = chartData[chartData.length - 1] ?? 0;
   const triggered =
     order.status === "ready" || order.status === "done" ? true : currentOdds >= order.threshold;
   const distanceLabel = triggered
     ? "Ready"
     : `${fmtPointsAway(currentOdds, order.threshold)} until trigger`;
 
-  const high = Math.max(...order.spark);
-  const low = Math.min(...order.spark);
+  const high = Math.max(...chartData);
+  const low = Math.min(...chartData);
+
+  const executedAtSec = order.filledAt ? order.filledAt.getTime() / 1000 : undefined;
 
   return (
     <div className="space-y-8 py-8 lg:py-10">
@@ -187,15 +198,21 @@ export function SwapDetailPage({ orderId }: Props) {
               </p>
             </div>
 
-            <div className="mt-5 overflow-hidden border border-rule-soft bg-paper-2 p-3">
+            {/* Vertical padding on top is generous so the execution-marker
+                icon (which floats above the chart top) isn't clipped by the
+                outer card. We deliberately don't use overflow-hidden here. */}
+            <div className="mt-5 border border-rule-soft bg-paper-2 px-3 pb-3 pt-7">
               <Tape
-                data={order.spark}
+                data={chartData}
+                timestamps={chartTimestamps}
+                executedAt={executedAtSec}
                 threshold={order.threshold}
                 side="YES"
                 width={760}
                 height={200}
                 className="w-full"
                 animate
+                interactive
               />
             </div>
 

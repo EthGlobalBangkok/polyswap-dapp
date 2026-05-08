@@ -72,6 +72,7 @@ export interface DatabasePolyswapOrder {
   last_error_retry_at: string | null; // BIGINT — pg returns string
   last_checked_at: Date | null;
   cow_order_status: "presignaturePending" | "open" | "fulfilled" | "cancelled" | "expired" | null;
+  filled_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }

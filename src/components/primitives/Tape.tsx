@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { Icon } from "@/components/icons";
 import { cn } from "@/lib/cn";
 import type { Side } from "@/types/design";
 
@@ -31,6 +32,12 @@ interface TapeProps {
    * the actual point's date instead of the synthesised one-per-day spacing.
    */
   timestamps?: number[];
+  /**
+   * Unix-seconds timestamp at which the order executed. When set (and resolvable
+   * to an x within the chart range via `timestamps`), draws a dashed vertical
+   * line + filled dot + inline label at that point.
+   */
+  executedAt?: number;
 }
 
 const DAY_MS = 86_400_000;
@@ -55,9 +62,11 @@ export function Tape({
   interactive = false,
   endDate,
   timestamps,
+  executedAt,
 }: TapeProps) {
   const clipId = useId();
   const [hover, setHover] = useState<number | null>(null);
+  const [markerHover, setMarkerHover] = useState(false);
 
   if (data.length < 2) {
     return null;
@@ -101,6 +110,39 @@ export function Tape({
     if (interactive) setHover(null);
   };
 
+  // Resolve `executedAt` to the closest data index using either the per-point
+  // timestamps (preferred) or the synthesised daily spacing falling back from
+  // `endDate`. If neither is available, the marker isn't drawn.
+  const executedIndex: number | null = (() => {
+    if (executedAt === undefined) return null;
+    if (timestamps && timestamps.length === data.length) {
+      let bestIdx = 0;
+      let bestDelta = Math.abs(timestamps[0]! - executedAt);
+      for (let i = 1; i < timestamps.length; i++) {
+        const d = Math.abs(timestamps[i]! - executedAt);
+        if (d < bestDelta) {
+          bestDelta = d;
+          bestIdx = i;
+        }
+      }
+      return bestIdx;
+    }
+    if (endDate !== undefined) {
+      const endSec = new Date(endDate).getTime() / 1000;
+      const startSec = endSec - (data.length - 1) * (DAY_MS / 1000);
+      if (executedAt < startSec || executedAt > endSec) return null;
+      const ratio = (executedAt - startSec) / (endSec - startSec);
+      return Math.round(ratio * (data.length - 1));
+    }
+    return null;
+  })();
+  const executedPoint = executedIndex !== null ? (points[executedIndex] ?? null) : null;
+  const executedValue = executedIndex !== null ? (data[executedIndex] ?? null) : null;
+  const executedDate = (() => {
+    if (executedAt === undefined) return null;
+    return new Date(executedAt * 1000);
+  })();
+
   const hoverPoint = hover !== null ? (points[hover] ?? null) : null;
   const hoverValue = hover !== null ? (data[hover] ?? null) : null;
   const hoverDate = (() => {
@@ -127,7 +169,9 @@ export function Tape({
       className={cn(animate && "tape-anim", className)}
       preserveAspectRatio="none"
       aria-hidden
-      style={{ display: "block", maxWidth: "100%" }}
+      // overflow:visible lets the execution-marker icon escape the chart top
+      // edge instead of being clipped by the SVG box.
+      style={{ display: "block", maxWidth: "100%", overflow: "visible" }}
       onMouseMove={onMouseMove}
       onMouseLeave={onMouseLeave}
     >
@@ -158,7 +202,7 @@ export function Tape({
         />
         <circle cx={xC} cy={yC} r="2.5" fill={stroke} />
 
-        {hoverPoint && hoverValue !== null && (
+        {hoverPoint && hoverValue !== null && !markerHover && (
           <>
             <line
               x1={hoverPoint[0]}
@@ -197,6 +241,165 @@ export function Tape({
           </>
         )}
       </g>
+
+      {/* Execution marker rendered OUTSIDE the clipPath so the zap icon can
+          sit above the chart's top edge and the tooltip can extend past the
+          chart bounds. */}
+      {executedPoint && executedValue !== null && executedDate && (
+        <ExecutionMarker
+          x={executedPoint[0]}
+          y={executedPoint[1]}
+          date={executedDate}
+          chartWidth={width}
+          chartTop={padY}
+          chartBottom={height - padY}
+          hovered={markerHover}
+          onHoverChange={setMarkerHover}
+        />
+      )}
     </svg>
+  );
+}
+
+interface ExecutionMarkerProps {
+  x: number;
+  y: number;
+  date: Date;
+  chartWidth: number;
+  chartTop: number;
+  chartBottom: number;
+  hovered: boolean;
+  onHoverChange: (hovered: boolean) => void;
+}
+
+const EXEC_ICON_SIZE = 14;
+const EXEC_ICON_PAD = 2;
+const EXEC_TOOLTIP_PAD_X = 6;
+const EXEC_TOOLTIP_PAD_Y = 4;
+const EXEC_TOOLTIP_FONT_PX = 10;
+const EXEC_TOOLTIP_GLYPH_W = 5.4;
+const EXEC_TOOLTIP_GAP = 8;
+
+function ExecutionMarker({
+  x,
+  y,
+  date,
+  chartWidth,
+  chartTop,
+  chartBottom,
+  hovered,
+  onHoverChange,
+}: ExecutionMarkerProps) {
+  const iconBoxSize = EXEC_ICON_SIZE + EXEC_ICON_PAD * 2;
+  const iconBoxX = x - iconBoxSize / 2;
+  // Float the icon above the chart's top edge. The SVG renders with
+  // overflow:visible so this isn't clipped.
+  const iconBoxY = chartTop - iconBoxSize - 2;
+  const lineYStart = chartTop;
+
+  // Hover hitbox spans the icon (above the chart) plus the dashed line so the
+  // user can grab anywhere on the marker.
+  const hitboxW = Math.max(iconBoxSize, 14);
+  const hitboxX = x - hitboxW / 2;
+  const hitboxY = iconBoxY;
+  const hitboxH = chartBottom - iconBoxY;
+
+  // Tooltip text (one line each).
+  const dateLabel = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const timeLabel = date.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const lines = ["Executed", `${dateLabel} ${timeLabel}`];
+  const longest = lines.reduce((a, b) => (a.length >= b.length ? a : b));
+  const tooltipW = Math.ceil(longest.length * EXEC_TOOLTIP_GLYPH_W) + EXEC_TOOLTIP_PAD_X * 2;
+  const tooltipH = EXEC_TOOLTIP_FONT_PX * lines.length + EXEC_TOOLTIP_PAD_Y * 2 + 2;
+  const tooltipPreferredX = x + EXEC_TOOLTIP_GAP;
+  const tooltipX =
+    tooltipPreferredX + tooltipW > chartWidth ? x - EXEC_TOOLTIP_GAP - tooltipW : tooltipPreferredX;
+  const tooltipY = Math.max(chartTop, Math.min(y - tooltipH / 2, chartBottom - tooltipH));
+
+  return (
+    <g>
+      <line
+        x1={x}
+        y1={lineYStart}
+        x2={x}
+        y2={chartBottom}
+        stroke="var(--color-ink)"
+        strokeOpacity="0.55"
+        strokeWidth="1"
+        strokeDasharray="2 2"
+      />
+      <circle
+        cx={x}
+        cy={y}
+        r="3.5"
+        fill="var(--color-accent)"
+        stroke="var(--color-paper)"
+        strokeWidth="1.2"
+      />
+      {/* Icon backdrop so the zap stays legible over the curve / threshold dash. */}
+      <rect
+        x={iconBoxX}
+        y={iconBoxY}
+        width={iconBoxSize}
+        height={iconBoxSize}
+        rx="2"
+        fill="var(--color-paper)"
+        stroke="var(--color-ink)"
+        strokeWidth="1"
+      />
+      <g transform={`translate(${iconBoxX + EXEC_ICON_PAD}, ${iconBoxY + EXEC_ICON_PAD})`}>
+        <Icon.zap size={EXEC_ICON_SIZE} className="text-accent" aria-hidden />
+      </g>
+
+      {hovered && (
+        <g pointerEvents="none">
+          <rect
+            x={tooltipX}
+            y={tooltipY}
+            width={tooltipW}
+            height={tooltipH}
+            rx="2"
+            fill="var(--color-paper)"
+            stroke="var(--color-ink)"
+            strokeWidth="1"
+          />
+          <text
+            x={tooltipX + EXEC_TOOLTIP_PAD_X}
+            y={tooltipY + EXEC_TOOLTIP_PAD_Y + EXEC_TOOLTIP_FONT_PX - 1}
+            fontSize={EXEC_TOOLTIP_FONT_PX}
+            fontFamily="var(--font-sans)"
+            fontWeight="600"
+            fill="var(--color-ink)"
+          >
+            {lines[0]}
+          </text>
+          <text
+            x={tooltipX + EXEC_TOOLTIP_PAD_X}
+            y={tooltipY + EXEC_TOOLTIP_PAD_Y + EXEC_TOOLTIP_FONT_PX * 2 + 1}
+            fontSize={EXEC_TOOLTIP_FONT_PX}
+            fontFamily="var(--font-sans)"
+            fill="var(--color-ink-3)"
+          >
+            {lines[1]}
+          </text>
+        </g>
+      )}
+
+      {/* Hitbox last so it sits on top and captures hover. */}
+      <rect
+        x={hitboxX}
+        y={hitboxY}
+        width={hitboxW}
+        height={hitboxH}
+        fill="transparent"
+        pointerEvents="all"
+        onMouseEnter={() => onHoverChange(true)}
+        onMouseLeave={() => onHoverChange(false)}
+      />
+    </g>
   );
 }

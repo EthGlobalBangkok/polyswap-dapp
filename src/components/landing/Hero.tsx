@@ -39,16 +39,6 @@ export function Hero() {
               </a>
             </div>
           </RevealItem>
-          <RevealItem>
-            <div className="mt-7 flex flex-wrap items-center gap-x-7 gap-y-3 text-sm lg:mt-8">
-              <span className="flex items-center gap-2">
-                <Icon.lock size={15} aria-hidden /> Funds stay in your wallet
-              </span>
-              <span className="flex items-center gap-2">
-                <Icon.shield size={15} aria-hidden /> Cancel any time
-              </span>
-            </div>
-          </RevealItem>
         </RevealStack>
 
         <Reveal

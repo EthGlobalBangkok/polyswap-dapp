@@ -13,7 +13,7 @@ interface QA {
 const FAQS: QA[] = [
   {
     q: 'What is a "trigger"?',
-    a: 'A condition you define — for example, "Trump endorsement YES reaches 55%". Polyswap watches the Polymarket order book and fires your swap the first time it crosses your line.',
+    a: 'A condition you define — for example, "YES reaches 70% on the question: Will the Fed raise interest rates by 0.5% in May?". Polyswap watches the Polymarket on-chain order book and fires your swap the first time it crosses your line.',
   },
   {
     q: "What if the market never crosses my line?",
@@ -21,15 +21,15 @@ const FAQS: QA[] = [
   },
   {
     q: "How does it actually execute?",
-    a: "A signed off-chain order with on-chain pre-conditions. When the condition holds, a keeper submits your order. The swap clears at market rate at that moment.",
+    a: "Polyswap places a Polymarket limit order at the chosen percentage. When that limit order is matched on-chain, the swap — which is conditional on the match — executes automatically.",
   },
   {
-    q: "Where does the price come from?",
-    a: "Polyswap reads Polymarket's on-chain CLOB. The triggering price is the same probability anyone else sees on Polymarket.",
+    q: "Where does the swap price come from?",
+    a: "We use CoW Protocol. When the swap executes, its intent-based mechanism ensures you get the best swap price available at that moment.",
   },
   {
     q: "What does it cost?",
-    a: "Their is NO fee at the moment ! Subject to change with a small fee on the executed swap only.",
+    a: "There is NO fee at the moment! Subject to change — a small fee may apply on executed swaps only.",
   },
 ];
 

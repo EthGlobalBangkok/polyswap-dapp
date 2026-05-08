@@ -9,7 +9,7 @@ interface Guarantee {
 const ITEMS: Guarantee[] = [
   {
     Ico: Icon.lock,
-    title: "Non-custodial",
+    title: "Non-custodial and Permissionless",
     body: "Your tokens never leave your wallet until your trigger fires. Polyswap can't withdraw, swap, or move funds on its own. Ever.",
   },
   {

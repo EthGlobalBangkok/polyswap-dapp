@@ -18,7 +18,8 @@ function buildDatabaseUrl(): string {
 
   const port = process.env.DB_PORT ?? "5432";
   // Managed providers like Nile require SSL. Local Postgres doesn't.
-  const sslmode = host === "localhost" || host === "127.0.0.1" ? "disable" : "require";
+  // pg v8 silently treats `require` as `verify-full` and warns; be explicit.
+  const sslmode = host === "localhost" || host === "127.0.0.1" ? "disable" : "verify-full";
 
   return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${name}?sslmode=${sslmode}`;
 }

@@ -26,6 +26,23 @@ export function fmtNum(n: number, digits = 2): string {
   });
 }
 
+const TOKEN_AMOUNT_MIN_DISPLAY = 1e-9;
+
+/**
+ * Display a token amount with up to 9 decimal places. Values that round
+ * to zero at that precision but are still positive are shown as `> 1e-9`
+ * so users can tell the estimate is non-zero rather than empty.
+ */
+export function fmtTokenAmount(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  if (n <= 0) return "0";
+  if (n < TOKEN_AMOUNT_MIN_DISPLAY) return "> 0.000000001";
+  return n.toLocaleString("en-US", {
+    maximumFractionDigits: 9,
+    minimumFractionDigits: 0,
+  });
+}
+
 export function fmtDate(date: string | number | Date): string {
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return "—";

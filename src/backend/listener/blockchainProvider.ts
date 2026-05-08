@@ -1,7 +1,6 @@
 import {
   createPublicClient,
   createWalletClient,
-  http,
   webSocket,
   type Hex,
   type PublicClient,
@@ -9,6 +8,10 @@ import {
 } from "viem";
 import { polygon } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
+import { resilientHttp } from "@/lib/rpc/resilientHttp";
+import { createLogger } from "@/backend/logger";
+
+const log = createLogger("rpc");
 
 let cachedPublicClient: PublicClient | null = null;
 let cachedWebSocketClient: PublicClient | null = null;
@@ -20,7 +23,7 @@ export function getPublicClient(): PublicClient {
   if (!rpcUrl) throw new Error("RPC_URL is not set");
   cachedPublicClient = createPublicClient({
     chain: polygon,
-    transport: http(rpcUrl),
+    transport: resilientHttp(rpcUrl, { onRetry: logRetry }),
   });
   return cachedPublicClient;
 }
@@ -47,7 +50,20 @@ export function getWalletClient(): WalletClient {
   cachedWalletClient = createWalletClient({
     account,
     chain: polygon,
-    transport: http(rpcUrl),
+    transport: resilientHttp(rpcUrl, { onRetry: logRetry }),
   });
   return cachedWalletClient;
+}
+
+function logRetry({
+  attempt,
+  delayMs,
+  error,
+}: {
+  attempt: number;
+  delayMs: number;
+  error: unknown;
+}): void {
+  const reason = error instanceof Error ? error.message : String(error);
+  log.warn(`attempt ${attempt} failed, retrying in ${delayMs}ms: ${reason}`);
 }

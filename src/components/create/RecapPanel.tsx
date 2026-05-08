@@ -1,5 +1,5 @@
 import { Icon } from "@/components/icons";
-import { fmtNum, fmtUSD } from "@/lib/format";
+import { fmtTokenAmount, fmtUSD } from "@/lib/format";
 import { describeSentence, type CreateFormState } from "@/hooks/useCreateOrder";
 import type { SwapEstimates } from "@/hooks/useSwapEstimates";
 import type { MarketViewModel } from "@/types/design";
@@ -38,7 +38,7 @@ export function RecapPanel({ market, state, estimates }: Props) {
             k="You receive"
             v={
               estimates.amountOutEstimate > 0
-                ? `~${fmtNum(estimates.amountOutEstimate, 4)} ${toSymbol}`
+                ? `~${fmtTokenAmount(estimates.amountOutEstimate)} ${toSymbol}`
                 : `— ${toSymbol}`
             }
           />

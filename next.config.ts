@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  env: {
+    ENVIRONMENT: process.env.ENVIRONMENT ?? "dev",
+  },
   eslint: {
     // Warning: This allows production builds to successfully complete even if
     // your project has ESLint errors.

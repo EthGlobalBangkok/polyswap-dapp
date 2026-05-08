@@ -13,6 +13,9 @@ import { TransactionEncodingService } from "../../../../backend/services/transac
 import { getPolymarketOrderService } from "../../../../backend/services/polymarketOrderService";
 import { type PolyswapOrderData } from "../../../../backend/interfaces/PolyswapOrder";
 import { getPostHogClient } from "../../../../lib/posthog-server";
+import { createLogger } from "../../../../backend/logger";
+
+const log = createLogger("api-orders");
 
 const VAULT_RELAYER: Address = getAddress(
   process.env.VAULT_RELAYER ?? "0xC92E8bdf79f0507f65a392b0ab4667716BFE0110"
@@ -168,7 +171,7 @@ export async function GET(request: NextRequest) {
       message: "Orders retrieved successfully",
     });
   } catch (error) {
-    console.error("Error fetching orders:", error);
+    log.error("error fetching orders:", error);
     return NextResponse.json(
       {
         success: false,
@@ -401,38 +404,46 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Place Polymarket GTD order ---
+    // TEMPORARY BYPASS: Polymarket CLOB rejects this region's IP, so live GTD
+    // placement is currently impossible. While we test the end-to-end flow with
+    // the Polymarket-mock + PolyswapHandler, return a deterministic fake
+    // orderHash. Restore the real call below once CLOB is reachable from the
+    // deploy region.
+    const polymarketOrderHash: string = `0x${Date.now().toString(16).padStart(64, "0")}`.slice(
+      0,
+      66
+    );
+    log.warn(`POLYMARKET BYPASS ACTIVE — using fake orderHash=${polymarketOrderHash}`);
+
+    /* Re-enable when CLOB is reachable:
     let polymarketOrderHash: string;
     try {
       const polymarket = getPolymarketOrderService();
       await polymarket.initialize();
+      const tokenID = clobTokenIds[outcomeIndex]!;
+      const price = betPercentage / 100;
+      const expiration = Math.floor(deadline.getTime() / 1000);
+      log.info(
+        `placing GTD order: market=${marketId} outcome=${selectedOutcome} ` +
+          `tokenID=${tokenID} price=${price} expiration=${expiration}`
+      );
       const result = await polymarket.postGTDOrder({
-        // outcomeIndex < clobTokenIds.length is enforced above
-        tokenID: clobTokenIds[outcomeIndex]!,
-        price: betPercentage / 100,
+        tokenID,
+        price,
         side: "BUY",
-        // size=5 preserved from the original endpoint; actual sizing is a Phase 7+ concern
         size: 5,
-        expiration: Math.floor(deadline.getTime() / 1000),
+        expiration,
       });
       polymarketOrderHash = result.response.orderID;
-      if (!polymarketOrderHash) {
-        return NextResponse.json(
-          { success: false, error: "Polymarket did not return an order ID" },
-          { status: 502 }
-        );
-      }
+      log.info(`GTD order accepted: orderID=${polymarketOrderHash}`);
     } catch (polymarketError) {
-      console.error("Failed to place Polymarket order:", polymarketError);
+      log.error("GTD order placement failed:", polymarketError);
       return NextResponse.json(
-        {
-          success: false,
-          error: "Polymarket order placement failed",
-          message:
-            polymarketError instanceof Error ? polymarketError.message : "Unknown Polymarket error",
-        },
+        { success: false, error: "Polymarket order placement error" },
         { status: 502 }
       );
     }
+    */
 
     // --- Build PolyswapOrderData ---
     const orderData: PolyswapOrderData = {
@@ -475,7 +486,7 @@ export async function POST(request: NextRequest) {
         salt: params.salt,
       });
     } catch (dbError) {
-      console.error("Failed to insert order into database:", dbError);
+      log.error("failed to insert order into database:", dbError);
       return NextResponse.json(
         {
           success: false,
@@ -520,7 +531,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Error creating order:", error);
+    log.error("error creating order:", error);
     return NextResponse.json(
       {
         success: false,

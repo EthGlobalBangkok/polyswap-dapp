@@ -3,6 +3,9 @@ import {
   type DatabasePolyswapOrder,
   type PolyswapOrderData,
 } from "@/backend/interfaces/PolyswapOrder";
+import { createLogger } from "@/backend/logger";
+
+const log = createLogger("order-uid");
 
 const ZERO_BYTES32: Hex = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
@@ -88,7 +91,7 @@ export class OrderUidCalculationService {
 
       return result;
     } catch (error) {
-      console.error("❌ Error calculating order hash on-chain:", error);
+      log.error("failed to calculate order hash on-chain:", error);
       throw new Error(
         `Failed to calculate order hash on-chain: ${error instanceof Error ? error.message : "Unknown error"}`
       );
@@ -104,7 +107,7 @@ export class OrderUidCalculationService {
     try {
       return encodePacked(["bytes32", "address", "uint32"], [orderDigest, owner, validTo]);
     } catch (error) {
-      console.error("❌ Error calculating order UID:", error);
+      log.error("failed to calculate order UID:", error);
       throw new Error(
         `Failed to calculate order UID: ${error instanceof Error ? error.message : "Unknown error"}`
       );
@@ -124,7 +127,7 @@ export class OrderUidCalculationService {
       const validTo = parseInt(polyswapOrderData.t);
       return this.calculateOrderUid(orderHash, owner, validTo);
     } catch (error) {
-      console.error("❌ Error calculating complete order UID on-chain:", error);
+      log.error("failed to calculate complete order UID on-chain:", error);
       throw new Error(
         `Failed to calculate complete order UID on-chain: ${error instanceof Error ? error.message : "Unknown error"}`
       );

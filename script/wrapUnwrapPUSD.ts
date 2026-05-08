@@ -18,10 +18,10 @@
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
+import { resilientHttp } from "../src/lib/rpc/resilientHttp.js";
 import {
   createPublicClient,
   createWalletClient,
-  http,
   erc20Abi,
   formatUnits,
   parseUnits,
@@ -31,11 +31,14 @@ import {
 } from "viem";
 import { polygon } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
+import { createLogger } from "../src/backend/logger.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 dotenv.config({ path: resolve(__dirname, "..", ".env") });
+
+const log = createLogger("pusd");
 
 const USDCE_ADDRESS = (process.env.USDCE_ADDRESS ??
   "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174") as Address;
@@ -84,7 +87,7 @@ interface Args {
 function parseArgs(): Args {
   const [direction, amount] = process.argv.slice(2);
   if (direction !== "wrap" && direction !== "unwrap") {
-    console.error("Usage: pnpm pusd <wrap|unwrap> [amount]");
+    log.error("Usage: pnpm pusd <wrap|unwrap> [amount]");
     process.exit(1);
   }
   return { direction, amount: amount && amount.length > 0 ? amount : null };
@@ -109,11 +112,11 @@ async function ensureAllowance(args: {
   });
 
   if (current >= required) {
-    console.log(`Allowance OK (${label})`);
+    log.info(`Allowance OK (${label})`);
     return;
   }
 
-  console.log(`Approving ${label} (max)...`);
+  log.info(`Approving ${label} (max)...`);
   const txHash = await walletClient.writeContract({
     account,
     chain: polygon,
@@ -122,9 +125,9 @@ async function ensureAllowance(args: {
     functionName: "approve",
     args: [spender, maxUint256],
   });
-  console.log(`  tx: ${txHash}`);
+  log.info(`  tx: ${txHash}`);
   await publicClient.waitForTransactionReceipt({ hash: txHash });
-  console.log(`  approved`);
+  log.info(`  approved`);
 }
 
 async function main(): Promise<void> {
@@ -132,7 +135,7 @@ async function main(): Promise<void> {
 
   const pk = process.env.PK;
   if (!pk) {
-    console.error("Private key (PK) is not set in environment variables");
+    log.error("Private key (PK) is not set in environment variables");
     process.exit(1);
   }
 
@@ -141,8 +144,12 @@ async function main(): Promise<void> {
   const owner: Address = account.address;
   const rpcUrl = process.env.RPC_URL ?? "https://polygon-rpc.com";
 
-  const publicClient = createPublicClient({ chain: polygon, transport: http(rpcUrl) });
-  const walletClient = createWalletClient({ account, chain: polygon, transport: http(rpcUrl) });
+  const publicClient = createPublicClient({ chain: polygon, transport: resilientHttp(rpcUrl) });
+  const walletClient = createWalletClient({
+    account,
+    chain: polygon,
+    transport: resilientHttp(rpcUrl),
+  });
 
   // For both directions, USDC.e is the underlying asset passed to the ramp contract;
   // the source-of-funds token (the one we hold and that gets debited) flips per direction.
@@ -166,29 +173,29 @@ async function main(): Promise<void> {
     }),
   ]);
 
-  console.log(`Owner       ${owner}`);
-  console.log(`Direction   ${sourceLabel} -> ${destLabel}`);
-  console.log(`Via         ${rampLabel} (${ramp})`);
-  console.log(`Balance     ${formatUnits(balance, decimals)} ${sourceLabel}`);
+  log.info(`Owner       ${owner}`);
+  log.info(`Direction   ${sourceLabel} -> ${destLabel}`);
+  log.info(`Via         ${rampLabel} (${ramp})`);
+  log.info(`Balance     ${formatUnits(balance, decimals)} ${sourceLabel}`);
 
   if (balance === 0n) {
-    console.log(`Nothing to ${direction}.`);
+    log.info(`Nothing to ${direction}.`);
     return;
   }
 
   const amountWei = amount === null ? balance : parseUnits(amount, decimals);
   if (amountWei <= 0n) {
-    console.error("Amount must be positive");
+    log.error("Amount must be positive");
     process.exit(1);
   }
   if (amountWei > balance) {
-    console.error(
+    log.error(
       `Requested ${formatUnits(amountWei, decimals)} ${sourceLabel} but balance is ${formatUnits(balance, decimals)}`
     );
     process.exit(1);
   }
 
-  console.log(`Amount      ${formatUnits(amountWei, decimals)} ${sourceLabel}`);
+  log.info(`Amount      ${formatUnits(amountWei, decimals)} ${sourceLabel}`);
 
   await ensureAllowance({
     publicClient,
@@ -203,7 +210,7 @@ async function main(): Promise<void> {
   // Both ramps take USDC.e as the asset argument — it's the canonical underlying.
   const args = [USDCE_ADDRESS, owner, amountWei] as const;
 
-  console.log(`Sending ${direction}...`);
+  log.info(`Sending ${direction}...`);
   const txHash =
     direction === "wrap"
       ? await walletClient.writeContract({
@@ -222,9 +229,9 @@ async function main(): Promise<void> {
           functionName: "unwrap",
           args,
         });
-  console.log(`  tx: ${txHash}`);
+  log.info(`  tx: ${txHash}`);
   const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-  console.log(`  confirmed in block ${receipt.blockNumber}`);
+  log.info(`  confirmed in block ${receipt.blockNumber}`);
 
   const [usdceAfter, pusdAfter] = await Promise.all([
     publicClient.readContract({
@@ -241,14 +248,14 @@ async function main(): Promise<void> {
     }),
   ]);
 
-  console.log(`Final balances:`);
-  console.log(`  USDC.e ${formatUnits(usdceAfter, 6)}`);
-  console.log(`  pUSD   ${formatUnits(pusdAfter, 6)}`);
+  log.info(`Final balances:`);
+  log.info(`  USDC.e ${formatUnits(usdceAfter, 6)}`);
+  log.info(`  pUSD   ${formatUnits(pusdAfter, 6)}`);
 }
 
 main()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error("Failed:", err);
+    log.error("Failed:", err);
     process.exit(1);
   });

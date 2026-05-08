@@ -1,4 +1,7 @@
 import { type Market } from "../interfaces/Market";
+import { createLogger } from "../logger";
+
+const log = createLogger("polymarket-api");
 
 interface GammaApiMarket {
   id: string;
@@ -110,7 +113,7 @@ export class PolymarketAPIService {
         await new Promise((resolve) => setTimeout(resolve, 50));
       } while (true);
     } catch (error) {
-      console.error("Error fetching markets from Gamma:", error);
+      log.error("failed to fetch markets from Gamma:", error);
       if (allMarkets.length === 0) throw error;
     }
 

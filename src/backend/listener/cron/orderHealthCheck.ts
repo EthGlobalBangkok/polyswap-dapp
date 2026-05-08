@@ -80,10 +80,7 @@ async function checkOne(order: DatabasePolyswapOrder): Promise<void> {
     // Success: order is currently fillable. Clear any prior error state.
     await DatabaseService.clearOrderError(order.id);
   } catch (err) {
-    const data =
-      err instanceof ContractFunctionExecutionError
-        ? (err.cause as { data?: Hex } | undefined)?.data
-        : undefined;
+    const data = extractRevertData(err);
     if (!data) {
       log.error(`unrecognised error for order ${order.id}`, err);
       return;
@@ -93,6 +90,18 @@ async function checkOne(order: DatabasePolyswapOrder): Promise<void> {
     if (!decoded) {
       await DatabaseService.setOrderError(order.id, "UnknownRevert", "Unknown revert", null);
       return;
+    }
+
+    if (
+      decoded.name === "PollTryNextBlock" ||
+      decoded.name === "PollTryAtBlock" ||
+      decoded.name === "PollTryAtEpoch"
+    ) {
+      // Non-terminal "wait" signals: the conditional gate hasn't fired yet.
+      // Persist the latest reason so the UI can surface it, but log at debug.
+      log.debug(`order ${order.id} not yet tradeable: ${decoded.name}(${decoded.reason})`);
+    } else {
+      log.warn(`order ${order.id} ${decoded.name}: ${decoded.reason}`);
     }
 
     await DatabaseService.setOrderError(
@@ -105,6 +114,17 @@ async function checkOne(order: DatabasePolyswapOrder): Promise<void> {
       await DatabaseService.updateOrderStatusById(order.id, "errored");
     }
   }
+}
+
+/**
+ * Pull the raw revert returndata out of a viem ContractFunctionExecutionError.
+ * viem nests it as `cause.raw` on the inner `ContractFunctionRevertedError`;
+ * the older `cause.data` field is only populated for known-ABI reverts.
+ */
+function extractRevertData(err: unknown): Hex | undefined {
+  if (!(err instanceof ContractFunctionExecutionError)) return undefined;
+  const cause = err.cause as { data?: Hex; raw?: Hex } | undefined;
+  return cause?.data ?? cause?.raw;
 }
 
 /**

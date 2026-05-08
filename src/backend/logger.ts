@@ -65,6 +65,7 @@ function emit(level: LogLevel, scope: string, args: unknown[]): void {
 }
 
 export function createLogger(scope: string): Logger {
+  scope = `[${scope}]`;
   return {
     error: (...args) => emit("error", scope, args),
     warn: (...args) => emit("warn", scope, args),

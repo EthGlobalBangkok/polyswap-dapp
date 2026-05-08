@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { Tape } from "@/components/primitives";
-import { fmtUSD } from "@/lib/format";
+import { fmtTokenAmount, fmtUSD } from "@/lib/format";
 import { SideToggle } from "./SideToggle";
 import { ThresholdSlider } from "./ThresholdSlider";
 import { TokenPicker } from "./TokenPicker";
@@ -145,7 +145,7 @@ export function CreateForm({ market, state, derived, estimates, set }: Props) {
             )}
             <div className="mt-3 border border-ink bg-paper-2 px-3 py-3 text-2xl font-mono tabular-nums sm:text-3xl">
               {estimates.amountOutEstimate > 0
-                ? estimates.amountOutEstimate.toFixed(4)
+                ? fmtTokenAmount(estimates.amountOutEstimate)
                 : derived.amountInNumber > 0 && !estimates.isQuoteError
                   ? "—"
                   : "0.00"}

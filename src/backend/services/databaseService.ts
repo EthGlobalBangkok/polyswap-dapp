@@ -5,6 +5,9 @@ import {
   type SoldPosition as PrismaSoldPosition,
 } from "@prisma/client";
 import { prisma } from "../db/prisma";
+import { createLogger } from "../logger";
+
+const log = createLogger("db-service");
 import { type Market } from "../interfaces/Market";
 import { type DatabaseMarket } from "../interfaces/Database";
 import {
@@ -130,46 +133,49 @@ function toSoldPositionRow(s: PrismaSoldPosition): SoldPosition {
   };
 }
 
-const SEARCH_VEC_EXPR = Prisma.sql`(
-  setweight(to_tsvector('english', "question"), 'A') ||
-  setweight(to_tsvector('simple',  regexp_replace("tags"::text, '[{},"]', ' ', 'g')), 'B') ||
-  setweight(to_tsvector('simple',  "slug"), 'C') ||
-  setweight(to_tsvector('english', coalesce("description", '')), 'D')
-)`;
-
 export class DatabaseService {
   static async upsertMarket(market: Market): Promise<void> {
-    // Nile blocks GENERATED columns, so we populate `search_vec` ourselves on
-    // every write — matches the behaviour of the original BEFORE-trigger.
-    await prisma.$executeRaw`
-      INSERT INTO markets (
-        id, slug, event_slug, question, description, category, tags, outcomes,
-        volume, liquidity, end_date, clob_token_ids, active, updated_at, search_vec
+    const data = {
+      slug: market.slug,
+      eventSlug: market.eventSlug ?? null,
+      question: market.question,
+      description: market.description ?? null,
+      category: market.category ?? null,
+      tags: market.tags,
+      outcomes: market.outcomes as Prisma.InputJsonValue,
+      volume: new Prisma.Decimal(market.volume ?? 0),
+      liquidity: new Prisma.Decimal(market.liquidity ?? 0),
+      endDate: market.endDate ?? null,
+      clobTokenIds: market.clobTokenIds,
+      active: market.active,
+      updatedAt: new Date(),
+    } satisfies Prisma.MarketUpdateInput;
+
+    await prisma.market.upsert({
+      where: { id: market.id },
+      create: { id: market.id, ...data },
+      update: data,
+    });
+  }
+
+  /**
+   * Recomputes `markets.search_vec` (multi-field weighted tsvector) for rows
+   * touched in the last hour or where the column is NULL. Raw SQL is required
+   * because `searchVec Unsupported("tsvector")` is excluded from Prisma's
+   * typed API, and Nile blocks both GENERATED columns and CREATE TRIGGER —
+   * so the index has to be refreshed in application code after writes.
+   */
+  static async refreshStaleSearchVectors(): Promise<number> {
+    const result = await prisma.$executeRaw`
+      UPDATE markets SET search_vec = (
+        setweight(to_tsvector('english', question), 'A') ||
+        setweight(to_tsvector('simple',  regexp_replace(tags::text, '[{},"]', ' ', 'g')), 'B') ||
+        setweight(to_tsvector('simple',  slug), 'C') ||
+        setweight(to_tsvector('english', coalesce(description, '')), 'D')
       )
-      VALUES (
-        ${market.id}, ${market.slug}, ${market.eventSlug}, ${market.question},
-        ${market.description}, ${market.category}, ${market.tags},
-        ${JSON.stringify(market.outcomes)}::jsonb,
-        ${market.volume}, ${market.liquidity}, ${market.endDate},
-        ${market.clobTokenIds}, ${market.active}, NOW(),
-        ${SEARCH_VEC_EXPR}
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        slug           = EXCLUDED.slug,
-        event_slug     = EXCLUDED.event_slug,
-        question       = EXCLUDED.question,
-        description    = EXCLUDED.description,
-        category       = EXCLUDED.category,
-        tags           = EXCLUDED.tags,
-        outcomes       = EXCLUDED.outcomes,
-        volume         = EXCLUDED.volume,
-        liquidity      = EXCLUDED.liquidity,
-        end_date       = EXCLUDED.end_date,
-        clob_token_ids = EXCLUDED.clob_token_ids,
-        active         = EXCLUDED.active,
-        updated_at     = NOW(),
-        search_vec     = EXCLUDED.search_vec
+      WHERE search_vec IS NULL OR updated_at >= NOW() - INTERVAL '1 hour'
     `;
+    return Number(result);
   }
 
   /**
@@ -177,20 +183,41 @@ export class DatabaseService {
    * a plain B-tree (Nile blocks function calls in index expressions).
    */
   static async refreshTagIndex(): Promise<number> {
-    return prisma.$transaction(async (tx) => {
-      await tx.tagIndex.deleteMany();
-      const rows = await tx.$queryRaw<{ tag: string; market_count: number }[]>`
-        SELECT lower(tag) AS tag, COUNT(*)::int AS market_count
-        FROM markets, unnest(tags) AS tag
-        WHERE active = TRUE
-        GROUP BY lower(tag)
-      `;
-      if (rows.length === 0) return 0;
-      await tx.tagIndex.createMany({
-        data: rows.map((r) => ({ tag: r.tag, marketCount: r.market_count })),
-      });
-      return rows.length;
+    const fetchStart = Date.now();
+    const rows = await prisma.market.findMany({
+      where: { active: true },
+      select: { tags: true },
     });
+    log.debug(`tag-index: fetched ${rows.length} active markets in ${Date.now() - fetchStart}ms`);
+
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      for (const tag of row.tags) {
+        const key = tag.toLowerCase();
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    log.debug(`tag-index: aggregated ${counts.size} unique tags`);
+
+    return prisma.$transaction(
+      async (tx) => {
+        const deleted = await tx.tagIndex.deleteMany();
+        log.debug(`tag-index: cleared ${deleted.count} old rows`);
+
+        if (counts.size === 0) {
+          log.warn("tag-index: no active markets had any tags");
+          return 0;
+        }
+
+        const insertStart = Date.now();
+        await tx.tagIndex.createMany({
+          data: Array.from(counts, ([tag, marketCount]) => ({ tag, marketCount })),
+        });
+        log.debug(`tag-index: inserted ${counts.size} rows in ${Date.now() - insertStart}ms`);
+        return counts.size;
+      },
+      { timeout: 60_000 }
+    );
   }
 
   static async getTagSuggestions(
@@ -505,7 +532,7 @@ export class DatabaseService {
       });
       return result.count > 0;
     } catch (error) {
-      console.error(`Error updating order status for ${orderHash}:`, error);
+      log.error(`failed to update order status for hash ${orderHash}:`, error);
       return false;
     }
   }
@@ -547,7 +574,7 @@ export class DatabaseService {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
         return false;
       }
-      console.error(`Error updating order status for ID ${orderId}:`, error);
+      log.error(`failed to update order status for id ${orderId}:`, error);
       return false;
     }
   }
@@ -812,18 +839,16 @@ export class DatabaseService {
     last24Hours: number;
   }> {
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const [totalSold, last24Hours, valueAgg] = await Promise.all([
+    const [totalSold, last24Hours, rows] = await Promise.all([
       prisma.soldPosition.count(),
       prisma.soldPosition.count({ where: { soldAt: { gt: since24h } } }),
-      prisma.$queryRaw<{ total: string | null }[]>`
-        SELECT COALESCE(SUM(size * sell_price), 0)::text AS total FROM sold_positions
-      `,
+      prisma.soldPosition.findMany({ select: { size: true, sellPrice: true } }),
     ]);
-    return {
-      totalSold,
-      totalValue: parseFloat(valueAgg[0]?.total ?? "0"),
-      last24Hours,
-    };
+    const totalValue = rows.reduce(
+      (sum, r) => sum + decimalToNumber(r.size) * decimalToNumber(r.sellPrice),
+      0
+    );
+    return { totalSold, totalValue, last24Hours };
   }
 
   static async cleanupOldSoldPositions(daysOld: number = 30): Promise<number> {
@@ -848,7 +873,7 @@ export class DatabaseService {
     const { count } = await prisma.soldPosition.deleteMany({
       where: { OR: [{ orderId: "unknown" }, { orderId: "" }] },
     });
-    if (count > 0) console.log(`Cleaned up ${count} failed sold position record(s)`);
+    if (count > 0) log.info(`cleaned up ${count} failed sold-position record(s)`);
     return count;
   }
 
@@ -881,7 +906,7 @@ export class DatabaseService {
   }
 
   /**
-   * Interest score = log-blended volume + liquidity, decayed by time-to-resolve
+   * Interest score = log-blended volume + liquidity, decayed by time-to-resolve,
    * with optional category boosts. Beats raw volume for "what's hot".
    */
   private static buildOrderBy(
@@ -899,9 +924,12 @@ export class DatabaseService {
 
     if (hasCategoryFilter) return Prisma.sql`${interestExpr} DESC`;
 
+    // Cast both the WHEN-arms and ELSE to numeric — without the cast, pg infers
+    // the CASE arms as integer (matching `ELSE 1`) and rejects the bound float
+    // multipliers (1.1, 1.05, ...) with `invalid input syntax for type integer`.
     const boostCases = Object.entries(INTEREST_CATEGORY_BOOSTS).map(
-      ([cat, mult]) => Prisma.sql`WHEN ${cat} THEN ${mult}`
+      ([cat, mult]) => Prisma.sql`WHEN ${cat} THEN ${mult}::numeric`
     );
-    return Prisma.sql`(${interestExpr}) * (CASE category ${Prisma.join(boostCases, " ")} ELSE 1 END) DESC`;
+    return Prisma.sql`(${interestExpr}) * (CASE category ${Prisma.join(boostCases, " ")} ELSE 1::numeric END) DESC`;
   }
 }

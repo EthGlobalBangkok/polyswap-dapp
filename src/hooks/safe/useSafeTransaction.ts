@@ -4,11 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { parseAbiItem, type Address, type Hash } from "viem";
 import { usePublicClient, useWaitForCallsStatus } from "wagmi";
-import {
-  fetchMultisigTransaction,
-  isReplaced,
-  type FetchResult,
-} from "@/services/safe/safeTxService";
+import { fetchMultisigTransaction, type FetchResult } from "@/services/safe/safeTxService";
 import type { SafeTxStatus } from "@/services/safe/types";
 
 const POLL_INTERVAL_MS = 4_000;
@@ -38,7 +34,17 @@ export function useSafeTransaction({
 
   useEffect(() => {
     if (!use5792 || !callsStatus) return;
-    // EIP-5792 status codes: 100 pending, 200 confirmed, 400 cancelled, 500 reverted.
+    // EIP-5792 maps numeric status codes onto string buckets in viem:
+    //   100         → "pending"
+    //   200         → "success"
+    //   300/400/500/600 → "failure"
+    // The numeric code is preserved on `callsStatus.statusCode`, which we use
+    // to distinguish "cancelled offchain" (400) from "confirmed but reverted"
+    // (500) and "chain rules" (600). Per eip5792.xyz, 400 is reserved for
+    // "batch was not included onchain and the wallet will not retry it" — not
+    // for nonce-replacement, so we surface it as `error` and let the user
+    // retry.
+    const statusCode = (callsStatus as { statusCode?: number }).statusCode;
     switch (callsStatus.status) {
       case "pending":
         setStatus({ kind: "awaitingExecution" });
@@ -50,9 +56,19 @@ export function useSafeTransaction({
       }
       case "failure": {
         const onChainHash = callsStatus.receipts?.[0]?.transactionHash;
-        setStatus(
-          onChainHash ? { kind: "reverted", onChainHash } : { kind: "replaced" } // status=400 with no receipt
-        );
+        if (onChainHash) {
+          setStatus({ kind: "reverted", onChainHash });
+        } else if (statusCode === 400) {
+          // Wallet (Safe) cancelled the bundle offchain. Treat as a regular
+          // error so the modal offers a retry instead of misreporting nonce
+          // replacement.
+          setStatus({ kind: "error", error: new Error("The wallet cancelled the request.") });
+        } else {
+          setStatus({
+            kind: "error",
+            error: new Error(`Transaction failed (status ${statusCode ?? "unknown"}).`),
+          });
+        }
         break;
       }
     }
@@ -134,15 +150,18 @@ export function useSafeTransaction({
           }
           // isExecuted but isSuccessful still null — wait one more poll.
         } else {
-          // Replacement check: is there another executed tx at the same nonce?
-          const replaced = await isReplaced(safeAddress, tx.nonce, safeTxHash, ac.signal).catch(
-            () => false
-          );
-          if (cancelled) return;
-          if (replaced) {
-            setStatus({ kind: "replaced" });
-            return;
-          }
+          // We deliberately do NOT call `isReplaced` here. Safe-via-WC may
+          // re-build the SafeTx (e.g. adjust safeTxGas / refundReceiver) before
+          // execution, which changes the EIP-712 hash that Safe Transaction
+          // Service indexes. Our locally-returned `safeTxHash` then differs
+          // from the indexed one, and a naive nonce-equality check would flag
+          // the user's own executed tx as "replaced" — exactly the false
+          // positive we keep hitting.
+          //
+          // The `ExecutionSuccess` / `ExecutionFailure` watchEvent above is the
+          // authoritative terminal source: it matches by indexed `txHash`, and
+          // wagmi's polled state will catch the executed flip on the next REST
+          // tick once Safe Tx Service indexes it.
           const have = (tx.confirmations ?? []).length;
           const need = tx.confirmationsRequired;
           setStatus(

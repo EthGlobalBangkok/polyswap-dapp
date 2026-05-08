@@ -31,6 +31,7 @@
   },
   "dependencies": {
     "@polymarket/clob-client-v2": "latest",
+    "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@sentry/nextjs": "^10.35.0",
     "@tailwindcss/postcss": "^4.2.4",
@@ -42,7 +43,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
-    "import-in-the-middle": "^2.0.4",
+    "import-in-the-middle": "^3.0.1",
     "lucide-react": "^1.11.0",
     "motion": "^12.38.0",
     "next": "15.4.10",

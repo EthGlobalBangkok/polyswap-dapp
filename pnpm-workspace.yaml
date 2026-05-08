@@ -21,4 +21,8 @@ allowBuilds:
 # pulls pino@7.11.0, which has a known vulnerability. Upstream is blocked
 # on a licensing dispute; we pin manually until they ship a fix.
 overrides:
-  pino: "10.0.0"
+  # Force a single import-in-the-middle version everywhere. Next.js externalises
+  # this package for the Node.js runtime, and the version it sees as "external"
+  # must match the version each Sentry/OpenTelemetry consumer expects, otherwise
+  # Turbopack emits a "different version when requested" warning.
+  import-in-the-middle: "3.0.1"

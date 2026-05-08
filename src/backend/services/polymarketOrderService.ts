@@ -10,7 +10,6 @@ import {
 import {
   createPublicClient,
   createWalletClient,
-  http,
   isAddress,
   erc20Abi,
   formatUnits,
@@ -19,8 +18,12 @@ import {
   type PublicClient,
   type WalletClient,
 } from "viem";
+import { resilientHttp } from "@/lib/rpc/resilientHttp";
 import { polygon } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
+import { createLogger } from "../logger";
+
+const log = createLogger("polymarket-order");
 
 export interface PolymarketOrderConfig {
   tokenID: string;
@@ -103,12 +106,12 @@ export class PolymarketOrderService {
 
     const publicClient = createPublicClient({
       chain: polygon,
-      transport: http(rpcUrl),
+      transport: resilientHttp(rpcUrl),
     });
     const walletClient = createWalletClient({
       account,
       chain: polygon,
-      transport: http(rpcUrl),
+      transport: resilientHttp(rpcUrl),
     });
 
     const creds: ApiKeyCreds = {
@@ -131,7 +134,7 @@ export class PolymarketOrderService {
     try {
       await publicClient.getBlockNumber();
     } catch (networkError) {
-      console.error("Failed to connect to Polygon network:", networkError);
+      log.error("failed to connect to Polygon network:", networkError);
       throw new Error(`Failed to connect to Polygon network: ${networkError}`);
     }
 
@@ -263,10 +266,12 @@ export class PolymarketOrderService {
         { tickSize: "0.01" },
         OrderType.GTC
       );
+      log.info(`GTC response: ${JSON.stringify(response)}`);
+      assertCLOBOrderAccepted(response, "GTC");
       return { response };
     } catch (error) {
       const { message, details } = describeOrderError(error);
-      console.error("Failed to create GTC order:", error);
+      log.error("failed to create GTC order:", error);
       throw new Error(`Failed to create GTC order: ${message}. Details: ${details}`);
     }
   }
@@ -321,10 +326,12 @@ export class PolymarketOrderService {
         { tickSize: "0.01" },
         OrderType.GTD
       );
+      log.info(`GTD response: ${JSON.stringify(response)}`);
+      assertCLOBOrderAccepted(response, "GTD");
       return { response };
     } catch (error) {
       const { message, details } = describeOrderError(error);
-      console.error("Failed to create GTD order:", error);
+      log.error("failed to create GTD order:", error);
       throw new Error(`Failed to create GTD order: ${message}. Details: ${details}`);
     }
   }
@@ -340,6 +347,26 @@ export class PolymarketOrderService {
 
 export const getPolymarketOrderService = (): PolymarketOrderService =>
   PolymarketOrderService.getInstance();
+
+/**
+ * V2 CLOB returns OrderResponse soft-failures ({ success: false, errorMsg, orderID: "" })
+ * without throwing. Surface the real reason instead of letting an empty orderID propagate
+ * as a generic "no order ID" error.
+ */
+function assertCLOBOrderAccepted(response: unknown, kind: "GTC" | "GTD"): void {
+  if (!response || typeof response !== "object") {
+    throw new Error(`${kind} order: empty response from CLOB`);
+  }
+  const r = response as { success?: unknown; errorMsg?: unknown; orderID?: unknown };
+  if (r.success === false) {
+    const reason =
+      typeof r.errorMsg === "string" && r.errorMsg.length > 0 ? r.errorMsg : "rejected";
+    throw new Error(`${kind} order rejected by CLOB: ${reason}`);
+  }
+  if (typeof r.orderID !== "string" || r.orderID.length === 0) {
+    throw new Error(`${kind} order: CLOB returned no orderID (raw: ${JSON.stringify(response)})`);
+  }
+}
 
 /**
  * Extract a human-readable message + structured details from a clob-client error.

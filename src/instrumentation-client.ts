@@ -3,39 +3,27 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
+import posthog from "posthog-js";
+import { isProductionEnvironment } from "@/lib/env";
 
-Sentry.init({
-  dsn: "https://d190690c303492020ebc0c241b5bd560@o4510743731175424.ingest.de.sentry.io/4510743738974288",
+if (isProductionEnvironment()) {
+  Sentry.init({
+    dsn: "https://d190690c303492020ebc0c241b5bd560@o4510743731175424.ingest.de.sentry.io/4510743738974288",
+    integrations: [Sentry.replayIntegration()],
+    tracesSampleRate: 1,
+    enableLogs: true,
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1.0,
+    sendDefaultPii: true,
+  });
 
-  // Add optional integrations for additional features
-  integrations: [Sentry.replayIntegration()],
-
-  // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
-  tracesSampleRate: 1,
-  // Enable logs to be sent to Sentry
-  enableLogs: true,
-
-  // Define how likely Replay events are sampled.
-  // This sets the sample rate to be 10%. You may want this to be 100% while
-  // in development and sample at a lower rate in production
-  replaysSessionSampleRate: 0.1,
-
-  // Define how likely Replay events are sampled when an error occurs.
-  replaysOnErrorSampleRate: 1.0,
-
-  // Enable sending user PII (Personally Identifiable Information)
-  // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
-  sendDefaultPii: true,
-});
+  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "", {
+    api_host: "/ingest",
+    ui_host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+    defaults: "2026-01-30",
+    capture_exceptions: true,
+    debug: false,
+  });
+}
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
-
-import posthog from "posthog-js";
-
-posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
-  api_host: "/ingest",
-  ui_host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
-  defaults: "2026-01-30",
-  capture_exceptions: true,
-  debug: process.env.NODE_ENV === "development",
-});

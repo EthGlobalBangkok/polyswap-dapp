@@ -1,5 +1,5 @@
 // src/services/safe/safeTxService.ts
-import type { Address, Hash } from "viem";
+import type { Hash } from "viem";
 import type { SafeMultisigTxResponse } from "./types";
 
 /**
@@ -34,35 +34,5 @@ export async function fetchMultisigTransaction(
     }
     const error = e instanceof Error ? e : new Error(String(e));
     return { kind: "error", error };
-  }
-}
-
-/**
- * Detects whether `targetSafeTxHash` was superseded by another tx at the same nonce.
- * Returns `true` if the same Safe has another **executed** tx at that nonce
- * with a different safeTxHash.
- *
- * Returns `false` on any HTTP or network error — treat `false` as inconclusive,
- * not definitive. AbortError is rethrown so React effect cleanup propagates.
- */
-export async function isReplaced(
-  safe: Address,
-  nonce: number,
-  targetSafeTxHash: Hash,
-  signal?: AbortSignal
-): Promise<boolean> {
-  const url = `${TX_SVC_BASE}/safes/${safe}/multisig-transactions/?nonce=${nonce}&executed=true`;
-  try {
-    const res = await fetch(url, { signal, headers: { accept: "application/json" } });
-    if (!res.ok) return false;
-    const data = (await res.json()) as { results: SafeMultisigTxResponse[] };
-    return data.results.some(
-      (t) => t.isExecuted && t.safeTxHash.toLowerCase() !== targetSafeTxHash.toLowerCase()
-    );
-  } catch (e) {
-    if (e instanceof DOMException && e.name === "AbortError") {
-      throw e;
-    }
-    return false;
   }
 }

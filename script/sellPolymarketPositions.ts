@@ -9,9 +9,13 @@
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
-import { createPublicClient, createWalletClient, http, type Address, type Hex } from "viem";
+import { createPublicClient, createWalletClient, type Address, type Hex } from "viem";
+import { resilientHttp } from "../src/lib/rpc/resilientHttp.js";
 import { polygon } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
+import { createLogger } from "../src/backend/logger.js";
+
+const log = createLogger("sell-positions");
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -73,43 +77,43 @@ interface Position {
 }
 
 async function fetchPositions(ownerAddress: string): Promise<Position[]> {
-  console.log(`🔍 Fetching positions for address: ${ownerAddress}...`);
+  log.info(`Fetching positions for address: ${ownerAddress}...`);
 
   try {
     // Note: The API uses 'user' parameter, not 'owner'
     const url = `${POSITIONS_API_URL}?user=${ownerAddress}`;
-    console.log(`🌐 Requesting URL: ${url}`);
+    log.info(`Requesting URL: ${url}`);
 
     const response = await fetch(url, {
       method: "GET",
     });
 
-    console.log(`📡 Response status: ${response.status} ${response.statusText}`);
+    log.info(`Response status: ${response.status} ${response.statusText}`);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`❌ Response body: ${errorText}`);
+      log.error(`Response body: ${errorText}`);
       throw new Error(`Failed to fetch positions: ${response.status} ${response.statusText}`);
     }
 
     const positions: Position[] = await response.json();
-    console.log(`✅ Found ${positions.length} positions`);
+    log.info(`Found ${positions.length} positions`);
 
     return positions;
   } catch (error) {
-    console.error("❌ Error fetching positions:", error);
+    log.error("Error fetching positions:", error);
     throw error;
   }
 }
 
 async function sellAllPositions() {
-  console.log("🚀 Starting to sell all Polymarket positions...");
+  log.info("Starting to sell all Polymarket positions...");
 
-  console.log("🔍 Environment variables check:");
-  console.log("   PK length:", process.env.PK ? process.env.PK.length : "NOT SET");
+  log.info("Environment variables check:");
+  log.info("PK length:", process.env.PK ? process.env.PK.length : "NOT SET");
 
   if (!process.env.PK) {
-    console.error("❌ Private key (PK) is not set in environment variables");
+    log.error("Private key (PK) is not set in environment variables");
     process.exit(1);
   }
 
@@ -121,13 +125,13 @@ async function sellAllPositions() {
     const account = privateKeyToAccount(privateKey);
     const ownerAddress: Address = account.address;
 
-    console.log(`🔐 Derived owner address: ${ownerAddress}`);
+    log.info(`Derived owner address: ${ownerAddress}`);
 
     // Fetch positions
     const positions = await fetchPositions(ownerAddress);
 
     if (positions.length === 0) {
-      console.log("✅ No positions found to sell");
+      log.info("No positions found to sell");
       return;
     }
 
@@ -135,14 +139,14 @@ async function sellAllPositions() {
     const polymarketOrderService = getPolymarketOrderService();
 
     // Initialize the service
-    console.log("🔄 Initializing Polymarket service...");
+    log.info("Initializing Polymarket service...");
     await polymarketOrderService.initialize();
 
     if (!polymarketOrderService.isReady()) {
       throw new Error("Polymarket service is not ready");
     }
 
-    console.log("✅ Service initialized successfully");
+    log.info("Service initialized successfully");
 
     // --- Approval Logic Start ---
     const CONDITIONAL_TOKEN_ADDRESS = process.env.CONDITIONAL_TOKEN as Address | undefined;
@@ -150,23 +154,23 @@ async function sellAllPositions() {
       "0xE111180000d2663C0091e4f400237545B87B996B") as Address;
 
     if (!CONDITIONAL_TOKEN_ADDRESS) {
-      console.warn(
-        "⚠️ CONDITIONAL_TOKEN not found in env. Skipping approval check (might fail if not approved)."
+      log.warn(
+        "CONDITIONAL_TOKEN not found in env. Skipping approval check (might fail if not approved)."
       );
     } else {
-      console.log(
-        `🔍 Checking approval for Operator: ${POLYMARKET_EXCHANGE_ADDRESS} on CT: ${CONDITIONAL_TOKEN_ADDRESS}`
+      log.info(
+        `Checking approval for Operator: ${POLYMARKET_EXCHANGE_ADDRESS} on CT: ${CONDITIONAL_TOKEN_ADDRESS}`
       );
 
       const rpcUrl = process.env.RPC_URL || "https://polygon-rpc.com";
       const publicClient = createPublicClient({
         chain: polygon,
-        transport: http(rpcUrl),
+        transport: resilientHttp(rpcUrl),
       });
       const walletClient = createWalletClient({
         account,
         chain: polygon,
-        transport: http(rpcUrl),
+        transport: resilientHttp(rpcUrl),
       });
 
       try {
@@ -176,10 +180,10 @@ async function sellAllPositions() {
           functionName: "isApprovedForAll",
           args: [ownerAddress, POLYMARKET_EXCHANGE_ADDRESS],
         });
-        console.log(`   Current Approval Status: ${isApproved}`);
+        log.info(`Current Approval Status: ${isApproved}`);
 
         if (!isApproved) {
-          console.log("   📝 Sending setApprovalForAll(true) transaction...");
+          log.info("Sending setApprovalForAll(true) transaction...");
           const txHash = await walletClient.writeContract({
             account,
             chain: polygon,
@@ -188,50 +192,50 @@ async function sellAllPositions() {
             functionName: "setApprovalForAll",
             args: [POLYMARKET_EXCHANGE_ADDRESS, true],
           });
-          console.log(`   🚀 Transaction sent: ${txHash}`);
+          log.info(`Transaction sent: ${txHash}`);
 
-          console.log("   ⏳ Waiting for confirmation...");
+          log.info("Waiting for confirmation...");
           await publicClient.waitForTransactionReceipt({ hash: txHash });
-          console.log("   ✅ Approval confirmed!");
+          log.info("Approval confirmed!");
         } else {
-          console.log("   ✅ Already approved.");
+          log.info("Already approved.");
         }
       } catch (err) {
-        console.error("   ❌ Failed to check/set approval:", err);
+        log.error("Failed to check/set approval:", err);
         // We continue, as it might be approved already or we might want to try selling anyway
       }
     }
     // --- Approval Logic End ---
 
     // Sell each position
-    console.log(`🧾 Processing ${positions.length} positions...`);
+    log.info(`Processing ${positions.length} positions...`);
 
     for (const [index, position] of positions.entries()) {
-      console.log(`
+      log.info(`
 
-📝 Processing position ${index + 1}/${positions.length}:`);
-      console.log(`   Token ID: ${position.asset}`);
-      console.log(`   Token Name: ${position.outcome}`);
-      console.log(`   Quantity: ${position.size}`);
-      console.log(`   Current Price: ${position.curPrice}`);
-      console.log(`   Market: ${position.title}`);
+Processing position ${index + 1}/${positions.length}:`);
+      log.info(`Token ID: ${position.asset}`);
+      log.info(`Token Name: ${position.outcome}`);
+      log.info(`Quantity: ${position.size}`);
+      log.info(`Current Price: ${position.curPrice}`);
+      log.info(`Market: ${position.title}`);
 
       // Skip positions with zero quantity
       const quantity = position.size;
       if (quantity <= 0) {
-        console.log("   ⏭️  Skipping: No shares to sell");
+        log.info("⏭Skipping: No shares to sell");
         continue;
       }
 
       // Skip positions with zero price
       const currentPrice = position.curPrice;
       if (currentPrice <= 0) {
-        console.log("   ⏭️  Skipping: Current price is zero");
+        log.info("⏭Skipping: Current price is zero");
         continue;
       }
 
       try {
-        console.log(`   💰 Creating sell order for ${quantity} shares at price ${currentPrice}...`);
+        log.info(`Creating sell order for ${quantity} shares at price ${currentPrice}...`);
 
         // Create sell order
         // Note: We're using a slightly lower price to ensure execution (0.95 multiplier)
@@ -244,18 +248,18 @@ async function sellAllPositions() {
           size: quantity,
         });
 
-        console.log(`   ✅ Sell order created successfully`);
-        console.log(`      Order ID: ${orderResult.response.orderID}`);
+        log.info(`Sell order created successfully`);
+        log.info(`Order ID: ${orderResult.response.orderID}`);
       } catch (error) {
-        console.error(`   ❌ Error creating sell order:`, error);
+        log.error(`Error creating sell order:`, error);
       }
     }
 
-    console.log(`
+    log.info(`
 
-🎉 Finished processing all positions`);
+Finished processing all positions`);
   } catch (error) {
-    console.error("❌ Error selling positions:", error);
+    log.error("Error selling positions:", error);
     process.exit(1);
   }
 }
@@ -263,11 +267,11 @@ async function sellAllPositions() {
 // Run the script
 sellAllPositions()
   .then(() => {
-    console.log("✨ Script completed successfully");
+    log.info("Script completed successfully");
     process.exit(0);
   })
   .catch((error) => {
-    console.error("💥 Script failed:", error);
+    log.error("Script failed:", error);
     process.exit(1);
   });
 

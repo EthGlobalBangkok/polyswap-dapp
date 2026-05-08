@@ -1,7 +1,6 @@
 import {
   createPublicClient,
   createWalletClient,
-  http,
   erc20Abi,
   maxUint256,
   parseAbiItem,
@@ -10,11 +9,15 @@ import {
   type PublicClient,
   type WalletClient,
 } from "viem";
+import { resilientHttp } from "@/lib/rpc/resilientHttp";
 import { polygon } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { AssetType } from "@polymarket/clob-client-v2";
 import { getPolymarketOrderService } from "./polymarketOrderService";
 import { DatabaseService } from "./databaseService";
+import { createLogger } from "../logger";
+
+const log = createLogger("position-seller");
 
 // Polymarket Data API endpoint for positions
 const POSITIONS_API_URL = "https://data-api.polymarket.com/positions";
@@ -124,16 +127,16 @@ export class PolymarketPositionSellerService {
 
     this.publicClient = createPublicClient({
       chain: polygon,
-      transport: http(rpcUrl),
+      transport: resilientHttp(rpcUrl),
     });
     this.walletClient = createWalletClient({
       account,
       chain: polygon,
-      transport: http(rpcUrl),
+      transport: resilientHttp(rpcUrl),
     });
     this.ownerAddress = account.address;
 
-    console.log(`[PositionSeller] Initialized with address: ${this.ownerAddress}`);
+    log.info(`Initialized with address: ${this.ownerAddress}`);
 
     // Clean up any failed sold position records from previous runs
     await DatabaseService.cleanupFailedSoldPositions();
@@ -149,7 +152,7 @@ export class PolymarketPositionSellerService {
   private static async ensureCTFApproval(): Promise<void> {
     if (this.ctfApproved || !this.walletClient || !this.publicClient || !this.ownerAddress) return;
 
-    console.log("[PositionSeller] Checking CTF token approvals...");
+    log.info("Checking CTF token approvals...");
 
     // All positions use the main CTF contract (ERC1155)
     // The NegRisk system uses the same CTF contract but with different exchange contracts
@@ -171,9 +174,9 @@ export class PolymarketPositionSellerService {
         });
 
         if (isApproved) {
-          console.log(`[PositionSeller] ✅ CTF already approved for ${operator.name}`);
+          log.info(`CTF already approved for ${operator.name}`);
         } else {
-          console.log(`[PositionSeller] Approving CTF for ${operator.name}...`);
+          log.info(`Approving CTF for ${operator.name}...`);
           const txHash = await this.walletClient.writeContract({
             account: this.walletClient.account!,
             chain: polygon,
@@ -182,13 +185,13 @@ export class PolymarketPositionSellerService {
             functionName: "setApprovalForAll",
             args: [operator.address, true],
           });
-          console.log(`[PositionSeller] TX: ${txHash}`);
+          log.info(`TX: ${txHash}`);
           await this.publicClient.waitForTransactionReceipt({ hash: txHash });
-          console.log(`[PositionSeller] ✅ CTF approved for ${operator.name}`);
+          log.info(`CTF approved for ${operator.name}`);
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error(`[PositionSeller] Error approving CTF for ${operator.name}:`, message);
+        log.error(`Error approving CTF for ${operator.name}:`, message);
         allApproved = false;
       }
     }
@@ -198,12 +201,12 @@ export class PolymarketPositionSellerService {
 
     this.ctfApproved = allApproved;
     if (allApproved) {
-      console.log("[PositionSeller] ✅ All CTF approvals verified");
+      log.info("All CTF approvals verified");
 
       // Sync the CLOB's view of our balance/allowance with on-chain state
       await this.syncCLOBAllowance();
     } else {
-      console.warn("[PositionSeller] ⚠️ Some CTF approvals may have failed - selling may not work");
+      log.warn("Some CTF approvals may have failed - selling may not work");
     }
   }
 
@@ -214,7 +217,7 @@ export class PolymarketPositionSellerService {
   private static async ensurePUSDApproval(): Promise<void> {
     if (!this.walletClient || !this.publicClient || !this.ownerAddress) return;
 
-    console.log("[PositionSeller] Checking pUSD approvals...");
+    log.info("Checking pUSD approvals...");
 
     // Contracts that need pUSD approval to pull collateral on settlement.
     const spenders: Array<{ name: string; address: Address }> = [
@@ -237,7 +240,7 @@ export class PolymarketPositionSellerService {
           continue; // Already approved
         }
 
-        console.log(`[PositionSeller] Approving pUSD for ${spender.name}...`);
+        log.info(`Approving pUSD for ${spender.name}...`);
         const txHash = await this.walletClient.writeContract({
           account: this.walletClient.account!,
           chain: polygon,
@@ -246,12 +249,12 @@ export class PolymarketPositionSellerService {
           functionName: "approve",
           args: [spender.address, maxUint256],
         });
-        console.log(`[PositionSeller] TX: ${txHash}`);
+        log.info(`TX: ${txHash}`);
         await this.publicClient.waitForTransactionReceipt({ hash: txHash });
-        console.log(`[PositionSeller] ✅ pUSD approved for ${spender.name}`);
+        log.info(`pUSD approved for ${spender.name}`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error(`[PositionSeller] Error approving pUSD for ${spender.name}:`, message);
+        log.error(`Error approving pUSD for ${spender.name}:`, message);
       }
     }
   }
@@ -262,14 +265,14 @@ export class PolymarketPositionSellerService {
    */
   private static async syncCLOBAllowance(): Promise<void> {
     try {
-      console.log("[PositionSeller] Syncing CLOB balance/allowance with on-chain state...");
+      log.info("Syncing CLOB balance/allowance with on-chain state...");
 
       const polymarketService = getPolymarketOrderService();
       await polymarketService.initialize();
 
       const client = polymarketService.getClient();
       if (!client) {
-        console.warn("[PositionSeller] Could not get CLOB client for sync");
+        log.warn("Could not get CLOB client for sync");
         return;
       }
 
@@ -278,12 +281,12 @@ export class PolymarketPositionSellerService {
         const conditionalStatus = await client.getBalanceAllowance({
           asset_type: AssetType.CONDITIONAL,
         });
-        console.log(
-          `[PositionSeller] Conditional tokens - Balance: ${conditionalStatus.balance}, Allowances: ${JSON.stringify(conditionalStatus.allowances)}`
+        log.info(
+          `Conditional tokens - Balance: ${conditionalStatus.balance}, Allowances: ${JSON.stringify(conditionalStatus.allowances)}`
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.log(`[PositionSeller] Could not check conditional balance: ${message}`);
+        log.info(`Could not check conditional balance: ${message}`);
       }
 
       // Check current balance/allowance for collateral (pUSD)
@@ -291,18 +294,18 @@ export class PolymarketPositionSellerService {
         const collateralStatus = await client.getBalanceAllowance({
           asset_type: AssetType.COLLATERAL,
         });
-        console.log(
-          `[PositionSeller] Collateral (pUSD) - Balance: ${collateralStatus.balance}, Allowances: ${JSON.stringify(collateralStatus.allowances)}`
+        log.info(
+          `Collateral (pUSD) - Balance: ${collateralStatus.balance}, Allowances: ${JSON.stringify(collateralStatus.allowances)}`
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.log(`[PositionSeller] Could not check collateral balance: ${message}`);
+        log.info(`Could not check collateral balance: ${message}`);
       }
 
-      console.log("[PositionSeller] ✅ CLOB balance/allowance checked");
+      log.info("CLOB balance/allowance checked");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.warn("[PositionSeller] Warning: Failed to sync CLOB allowance:", message);
+      log.warn("Warning: Failed to sync CLOB allowance:", message);
     }
   }
 
@@ -324,7 +327,7 @@ export class PolymarketPositionSellerService {
       return balance;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error(`[PositionSeller] Error checking on-chain balance:`, message);
+      log.error(`Error checking on-chain balance:`, message);
       return 0n;
     }
   }
@@ -335,21 +338,19 @@ export class PolymarketPositionSellerService {
    */
   static async startSellRoutine(intervalMinutes: number = 5): Promise<void> {
     if (this.sellInterval) {
-      console.log("[PositionSeller] Sell routine already running");
+      log.info("Sell routine already running");
       return;
     }
 
     try {
       await this.initialize();
     } catch (error) {
-      console.error("[PositionSeller] Failed to initialize:", error);
+      log.error("Failed to initialize:", error);
       return;
     }
 
     const intervalMs = intervalMinutes * 60 * 1000;
-    console.log(
-      `[PositionSeller] Starting position sell routine (${intervalMinutes} min interval)`
-    );
+    log.info(`Starting position sell routine (${intervalMinutes} min interval)`);
 
     // Run immediately on start
     this.checkAndSellPositions();
@@ -367,7 +368,7 @@ export class PolymarketPositionSellerService {
     if (this.sellInterval) {
       clearInterval(this.sellInterval);
       this.sellInterval = null;
-      console.log("[PositionSeller] Sell routine stopped");
+      log.info("Sell routine stopped");
     }
   }
 
@@ -385,14 +386,14 @@ export class PolymarketPositionSellerService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[PositionSeller] API error: ${errorText}`);
+        log.error(`API error: ${errorText}`);
         throw new Error(`Failed to fetch positions: ${response.status}`);
       }
 
       const positions: PolymarketPosition[] = await response.json();
       return positions;
     } catch (error) {
-      console.error("[PositionSeller] Error fetching positions:", error);
+      log.error("Error fetching positions:", error);
       throw error;
     }
   }
@@ -420,10 +421,10 @@ export class PolymarketPositionSellerService {
         }
       }
 
-      console.log(`[PositionSeller] Found ${tokenIds.size} tokens with open SELL orders`);
+      log.info(`Found ${tokenIds.size} tokens with open SELL orders`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[PositionSeller] Could not fetch open orders: ${message}`);
+      log.warn(`Could not fetch open orders: ${message}`);
     }
 
     return tokenIds;
@@ -435,7 +436,7 @@ export class PolymarketPositionSellerService {
    */
   static async checkAndSellPositions(): Promise<void> {
     if (this.isSelling) {
-      console.log("[PositionSeller] Already selling, skipping...");
+      log.info("Already selling, skipping...");
       return;
     }
 
@@ -443,7 +444,7 @@ export class PolymarketPositionSellerService {
     const startTime = Date.now();
 
     try {
-      console.log("[PositionSeller] Checking for positions to sell...");
+      log.info("Checking for positions to sell...");
 
       // Initialize the Polymarket order service first
       const polymarketService = getPolymarketOrderService();
@@ -458,22 +459,22 @@ export class PolymarketPositionSellerService {
 
       // Fetch current positions from Polymarket API
       const positions = await this.fetchPositions();
-      console.log(`[PositionSeller] Positions API returned ${positions.length} position(s)`);
+      log.info(`Positions API returned ${positions.length} position(s)`);
 
       // Also scan on-chain for CTF token balances that might not be in the API yet
       // This catches recently filled orders that haven't been indexed
       const onChainPositions = await this.scanOnChainPositions();
-      console.log(`[PositionSeller] On-chain scan found ${onChainPositions.length} position(s)`);
+      log.info(`On-chain scan found ${onChainPositions.length} position(s)`);
 
       // Merge positions - use on-chain data as source of truth for balances
       const allPositions = this.mergePositions(positions, onChainPositions);
 
       if (allPositions.length === 0) {
-        console.log("[PositionSeller] No positions found");
+        log.info("No positions found");
         return;
       }
 
-      console.log(`[PositionSeller] Total unique positions to process: ${allPositions.length}`);
+      log.info(`Total unique positions to process: ${allPositions.length}`);
 
       let soldCount = 0;
       let skippedCount = 0;
@@ -483,23 +484,21 @@ export class PolymarketPositionSellerService {
         try {
           // Skip if no shares to sell
           if (position.size <= 0) {
-            console.log(`[PositionSeller] Skipping ${position.outcome}: No shares`);
+            log.info(`Skipping ${position.outcome}: No shares`);
             skippedCount++;
             continue;
           }
 
           // Skip if price is zero (can't sell) - but only if we got price from API
           if (position.curPrice <= 0 && position.fromAPI) {
-            console.log(`[PositionSeller] Skipping ${position.outcome}: Price is zero`);
+            log.info(`Skipping ${position.outcome}: Price is zero`);
             skippedCount++;
             continue;
           }
 
           // Skip if there's already an open SELL order for this token (from CLOB API)
           if (tokensWithOpenSellOrders.has(position.asset)) {
-            console.log(
-              `[PositionSeller] Skipping ${position.outcome}: Already has open SELL order`
-            );
+            log.info(`Skipping ${position.outcome}: Already has open SELL order`);
             skippedCount++;
             continue;
           }
@@ -509,8 +508,8 @@ export class PolymarketPositionSellerService {
           const onChainBalanceNum = Number(onChainBalance) / 1e6; // CTF tokens have 6 decimals
 
           if (onChainBalance === 0n) {
-            console.log(
-              `[PositionSeller] Skipping ${position.outcome}: No on-chain balance (API shows ${position.size})`
+            log.info(
+              `Skipping ${position.outcome}: No on-chain balance (API shows ${position.size})`
             );
             skippedCount++;
             continue;
@@ -524,9 +523,7 @@ export class PolymarketPositionSellerService {
             // Try to get price from orderbook
             const midPrice = await this.getMidpointPrice(position.asset);
             if (midPrice <= 0) {
-              console.log(
-                `[PositionSeller] Skipping ${position.outcome}: Could not determine price`
-              );
+              log.info(`Skipping ${position.outcome}: Could not determine price`);
               skippedCount++;
               continue;
             }
@@ -536,8 +533,8 @@ export class PolymarketPositionSellerService {
           // Use the on-chain balance
           const sizeToSell = onChainBalanceNum;
 
-          console.log(
-            `[PositionSeller] Selling ${sizeToSell.toFixed(2)} shares of "${position.outcome}" at $${sellPrice.toFixed(3)}`
+          log.info(
+            `Selling ${sizeToSell.toFixed(2)} shares of "${position.outcome}" at $${sellPrice.toFixed(3)}`
           );
 
           // Create the sell order
@@ -552,14 +549,12 @@ export class PolymarketPositionSellerService {
           const orderId = orderResult.response?.orderID;
 
           if (!orderId || orderId === "unknown") {
-            console.error(
-              `[PositionSeller] ❌ Failed to create sell order for ${position.outcome} - no order ID returned`
-            );
+            log.error(`Failed to create sell order for ${position.outcome} - no order ID returned`);
             errorCount++;
             continue;
           }
 
-          console.log(`[PositionSeller] ✅ Sell order created: ${orderId}`);
+          log.info(`Sell order created: ${orderId}`);
 
           // Record in database for audit purposes only (not used for deduplication)
           try {
@@ -575,7 +570,7 @@ export class PolymarketPositionSellerService {
             });
           } catch {
             // Audit-only write; sale already happened on-chain.
-            console.warn(`[PositionSeller] Warning: Failed to record sale in DB (audit only)`);
+            log.warn(`Warning: Failed to record sale in DB (audit only)`);
           }
 
           soldCount++;
@@ -583,17 +578,17 @@ export class PolymarketPositionSellerService {
           // Small delay between orders to avoid rate limiting
           await new Promise((resolve) => setTimeout(resolve, 200));
         } catch (error) {
-          console.error(`[PositionSeller] Error selling position ${position.outcome}:`, error);
+          log.error(`Error selling position ${position.outcome}:`, error);
           errorCount++;
         }
       }
 
       const duration = (Date.now() - startTime) / 1000;
-      console.log(
-        `[PositionSeller] Completed: ${soldCount} sold, ${skippedCount} skipped, ${errorCount} errors (${duration.toFixed(1)}s)`
+      log.info(
+        `Completed: ${soldCount} sold, ${skippedCount} skipped, ${errorCount} errors (${duration.toFixed(1)}s)`
       );
     } catch (error) {
-      console.error("[PositionSeller] Error in checkAndSellPositions:", error);
+      log.error("Error in checkAndSellPositions:", error);
     } finally {
       this.isSelling = false;
     }
@@ -641,7 +636,7 @@ export class PolymarketPositionSellerService {
         toBlock: currentBlock,
       });
 
-      console.log(`[PositionSeller] Found ${logs.length} recent transfer events to wallet`);
+      log.info(`Found ${logs.length} recent transfer events to wallet`);
 
       // Get unique token IDs from events
       const tokenIds = new Set<string>();
@@ -683,7 +678,7 @@ export class PolymarketPositionSellerService {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[PositionSeller] Error scanning on-chain positions: ${message}`);
+      log.warn(`Error scanning on-chain positions: ${message}`);
     }
 
     return positions;
@@ -709,8 +704,8 @@ export class PolymarketPositionSellerService {
       if (existing) {
         // Update size from on-chain if different
         if (pos.size !== existing.size) {
-          console.log(
-            `[PositionSeller] Balance mismatch for ${pos.asset.slice(0, 20)}: API=${existing.size}, on-chain=${pos.size}`
+          log.info(
+            `Balance mismatch for ${pos.asset.slice(0, 20)}: API=${existing.size}, on-chain=${pos.size}`
           );
           existing.size = pos.size; // Use on-chain balance
         }

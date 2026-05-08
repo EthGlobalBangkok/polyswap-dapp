@@ -1,9 +1,15 @@
 import { PolymarketAPIService } from "./polymarketAPIService.js";
 import { DatabaseService } from "./databaseService.js";
-import * as Sentry from "@sentry/nextjs";
 import { createLogger } from "../logger.js";
 
 const log = createLogger("market-sync");
+
+function readPositiveInt(envName: string, fallback: number): number {
+  const raw = process.env[envName];
+  if (!raw) return fallback;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 
 export interface MarketUpdateStats {
   fetched: number;
@@ -51,21 +57,50 @@ export class MarketUpdateService {
     if (this.isUpdating) return null;
 
     this.isUpdating = true;
+    const startedAt = Date.now();
     try {
+      log.info("starting market sync");
+
       log.debug("requesting open markets from Polymarket Gamma");
+      const fetchStart = Date.now();
       const markets = await PolymarketAPIService.getOpenMarkets({
         endDateMin: new Date().toISOString(),
       });
-      log.debug(`fetched ${markets.length} markets from Gamma`);
+      log.info(`fetched ${markets.length} markets from Gamma in ${Date.now() - fetchStart}ms`);
 
-      log.debug(`upserting ${markets.length} markets into DB`);
-      for (const market of markets) {
-        await DatabaseService.upsertMarket(market);
+      const concurrency = readPositiveInt("MARKET_UPSERT_CONCURRENCY", 25);
+      log.info(`upserting ${markets.length} markets into DB (concurrency=${concurrency})`);
+      const upsertStart = Date.now();
+      let done = 0;
+      for (let i = 0; i < markets.length; i += concurrency) {
+        const chunk = markets.slice(i, i + concurrency);
+        await Promise.all(chunk.map((m) => DatabaseService.upsertMarket(m)));
+        done += chunk.length;
+        const elapsedMs = Date.now() - upsertStart;
+        const rate = (done / (elapsedMs / 1000)).toFixed(1);
+        const etaMs = ((markets.length - done) / Math.max(done, 1)) * elapsedMs;
+        log.debug(
+          `upsert progress ${done}/${markets.length} ` +
+            `(${rate}/s, eta ${Math.round(etaMs / 1000)}s)`
+        );
       }
-      log.debug("upserts complete");
+      log.info(`upserts complete in ${Date.now() - upsertStart}ms`);
 
+      log.debug("removing ended markets");
       const removed = await DatabaseService.removeEndedMarkets();
+      log.info(`removed ${removed} ended markets`);
+
+      log.debug("refreshing tag index");
+      const tagStart = Date.now();
       const tagsIndexed = await DatabaseService.refreshTagIndex();
+      log.info(`tag-index refreshed: ${tagsIndexed} unique tags in ${Date.now() - tagStart}ms`);
+
+      log.debug("refreshing search vectors");
+      const searchStart = Date.now();
+      const reindexed = await DatabaseService.refreshStaleSearchVectors();
+      log.info(
+        `search-vec refreshed: ${reindexed} rows reindexed in ${Date.now() - searchStart}ms`
+      );
 
       const stats: MarketUpdateStats = {
         fetched: markets.length,
@@ -74,11 +109,11 @@ export class MarketUpdateService {
         tagsIndexed,
       };
       log.info(
-        `upserted ${stats.upserted}, removed ${stats.removed} ended, ${stats.tagsIndexed} tags indexed`
+        `sync complete in ${Date.now() - startedAt}ms ` +
+          `(upserted=${stats.upserted}, removed=${stats.removed}, tags=${stats.tagsIndexed}, reindexed=${reindexed})`
       );
       return stats;
     } catch (error) {
-      Sentry.captureException(error);
       log.error("update failed:", error);
       return null;
     } finally {

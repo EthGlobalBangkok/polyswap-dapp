@@ -1,8 +1,9 @@
 "use client";
 
-import { createConfig, http } from "wagmi";
+import { createConfig } from "wagmi";
 import { polygon } from "wagmi/chains";
 import { safe, walletConnect } from "wagmi/connectors";
+import { resilientHttp } from "@/lib/rpc/resilientHttp";
 
 const projectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID;
 if (!projectId) {
@@ -15,7 +16,7 @@ export const config = createConfig({
   // surface MetaMask/Rabby/Coinbase Wallet etc. in the connector list.
   multiInjectedProviderDiscovery: false,
   transports: {
-    [polygon.id]: http(process.env.NEXT_PUBLIC_RPC_URL),
+    [polygon.id]: resilientHttp(process.env.NEXT_PUBLIC_RPC_URL),
   },
   ssr: true,
   connectors: [

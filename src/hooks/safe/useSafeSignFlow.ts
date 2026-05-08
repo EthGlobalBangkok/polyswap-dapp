@@ -170,7 +170,10 @@ export function useSafeSignFlow() {
       case "replaced":
         dispatch({ phase: "replaced", safeTxHash });
         break;
-      // "idle" / "error" don't transition
+      case "error":
+        dispatch({ phase: "error", message: txStatus.error.message });
+        break;
+      // "idle" doesn't transition
     }
   }, [txStatus, safeTxHash]);
 

@@ -235,9 +235,41 @@ Processing position ${index + 1}/${positions.length}:`);
       }
 
       try {
-        log.info(`Creating sell order for ${quantity} shares at price ${currentPrice}...`);
+        // CLOB rejects with "balance is not enough" when (existing SELL orders
+        // remaining + new order size) > on-chain balance. A previous run will
+        // have locked the whole position into an open order, so we must
+        // subtract that before posting another. Round to 6 dp to dodge JS
+        // float drift on subtraction.
+        const openOrders = await polymarketOrderService.getOpenOrders({
+          asset_id: position.asset,
+        });
+        const alreadyOnSale = openOrders
+          .filter((o) => o.side === "SELL")
+          .reduce((sum, o) => {
+            const original = Number.parseFloat(o.original_size);
+            const matched = Number.parseFloat(o.size_matched);
+            const remaining =
+              Number.isFinite(original) && Number.isFinite(matched)
+                ? Math.max(0, original - matched)
+                : 0;
+            return sum + remaining;
+          }, 0);
+        const sellable = Math.max(0, Math.round((quantity - alreadyOnSale) * 1e6) / 1e6);
 
-        // Create sell order
+        if (sellable <= 0) {
+          log.info(
+            `Skipping: ${alreadyOnSale} share(s) already in open SELL orders cover the ${quantity} held`
+          );
+          continue;
+        }
+        if (alreadyOnSale > 0) {
+          log.info(
+            `Found ${alreadyOnSale} share(s) already in open SELL orders; selling remaining ${sellable}`
+          );
+        }
+
+        log.info(`Creating sell order for ${sellable} shares at price ${currentPrice}...`);
+
         // Note: We're using a slightly lower price to ensure execution (0.95 multiplier)
         const sellPrice = Math.max(0.01, currentPrice * 0.95);
 
@@ -245,7 +277,7 @@ Processing position ${index + 1}/${positions.length}:`);
           tokenID: position.asset, // asset is the tokenId
           price: sellPrice,
           side: "SELL",
-          size: quantity,
+          size: sellable,
         });
 
         log.info(`Sell order created successfully`);

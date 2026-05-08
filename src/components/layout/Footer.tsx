@@ -2,10 +2,29 @@ import Link from "next/link";
 import { Icon } from "@/components/icons";
 import { Logo } from "./Logo";
 
-const TRUST_BULLETS: { icon: keyof typeof Icon; label: string }[] = [
-  { icon: "lock", label: "Funds stay in your wallet" },
-  { icon: "shield", label: "Cancel any time, no fee" },
-  { icon: "zap", label: "Powered by Polymarket odds" },
+interface ExternalLink {
+  href: string;
+  label: string;
+  caption?: string;
+}
+
+const GITHUB_LINKS: ExternalLink[] = [
+  {
+    href: "https://github.com/EthGlobalBangkok/polyswap-dapp",
+    label: "polyswap-dapp",
+    caption: "Frontend + listener",
+  },
+  {
+    href: "https://github.com/EthGlobalBangkok/polyswap-contracts",
+    label: "polyswap-contracts",
+    caption: "Solidity",
+  },
+];
+
+const BUILT_WITH: ExternalLink[] = [
+  { href: "https://polymarket.com", label: "Polymarket" },
+  { href: "https://cow.fi", label: "CoW Protocol" },
+  { href: "https://polygon.technology", label: "Polygon" },
 ];
 
 export function Footer() {
@@ -13,7 +32,7 @@ export function Footer() {
     <footer className="mt-16 border-t border-ink bg-paper">
       <div className="mx-auto max-w-[1280px] px-6 py-12 sm:px-8 lg:px-12">
         <div className="grid gap-10 lg:grid-cols-12">
-          <div className="lg:col-span-5">
+          <div className="lg:col-span-4">
             <div className="flex items-center gap-3">
               <Logo size={28} />
               <span className="font-serif text-2xl">Polyswap</span>
@@ -24,18 +43,52 @@ export function Footer() {
             </p>
           </div>
 
-          <div className="lg:col-span-4">
-            <p className="eyebrow mb-4">Why Polyswap</p>
-            <ul className="space-y-3">
-              {TRUST_BULLETS.map((b) => {
-                const I = Icon[b.icon];
-                return (
-                  <li key={b.label} className="flex items-start gap-3 text-sm">
-                    <I size={16} className="mt-0.5 shrink-0 text-accent" />
-                    <span>{b.label}</span>
-                  </li>
-                );
-              })}
+          <div className="lg:col-span-3">
+            <p className="eyebrow mb-4">GitHub</p>
+            <ul className="space-y-3 text-sm">
+              {GITHUB_LINKS.map((l) => (
+                <li key={l.href}>
+                  <a
+                    href={l.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group inline-flex items-start gap-1.5"
+                  >
+                    <span className="flex flex-col">
+                      <span className="num group-hover:underline">{l.label}</span>
+                      {l.caption && <span className="text-xs text-ink-3">{l.caption}</span>}
+                    </span>
+                    <Icon.arrowUpRight
+                      size={11}
+                      className="mt-1 text-ink-3 transition-colors group-hover:text-ink"
+                      aria-hidden
+                    />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="lg:col-span-2">
+            <p className="eyebrow mb-4">Built with</p>
+            <ul className="space-y-2 text-sm">
+              {BUILT_WITH.map((l) => (
+                <li key={l.href}>
+                  <a
+                    href={l.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group inline-flex items-center gap-1.5 hover:underline"
+                  >
+                    {l.label}
+                    <Icon.arrowUpRight
+                      size={11}
+                      className="text-ink-3 transition-colors group-hover:text-ink"
+                      aria-hidden
+                    />
+                  </a>
+                </li>
+              ))}
             </ul>
           </div>
 
@@ -60,6 +113,16 @@ export function Footer() {
               <li>
                 <Link href="/#faq" className="hover:underline">
                   FAQ
+                </Link>
+              </li>
+              <li>
+                <Link href="/creators" className="hover:underline">
+                  Creators
+                </Link>
+              </li>
+              <li>
+                <Link href="/api-docs" className="hover:underline">
+                  API docs
                 </Link>
               </li>
             </ul>

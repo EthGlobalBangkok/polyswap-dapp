@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Icon } from "@/components/icons";
+import { InfoTip } from "@/components/primitives";
 import { cn } from "@/lib/cn";
 import type { CreateFormState, Expiry } from "@/hooks/useCreateOrder";
 
@@ -16,7 +17,14 @@ const EXPIRIES: { value: Expiry; label: string }[] = [
   { value: "until-resolution", label: "Until market resolves" },
 ];
 
-const SLIPPAGES: number[] = [0.1, 0.5, 1, 2];
+type SlippageOption = { value: "auto" | number; label: string };
+const SLIPPAGE_OPTIONS: SlippageOption[] = [
+  { value: "auto", label: "Auto" },
+  { value: 0.5, label: "0.5%" },
+  { value: 1, label: "1%" },
+  { value: 2, label: "2%" },
+  { value: 5, label: "5%" },
+];
 
 export function AdvancedOptions({ state, onChange }: Props) {
   const [open, setOpen] = useState(false);
@@ -58,21 +66,32 @@ export function AdvancedOptions({ state, onChange }: Props) {
             </div>
           </div>
           <div>
-            <p className="text-xs text-ink-3">How much price wiggle is OK</p>
+            <p className="flex items-center gap-1.5 text-xs text-ink-3">
+              How much price wiggle is OK
+              <InfoTip
+                label="What does price wiggle mean?"
+                body="Auto lets the CoW solver pick the best executable price at fill time, with no minimum floor. A percentage caps the slippage: if the live price would give you less than the estimation minus choosen wiggle %, the swap waits until the price recovers or the order expires."
+                width="md"
+              />
+            </p>
             <div className="mt-2 flex flex-wrap gap-2">
-              {SLIPPAGES.map((s) => {
-                const active = Math.abs(state.slippagePct - s) < 0.001;
+              {SLIPPAGE_OPTIONS.map((opt) => {
+                const active =
+                  opt.value === "auto"
+                    ? state.slippagePct === "auto"
+                    : typeof state.slippagePct === "number" &&
+                      Math.abs(state.slippagePct - opt.value) < 0.001;
                 return (
                   <button
-                    key={s}
+                    key={opt.label}
                     type="button"
-                    onClick={() => onChange("slippagePct", s)}
+                    onClick={() => onChange("slippagePct", opt.value)}
                     className={cn(
                       "num border border-ink px-3 py-1.5 text-xs",
                       active ? "bg-ink text-paper" : "bg-paper hover:bg-paper-2"
                     )}
                   >
-                    {s}%
+                    {opt.label}
                   </button>
                 );
               })}

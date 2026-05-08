@@ -114,6 +114,9 @@ function toPolyswapOrderRow(o: PrismaPolyswapOrder): DatabasePolyswapOrder {
     last_checked_at: o.lastCheckedAt,
     cow_order_status: (o.cowOrderStatus as CowOrderStatus | null) ?? null,
     filled_at: o.filledAt ?? null,
+    gate_opened_at: o.gateOpenedAt ?? null,
+    actual_sell_amount: o.actualSellAmount === null ? null : o.actualSellAmount.toString(),
+    actual_buy_amount: o.actualBuyAmount === null ? null : o.actualBuyAmount.toString(),
     created_at: o.createdAt,
     updated_at: o.updatedAt,
   };
@@ -300,6 +303,20 @@ export class DatabaseService {
   static async getMarketBySlug(slug: string): Promise<DatabaseMarket | null> {
     const row = await prisma.market.findUnique({ where: { slug } });
     return row ? toMarketRow(row) : null;
+  }
+
+  /**
+   * Atomically increment `view_count` for a market. Identifier is matched
+   * against the primary key first, then `slug`, mirroring `getMarketById/BySlug`.
+   * Returns true if a row was updated. `updateMany` is used so an unknown
+   * identifier resolves to `count: 0` instead of throwing P2025.
+   */
+  static async incrementMarketViews(identifier: string): Promise<boolean> {
+    const data = { viewCount: { increment: 1 } };
+    const byId = await prisma.market.updateMany({ where: { id: identifier }, data });
+    if (byId.count > 0) return true;
+    const bySlug = await prisma.market.updateMany({ where: { slug: identifier }, data });
+    return bySlug.count > 0;
   }
 
   // ============================================================
@@ -611,6 +628,18 @@ export class DatabaseService {
     });
   }
 
+  /**
+   * Stamp `gate_opened_at` the first time the conditional order is observed
+   * to be tradeable — i.e. the Polymarket condition has fired. Idempotent:
+   * subsequent calls are no-ops because we filter by `gateOpenedAt: null`.
+   */
+  static async markGateOpened(id: number): Promise<void> {
+    await prisma.polyswapOrder.updateMany({
+      where: { id, gateOpenedAt: null },
+      data: { gateOpenedAt: new Date(), updatedAt: new Date() },
+    });
+  }
+
   static async setCowOrderStatus(id: number, status: string): Promise<boolean> {
     try {
       await prisma.polyswapOrder.update({
@@ -918,9 +947,15 @@ export class DatabaseService {
     if (sort === "end_date") return Prisma.sql`end_date ASC`;
     if (sort !== "interest") return Prisma.sql`volume DESC`;
 
+    // View-count nudge: a small log-scaled bonus added to the volume/liquidity
+    // blend. Coefficient 0.1 keeps this *slight* — at 10 views the bonus is
+    // ~0.23, at 100 ~0.46, at 1k ~0.69 — vs. typical volume contributions in
+    // the 5-15 range. Enough to break ties and lift recently-popular markets
+    // a notch, never enough to overrule fundamentals.
     const interestExpr = Prisma.sql`(
       LN(GREATEST(volume, 0) + 1) * 0.6 +
-      LN(GREATEST(liquidity, 0) + 1) * 0.4
+      LN(GREATEST(liquidity, 0) + 1) * 0.4 +
+      LN(GREATEST(view_count, 0) + 1) * 0.1
     ) / (1 + GREATEST(EXTRACT(EPOCH FROM (end_date - NOW())) / 86400.0, 1) / 30.0)`;
 
     if (hasCategoryFilter) return Prisma.sql`${interestExpr} DESC`;

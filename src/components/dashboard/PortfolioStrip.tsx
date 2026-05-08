@@ -1,7 +1,6 @@
 "use client";
 
 import { CountUp, Stamp } from "@/components/primitives";
-import { fmtUSD } from "@/lib/format";
 import type { OrderViewModel } from "@/hooks/useOrders";
 
 interface Props {
@@ -29,46 +28,82 @@ interface TextMetric extends BaseMetric {
 
 type Metric = NumericMetric | TextMetric;
 
+const DAY_MS = 86_400_000;
+
+function relativeFromNow(date: Date): string {
+  const diff = Date.now() - date.getTime();
+  if (diff < 60_000) return "Just now";
+  const min = Math.floor(diff / 60_000);
+  if (min < 60) return `${min}m ago`;
+  const hour = Math.floor(min / 60);
+  if (hour < 24) return `${hour}h ago`;
+  const day = Math.floor(hour / 24);
+  if (day < 30) return `${day}d ago`;
+  const month = Math.floor(day / 30);
+  if (month < 12) return `${month}mo ago`;
+  return `${Math.floor(day / 365)}y ago`;
+}
+
 function compute(orders: OrderViewModel[]): Metric[] {
-  const waiting = orders.filter((o) => o.status === "waiting");
-  const ready = orders.filter((o) => o.status === "ready");
   const filled = orders.filter((o) => o.status === "done");
   const cancelled = orders.filter((o) => o.status === "cancelled");
-
-  const moneyWaiting = waiting.reduce((sum, o) => sum + o.sellAmount, 0);
-  const armed = waiting.length + ready.length;
-  const next = waiting[0] ?? null;
   const finishedTotal = filled.length + cancelled.length;
   const hitRate = finishedTotal > 0 ? filled.length / finishedTotal : null;
+
+  // Filled-with-timestamps slice powers the time-based metrics. Some legacy
+  // rows might lack `filledAt`, so we filter explicitly rather than fudge.
+  const filledTimed = filled.filter(
+    (o): o is OrderViewModel & { filledAt: Date } => o.filledAt !== null
+  );
+  const now = Date.now();
+  const filledLast30d = filledTimed.filter((o) => now - o.filledAt.getTime() <= 30 * DAY_MS).length;
+
+  // Average days between order creation and on-chain fill.
+  const avgDays =
+    filledTimed.length > 0
+      ? filledTimed.reduce(
+          (sum, o) => sum + (o.filledAt.getTime() - o.startTime.getTime()) / DAY_MS,
+          0
+        ) / filledTimed.length
+      : null;
+
+  // Most recent fill — sort once, take the head.
+  const lastFill =
+    filledTimed.length > 0
+      ? filledTimed.reduce((latest, o) => (o.filledAt > latest.filledAt ? o : latest))
+      : null;
 
   return [
     {
       kind: "number",
-      label: "Money waiting",
-      raw: moneyWaiting,
-      format: (n) => (n > 0 ? fmtUSD(n, { compact: true }) : "—"),
-      caption: `${waiting.length} active`,
+      label: "Total filled",
+      raw: filled.length,
+      format: (n) => Math.round(n).toString(),
+      caption: filled.length === 0 ? "Nothing fired yet" : `${filledLast30d} in the last 30d`,
     },
     {
       kind: "number",
-      label: "Armed",
-      raw: armed,
-      format: (n) => Math.round(n).toString(),
-      caption: ready.length > 0 ? `${ready.length} ready to fire` : "all waiting",
+      label: "Avg time to fire",
+      raw: avgDays === null ? 0 : avgDays,
+      format: (n) => (avgDays === null ? "—" : `${n.toFixed(1)} days`),
+      caption:
+        avgDays === null
+          ? "No fires yet"
+          : `Across ${filledTimed.length} fired ${filledTimed.length === 1 ? "swap" : "swaps"}`,
     },
-    next
+    lastFill
       ? {
           kind: "text",
-          label: "Next to fire",
-          value: next.nickname,
-          caption: "Most recent active",
+          label: "Last fill",
+          value: relativeFromNow(lastFill.filledAt),
+          caption: lastFill.nickname,
           breathe: true,
         }
       : {
           kind: "text",
-          label: "Next to fire",
+          label: "Last fill",
           value: "—",
-          caption: "Nothing armed",
+          caption: "No fires yet",
         },
     {
       kind: "number",

@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Dial, Status, Tape, TokenGlyph } from "@/components/primitives";
+import { Dial, Status, Tape, TokenLogo } from "@/components/primitives";
 import { Icon } from "@/components/icons";
 import { fmtNum, fmtPointsAway } from "@/lib/format";
+import { useMarket, useMarketPriceHistory } from "@/hooks/useMarketsData";
 import type { OrderViewModel } from "@/hooks/useOrders";
 
 interface Props {
@@ -11,7 +12,14 @@ interface Props {
 }
 
 export function SwapRow({ order }: Props) {
-  const currentOdds = order.spark[order.spark.length - 1] ?? 0;
+  // Real Polymarket YES-side history. React Query dedups across rows that
+  // share the same market, so the per-row fetch is cheap.
+  const { data: market } = useMarket(order.marketId ?? "");
+  const { data: priceHistory = [] } = useMarketPriceHistory(market?.yesTokenId, 60);
+  const useRealHistory = priceHistory.length >= 2;
+  const sparkData = useRealHistory ? priceHistory.map((p) => p.p) : order.spark;
+  const sparkTimestamps = useRealHistory ? priceHistory.map((p) => p.t) : undefined;
+  const currentOdds = sparkData[sparkData.length - 1] ?? 0;
   return (
     <Link
       href={`/dashboard/${order.id}`}
@@ -31,16 +39,17 @@ export function SwapRow({ order }: Props) {
           </p>
         </div>
         <div className="flex items-center gap-2.5">
-          <TokenGlyph symbol={order.sellSymbol} size={22} />
+          <TokenLogo symbol={order.sellSymbol} logoURI={order.sellLogoURI} size={22} />
           <span className="num text-sm">
             {fmtNum(order.sellAmount, 2)} {order.sellSymbol}
           </span>
           <Icon.arrowRight size={12} className="text-ink-3" aria-hidden />
-          <TokenGlyph symbol={order.buySymbol} size={22} />
+          <TokenLogo symbol={order.buySymbol} logoURI={order.buyLogoURI} size={22} />
         </div>
         <div className="overflow-hidden">
           <Tape
-            data={order.spark}
+            data={sparkData}
+            timestamps={sparkTimestamps}
             threshold={order.threshold}
             side="YES"
             width={200}
@@ -84,18 +93,19 @@ export function SwapRow({ order }: Props) {
         </div>
         <div className="flex items-center justify-between gap-3 text-xs">
           <span className="flex items-center gap-2">
-            <TokenGlyph symbol={order.sellSymbol} size={20} />
+            <TokenLogo symbol={order.sellSymbol} logoURI={order.sellLogoURI} size={20} />
             <span className="num">
               {fmtNum(order.sellAmount, 2)} {order.sellSymbol}
             </span>
             <Icon.arrowRight size={10} className="text-ink-3" aria-hidden />
-            <TokenGlyph symbol={order.buySymbol} size={20} />
+            <TokenLogo symbol={order.buySymbol} logoURI={order.buyLogoURI} size={20} />
             <span className="font-mono">{order.buySymbol}</span>
           </span>
         </div>
         <div className="overflow-hidden">
           <Tape
-            data={order.spark}
+            data={sparkData}
+            timestamps={sparkTimestamps}
             threshold={order.threshold}
             side="YES"
             width={300}

@@ -23,7 +23,7 @@ interface ConnectorView {
 const META: Record<string, { label: string; blurb: string }> = {
   walletConnect: {
     label: "WalletConnect",
-    blurb: "Scan a QR or open in your wallet of choice.",
+    blurb: "Scan a QR or open in your Safe wallet of choice.",
   },
 };
 
@@ -58,11 +58,12 @@ export function WalletModal({ open, onClose, onConnected }: Props) {
   }, [open, isConnected, onConnected, onClose]);
 
   return (
-    <Modal open={open} onClose={onClose} title="Connect a wallet" size="sm">
+    <Modal open={open} onClose={onClose} title="Connect a Safe wallet" size="sm">
       <div className="flex flex-col gap-3 p-5">
-        <p className="text-sm text-ink-2">
-          Polyswap is non-custodial. Your tokens stay in your wallet — we never take custody, and we
-          can&apos;t move funds without your approval.
+        <p className="border border-ink bg-paper-2 px-3 py-2.5 text-sm">
+          <span className="eyebrow mr-1.5">Heads up</span>
+          Polyswap currently only supports <strong>Safe wallets</strong>. Open the dapp inside the
+          Safe app, or connect via WalletConnect from your Safe wallet.
         </p>
 
         <ul className="mt-2 flex flex-col gap-2">
@@ -100,18 +101,7 @@ export function WalletModal({ open, onClose, onConnected }: Props) {
           <p className="border border-no bg-no/10 px-3 py-2 text-xs text-no">{error.message}</p>
         )}
 
-        <div className="mt-2 border-t border-rule-soft pt-3 text-xs text-ink-3">
-          <p className="flex items-start gap-2">
-            <Icon.lock size={12} className="mt-0.5 text-accent" aria-hidden />
-            We never see your private keys.
-          </p>
-          <p className="mt-1 flex items-start gap-2">
-            <Icon.shield size={12} className="mt-0.5 text-accent" aria-hidden />
-            Disconnect any time.
-          </p>
-        </div>
-
-        <Button variant="ghost" size="sm" onClick={onClose} className="mt-2 self-end">
+        <Button variant="paper" size="md" onClick={onClose} className="mt-3 w-full">
           Cancel
         </Button>
       </div>

@@ -1,4 +1,5 @@
 import { Icon } from "@/components/icons";
+import { InfoTip } from "@/components/primitives";
 import { fmtTokenAmount, fmtUSD } from "@/lib/format";
 import { describeSentence, type CreateFormState } from "@/hooks/useCreateOrder";
 import type { SwapEstimates } from "@/hooks/useSwapEstimates";
@@ -11,7 +12,9 @@ interface Props {
 }
 
 export function RecapPanel({ market, state, estimates }: Props) {
-  const sentence = describeSentence(state, market.question);
+  const currentSideProbability =
+    state.side === "YES" ? market.yesProbability : 1 - market.yesProbability;
+  const sentence = describeSentence(state, market.question, currentSideProbability);
   const expiryLabel =
     state.expiry === "7d"
       ? "in 7 days"
@@ -21,6 +24,7 @@ export function RecapPanel({ market, state, estimates }: Props) {
 
   const fromSymbol = state.fromToken?.symbol ?? "—";
   const toSymbol = state.toToken?.symbol ?? "—";
+  const triggerVerb = state.threshold < currentSideProbability ? "drops to" : "reaches";
 
   return (
     <div className="space-y-4">
@@ -32,10 +36,21 @@ export function RecapPanel({ market, state, estimates }: Props) {
       <section aria-label="Order recap" className="border border-ink bg-paper p-5">
         <p className="eyebrow mb-3">Recap</p>
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
-          <Row k="Trigger" v={`${state.side} reaches ${Math.round(state.threshold * 100)}%`} />
+          <Row
+            k="Trigger"
+            v={`${state.side} ${triggerVerb} ${Math.round(state.threshold * 100)}%`}
+          />
           <Row k="You send" v={`${state.amountIn || "0"} ${fromSymbol}`} />
           <Row
-            k="You receive"
+            k={
+              <span className="inline-flex items-center gap-1.5">
+                You receive
+                <InfoTip
+                  label="What does the estimate mean?"
+                  body="The amount received is currently estimated based on the current price of the two tokens. The final reception price will be the best possible price thanks to CoW Swap Intent mechanism. The final amount will depend on the price of the two tokens at that time."
+                />
+              </span>
+            }
             v={
               estimates.amountOutEstimate > 0
                 ? `~${fmtTokenAmount(estimates.amountOutEstimate)} ${toSymbol}`
@@ -44,7 +59,19 @@ export function RecapPanel({ market, state, estimates }: Props) {
           />
           <Row k="Notional" v={estimates.amountInUsd > 0 ? fmtUSD(estimates.amountInUsd) : "—"} />
           <Row k="Expires" v={expiryLabel} />
-          <Row k="Slippage" v={`${state.slippagePct}%`} />
+          <Row
+            k={
+              <span className="inline-flex items-center gap-1.5">
+                Price wiggle
+                <InfoTip
+                  label="What does price wiggle mean?"
+                  body="Auto lets the CoW solver pick the best executable price at fill time, with no minimum floor. A percentage caps the slippage: if the live price would give you less than the estimation minus choosen wiggle %, the swap waits until the price recovers or the order expires."
+                  width="md"
+                />
+              </span>
+            }
+            v={state.slippagePct === "auto" ? "Auto" : `${state.slippagePct}%`}
+          />
         </dl>
       </section>
 
@@ -62,7 +89,7 @@ export function RecapPanel({ market, state, estimates }: Props) {
   );
 }
 
-function Row({ k, v }: { k: string; v: string }) {
+function Row({ k, v }: { k: React.ReactNode; v: string }) {
   return (
     <>
       <dt className="text-ink-3">{k}</dt>

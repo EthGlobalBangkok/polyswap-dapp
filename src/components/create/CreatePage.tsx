@@ -46,6 +46,30 @@ function toWei(amount: string, decimals: number): string {
   return scaled.toString();
 }
 
+/**
+ * Convert the user's slippage preference into a `minBuyAmount` (raw uint256
+ * string) sent to the backend. "Auto" or missing estimates fall back to "1"
+ * (1 wei) — a non-zero floor that the contract / CoW solver treats as "any
+ * non-zero fill counts". A numeric percent applies `(1 - pct/100)` to the
+ * current estimated buy amount.
+ */
+function computeMinBuyAmount(
+  slippage: import("@/hooks/useCreateOrder").Slippage,
+  amountOutEstimate: number,
+  buyDecimals: number
+): string {
+  if (slippage === "auto" || !Number.isFinite(amountOutEstimate) || amountOutEstimate <= 0) {
+    return "1";
+  }
+  const floor = amountOutEstimate * (1 - slippage / 100);
+  if (!(floor > 0)) return "1";
+  // Same integer-math pattern as toWei: 6 dp of precision before scaling.
+  const factor = BigInt(10) ** BigInt(buyDecimals);
+  const scaled = (BigInt(Math.round(floor * 1e6)) * factor) / BigInt(1e6);
+  // Guard against zero from extreme rounding on tiny estimates.
+  return scaled > 0n ? scaled.toString() : "1";
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -124,11 +148,17 @@ export function CreatePage({ marketId }: Props) {
       const sellToken: Address = state.fromToken.address;
       const buyToken: Address = state.toToken.address;
 
+      const minBuyAmount = computeMinBuyAmount(
+        state.slippagePct,
+        estimates.amountOutEstimate,
+        state.toToken.decimals
+      );
+
       const order = await apiService.createPolyswapOrder({
         sellToken,
         buyToken,
         sellAmount: sellAmountWei,
-        minBuyAmount: "1",
+        minBuyAmount,
         selectedOutcome: state.side === "YES" ? "Yes" : "No",
         betPercentage: Math.round(state.threshold * 100),
         startDate: "now",
@@ -175,7 +205,7 @@ export function CreatePage({ marketId }: Props) {
     setSignOpen(false);
     const orderId = orderIdRef.current;
     if (orderId !== null) {
-      router.push(`/orders/${orderId}`);
+      router.push(`/dashboard/${orderId}`);
     }
   };
 
@@ -185,7 +215,13 @@ export function CreatePage({ marketId }: Props) {
 
   const modalSummary = useMemo(() => {
     if (!market) return undefined;
-    return <span className="italic">{describeSentence(state, market.question)}</span>;
+    const currentSideProbability =
+      state.side === "YES" ? market.yesProbability : 1 - market.yesProbability;
+    return (
+      <span className="italic">
+        {describeSentence(state, market.question, currentSideProbability)}
+      </span>
+    );
   }, [market, state]);
 
   // ---------------------------------------------------------------------------

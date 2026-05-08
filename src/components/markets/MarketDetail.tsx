@@ -11,7 +11,10 @@ interface Props {
 }
 
 export function MarketDetail({ identifier }: Props) {
-  const { data, isLoading, isError } = useMarket(identifier);
+  // `track: true` opts this fetch into server-side view counting — handled
+  // inside GET /api/markets/[slug] when `?track=1` is set. Keeps tracking
+  // tied to the existing market lookup instead of a dedicated /view route.
+  const { data, isLoading, isError } = useMarket(identifier, { track: true });
   const { data: history = [] } = useMarketPriceHistory(data?.yesTokenId, 60);
 
   if (isLoading) {
@@ -154,17 +157,6 @@ export function MarketDetail({ identifier }: Props) {
                 </Button>
               </Link>
             </div>
-
-            <ul className="space-y-3 border border-ink bg-paper p-6 text-sm">
-              <li className="flex items-start gap-3">
-                <Icon.lock size={16} className="mt-0.5 text-accent" aria-hidden />
-                Funds stay in your wallet until the trigger fires.
-              </li>
-              <li className="flex items-start gap-3">
-                <Icon.shield size={16} className="mt-0.5 text-accent" aria-hidden />
-                Cancel any time. No fee, no penalty.
-              </li>
-            </ul>
           </div>
         </aside>
       </div>

@@ -5,6 +5,13 @@ import type { Side, TokenViewModel } from "@/types/design";
 
 export type Expiry = "7d" | "30d" | "until-resolution";
 
+/**
+ * `"auto"` means "no min-buy floor" — the order ships with `minBuyAmount = 1`
+ * and CoW solvers settle at the best available price at fill time. A numeric
+ * value caps the slippage at that percentage off the live estimate.
+ */
+export type Slippage = "auto" | number;
+
 export interface CreateFormState {
   side: Side;
   threshold: number;
@@ -12,7 +19,7 @@ export interface CreateFormState {
   toToken: TokenViewModel | null;
   amountIn: string;
   expiry: Expiry;
-  slippagePct: number;
+  slippagePct: Slippage;
 }
 
 const INITIAL: CreateFormState = {
@@ -22,7 +29,7 @@ const INITIAL: CreateFormState = {
   toToken: null,
   amountIn: "",
   expiry: "until-resolution",
-  slippagePct: 0.5,
+  slippagePct: "auto",
 };
 
 export interface CreateFormDerived {
@@ -71,9 +78,24 @@ export function useCreateOrder(): UseCreateOrderReturn {
   return { state, derived, set, reset };
 }
 
-export function describeSentence(state: CreateFormState, marketTitle: string): string {
+/**
+ * `currentSideProbability` is the live probability (0..1) of the *selected* side
+ * — i.e. `market.yesProbability` when `state.side === "YES"`, and
+ * `1 - market.yesProbability` when `state.side === "NO"`. The verb is chosen
+ * from the threshold's relation to that current value, not from the side: if
+ * the threshold is above current, it has to *reach* it; if below, it has to
+ * *drop to* it. Falls back to "reaches" when the current value isn't known.
+ */
+export function describeSentence(
+  state: CreateFormState,
+  marketTitle: string,
+  currentSideProbability?: number
+): string {
   const pct = Math.round(state.threshold * 100);
-  const verb = state.side === "YES" ? "reaches" : "drops to";
+  const verb =
+    currentSideProbability !== undefined && state.threshold < currentSideProbability
+      ? "drops to"
+      : "reaches";
   const amount = state.amountIn || "0";
   const fromSymbol = state.fromToken?.symbol ?? "—";
   const toSymbol = state.toToken?.symbol ?? "—";

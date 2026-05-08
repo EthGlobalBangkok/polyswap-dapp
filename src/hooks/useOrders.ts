@@ -16,6 +16,8 @@ export interface OrderViewModel {
   marketId: string | null;
   sellSymbol: string;
   buySymbol: string;
+  sellLogoURI?: string;
+  buyLogoURI?: string;
   sellAmount: number;
   minBuyAmount: number;
   startTime: Date;
@@ -28,6 +30,8 @@ export interface OrderViewModel {
   phase: "draft" | "live" | "filled" | "canceled" | "errored";
   /** On-chain order hash, populated once the listener observes ConditionalOrderCreated. Null while draft. */
   orderHash: Hex | null;
+  /** CoW Protocol order UID (bytes56). Null until the watch-tower has registered the order with CoW. */
+  orderUid: string | null;
   /** Most recent CoW conditional-order error name (e.g. PollTryAtBlock). */
   lastErrorName: string | null;
   /** Human-readable reason emitted alongside the conditional-order revert. */
@@ -41,6 +45,17 @@ export interface OrderViewModel {
   cowOrderStatus: string | null;
   /** Set by the listener once the on-chain Trade event for this order is observed. */
   filledAt: Date | null;
+  /**
+   * First moment the conditional gate was observed open (i.e. Polymarket
+   * condition fired). Lets the UI distinguish "still waiting for trigger"
+   * (gate closed) from "trigger fired, waiting for swap to settle"
+   * (gate open, fill not in yet).
+   */
+  gateOpenedAt: Date | null;
+  /** Real sell amount as filled on-chain, in human units (sellToken decimals). Null until filled. */
+  actualSellAmount: number | null;
+  /** Real buy amount as filled on-chain, in human units (buyToken decimals). Null until filled. */
+  actualBuyAmount: number | null;
 }
 
 const STALE = 30_000;
@@ -60,10 +75,15 @@ function mapStatus(status: DatabasePolyswapOrder["status"]): SwapStatus {
   }
 }
 
-function shortNickname(market: string | null, buy: string): string {
-  if (!market) return `Watch → ${buy}`;
-  const trimmed = market.length > 28 ? `${market.slice(0, 25)}…` : market;
-  return `${trimmed} → ${buy}`;
+/**
+ * Action-sentence nickname: `Buy {BUY} if {SIDE} ≥ {pct}%`. Used as the H1 on
+ * the order detail page and the row title on the My Swaps list — readable at
+ * a glance without needing the market title (which lives in its own panel).
+ */
+function shortNickname(buy: string, outcome: string | null, betPercentage: number | null): string {
+  const side = outcome ? outcome.toUpperCase() : "YES";
+  const pct = betPercentage !== null ? Math.round(betPercentage) : 0;
+  return `Buy ${buy} if ${side} ≥ ${pct}%`;
 }
 
 function syntheticSpark(seed: string): number[] {
@@ -87,8 +107,7 @@ function buildTokenMap(tokens: Token[] | undefined): Map<string, Token> {
 
 export function toOrderView(
   o: DatabasePolyswapOrder,
-  tokenMap: Map<string, Token>,
-  marketTitle: string | null
+  tokenMap: Map<string, Token>
 ): OrderViewModel {
   const sellMeta = tokenMap.get(o.sell_token.toLowerCase());
   const buyMeta = tokenMap.get(o.buy_token.toLowerCase());
@@ -100,18 +119,24 @@ export function toOrderView(
     id: String(o.id),
     numericId: o.id,
     status: mapStatus(o.status),
-    nickname: shortNickname(marketTitle, buySym),
+    nickname: shortNickname(buySym, o.outcome_selected, o.bet_percentage),
     marketId: o.market_id ? String(o.market_id) : null,
     sellSymbol: sellSym,
     buySymbol: buySym,
+    sellLogoURI: sellMeta?.logoURI,
+    buyLogoURI: buyMeta?.logoURI,
     sellAmount: Number(BigInt(o.sell_amount)) / 10 ** sellDecimals,
     minBuyAmount: Number(BigInt(o.min_buy_amount)) / 10 ** buyDecimals,
     startTime: new Date(o.start_time),
     endTime: new Date(o.end_time),
     spark: syntheticSpark(String(o.id)),
-    threshold: 0.7,
+    // bet_percentage is stored as 0..100 (% trigger). Fall back to 0.7 only
+    // for legacy rows that pre-date the column being persisted.
+    threshold:
+      o.bet_percentage !== null && o.bet_percentage !== undefined ? o.bet_percentage / 100 : 0.7,
     phase: o.status,
     orderHash: o.order_hash ? (o.order_hash as Hex) : null,
+    orderUid: o.order_uid ?? null,
     lastErrorName: o.last_error_name ?? null,
     lastErrorReason: o.last_error_reason ?? null,
     lastErrorRetryAt:
@@ -120,6 +145,13 @@ export function toOrderView(
         : null,
     cowOrderStatus: o.cow_order_status ?? null,
     filledAt: o.filled_at ? new Date(o.filled_at) : null,
+    gateOpenedAt: o.gate_opened_at ? new Date(o.gate_opened_at) : null,
+    actualSellAmount:
+      o.actual_sell_amount !== null
+        ? Number(BigInt(o.actual_sell_amount)) / 10 ** sellDecimals
+        : null,
+    actualBuyAmount:
+      o.actual_buy_amount !== null ? Number(BigInt(o.actual_buy_amount)) / 10 ** buyDecimals : null,
   };
 }
 
@@ -150,7 +182,7 @@ export function useOrders(): UseOrdersResult {
 
   // We don't fetch market titles inline — they're optional and the row still
   // renders without them. A follow-up could batch market lookups by id.
-  const orders = (query.data ?? []).map((o) => toOrderView(o, tokenMap, null));
+  const orders = (query.data ?? []).map((o) => toOrderView(o, tokenMap));
 
   return {
     orders,

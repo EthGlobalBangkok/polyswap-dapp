@@ -73,6 +73,9 @@ export interface DatabasePolyswapOrder {
   last_checked_at: Date | null;
   cow_order_status: "presignaturePending" | "open" | "fulfilled" | "cancelled" | "expired" | null;
   filled_at: Date | null;
+  gate_opened_at: Date | null;
+  actual_sell_amount: string | null;
+  actual_buy_amount: string | null;
   created_at: Date;
   updated_at: Date;
 }

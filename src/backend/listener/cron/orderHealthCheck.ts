@@ -77,8 +77,14 @@ async function checkOne(order: DatabasePolyswapOrder): Promise<void> {
       functionName: "getTradeableOrderWithSignature",
       args: [order.owner as Address, params, "0x", []],
     });
-    // Success: order is currently fillable. Clear any prior error state.
+    // Success: order is currently fillable. Clear any prior error state, and
+    // mark the gate as opened the first time we see this transition — that
+    // lets the UI distinguish "still waiting for trigger" from "trigger
+    // fired, waiting for the swap to settle".
     await DatabaseService.clearOrderError(order.id);
+    if (!order.gate_opened_at) {
+      await DatabaseService.markGateOpened(order.id);
+    }
   } catch (err) {
     const data = extractRevertData(err);
     if (!data) {

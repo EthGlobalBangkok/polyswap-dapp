@@ -240,8 +240,11 @@ async function searchAndHydrate(params: {
   };
 }
 
-async function fetchSingleMarket(slug: string): Promise<ApiMarket | null> {
-  const lean = await apiService.getMarketBySlug(slug);
+async function fetchSingleMarket(
+  slug: string,
+  opts: { track?: boolean } = {}
+): Promise<ApiMarket | null> {
+  const lean = await apiService.getMarketBySlug(slug, opts);
   if (!lean) return null;
   const endDate =
     lean.end_date instanceof Date
@@ -366,10 +369,16 @@ export function useCategoryCounts(categories: ReadonlyArray<string>) {
   });
 }
 
-export function useMarket(identifier: string) {
+/**
+ * `opts.track` opts the caller into server-side view counting (passed as
+ * `?track=1` on the GET). Included in the query key so the tracked variant
+ * never dedupes against side-traffic from `SwapRow`/`CreatePage` — visiting
+ * the market detail page is always a real fetch and a real increment.
+ */
+export function useMarket(identifier: string, opts: { track?: boolean } = {}) {
   return useQuery({
-    queryKey: ["market", identifier],
-    queryFn: () => fetchSingleMarket(identifier),
+    queryKey: ["market", identifier, opts.track ? "tracked" : "untracked"],
+    queryFn: () => fetchSingleMarket(identifier, opts),
     staleTime: STALE,
     select: (api) => (api ? toViewModel(api) : null),
   });
@@ -377,7 +386,7 @@ export function useMarket(identifier: string) {
 
 export function useRawMarket(identifier: string) {
   return useQuery({
-    queryKey: ["market", identifier],
+    queryKey: ["market", identifier, "untracked"],
     queryFn: () => fetchSingleMarket(identifier),
     staleTime: STALE,
   });

@@ -110,8 +110,12 @@ class ApiService {
     return response.json();
   }
 
-  async getMarketBySlug(slug: string): Promise<DatabaseMarket | null> {
-    const response = await fetch(`${this.baseUrl}/markets/${encodeURIComponent(slug)}`);
+  async getMarketBySlug(
+    slug: string,
+    opts: { track?: boolean } = {}
+  ): Promise<DatabaseMarket | null> {
+    const url = `${this.baseUrl}/markets/${encodeURIComponent(slug)}${opts.track ? "?track=1" : ""}`;
+    const response = await fetch(url);
     if (response.status === 404) return null;
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);

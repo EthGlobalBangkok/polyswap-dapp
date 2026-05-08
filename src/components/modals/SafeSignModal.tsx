@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Hash } from "viem";
 import { Button, Modal } from "@/components/primitives";
 import { Icon } from "@/components/icons";
@@ -22,10 +22,36 @@ export type SafeSignModalProps = {
   onConfirmed: (onChainHash: Hash, safeTxHash: Hash) => void;
   /** Optional human-readable summary shown on the review screen. */
   summary?: React.ReactNode;
+  /**
+   * Optional pre-flight step run BEFORE the on-chain tx. Use this to request
+   * an off-chain signature (EIP-191 / typed-data) that the caller will need
+   * later — e.g. an authorisation message that must be paired with the tx
+   * receipt server-side. If the promise rejects, the modal returns to the
+   * review screen and surfaces the error; the tx is never sent.
+   *
+   * Heading/body let the caller spell out what the user is signing.
+   */
+  prepare?: {
+    run: () => Promise<void>;
+    heading: string;
+    body: string;
+  };
 };
 
-export function SafeSignModal({ open, onClose, calls, onConfirmed, summary }: SafeSignModalProps) {
+export function SafeSignModal({
+  open,
+  onClose,
+  calls,
+  onConfirmed,
+  summary,
+  prepare,
+}: SafeSignModalProps) {
   const { state, send, reset } = useSafeSignFlow();
+  // Local sub-phase tracking the optional pre-tx signing step. Kept separate
+  // from useSafeSignFlow's transaction state so it can wrap around it without
+  // changing the on-chain tx machine.
+  const [prePhase, setPrePhase] = useState<"idle" | "running" | "error">("idle");
+  const [prepareError, setPrepareError] = useState<string | null>(null);
 
   // Hold the latest onConfirmed in a ref so we can fire it exactly once on
   // success without putting it in the deps (which would re-run the effect on
@@ -54,10 +80,29 @@ export function SafeSignModal({ open, onClose, calls, onConfirmed, summary }: Sa
         state.phase === "error")
     ) {
       reset();
+      setPrePhase("idle");
+      setPrepareError(null);
     }
   }, [open, state.phase, reset]);
 
+  const startSend = async () => {
+    if (prepare && prePhase !== "running") {
+      setPrePhase("running");
+      setPrepareError(null);
+      try {
+        await prepare.run();
+      } catch (e) {
+        setPrePhase("error");
+        setPrepareError(e instanceof Error ? e.message : "Failed to sign confirmation message");
+        return;
+      }
+    }
+    setPrePhase("idle");
+    void send(calls);
+  };
+
   const isPending =
+    prePhase === "running" ||
     state.phase === "wallet" ||
     state.phase === "proposed" ||
     state.phase === "awaitingSignatures" ||
@@ -73,8 +118,8 @@ export function SafeSignModal({ open, onClose, calls, onConfirmed, summary }: Sa
       staticDismiss={isPending}
     >
       <div className="p-5 sm:p-6">
-        {/* idle — review screen */}
-        {state.phase === "idle" && (
+        {/* idle — review screen (suppressed while a pre-tx step is running or failed) */}
+        {state.phase === "idle" && prePhase === "idle" && (
           <div className="space-y-5">
             {summary && (
               <div className="border-b border-ink pb-4 font-serif text-lg italic leading-snug">
@@ -89,12 +134,27 @@ export function SafeSignModal({ open, onClose, calls, onConfirmed, summary }: Sa
               <Button variant="ghost" size="md" onClick={onClose}>
                 Cancel
               </Button>
-              <Button variant="accent" size="md" onClick={() => void send(calls)}>
+              <Button variant="accent" size="md" onClick={() => void startSend()}>
                 Approve &amp; sign
                 <Icon.arrowRight size={14} aria-hidden />
               </Button>
             </div>
           </div>
+        )}
+
+        {/* preparing — pre-tx signature step (optional) */}
+        {prePhase === "running" && prepare && (
+          <PendingScreen heading={prepare.heading} body={prepare.body} />
+        )}
+
+        {/* prepare error — surface and let user retry */}
+        {prePhase === "error" && (
+          <ErrorScreen
+            heading="Couldn't sign message"
+            body={prepareError ?? "Try signing the confirmation message again."}
+            onClose={onClose}
+            onRetry={() => void startSend()}
+          />
         )}
 
         {/* wallet — waiting for signer */}

@@ -1,4 +1,5 @@
 import {
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
   ArrowUpRight,
@@ -13,6 +14,7 @@ import {
   Flag,
   Gamepad2,
   Globe2,
+  HelpCircle,
   LineChart,
   Lock,
   Menu,
@@ -37,6 +39,7 @@ export type IconComponent = (props: LucideProps) => React.ReactNode;
 
 export const Icon = {
   ai: BrainCircuit,
+  arrowDown: ArrowDown,
   arrowLeft: ArrowLeft,
   arrowRight: ArrowRight,
   arrowUpRight: ArrowUpRight,
@@ -50,6 +53,7 @@ export const Icon = {
   flag: Flag,
   gamepad: Gamepad2,
   globe: Globe2,
+  helpCircle: HelpCircle,
   lineChart: LineChart,
   lock: Lock,
   menu: Menu,

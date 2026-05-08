@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useAccount } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, DetailSkeleton, Dial, Status, Tape, TokenGlyph } from "@/components/primitives";
-import { Icon } from "@/components/icons";
+import { Button, DetailSkeleton, Dial, Status, Tape, TokenLogo } from "@/components/primitives";
+import { Icon, PolymarketIcon } from "@/components/icons";
 import { fmtDate, fmtNum, fmtPointsAway } from "@/lib/format";
+import { apiService } from "@/services/api";
 import { useOrder } from "@/hooks/useOrders";
 import { useMarket, useMarketPriceHistory } from "@/hooks/useMarketsData";
 import { useRemoveOrder } from "@/hooks/useRemoveOrder";
+import { useSignAction, type SignedAction } from "@/hooks/useSignAction";
 import { SafeSignModal } from "@/components/modals/SafeSignModal";
 import type { SafeCall } from "@/services/safe/types";
 import { Timeline } from "./Timeline";
@@ -28,10 +30,16 @@ export function SwapDetailPage({ orderId }: Props) {
   const { data: priceHistory = [] } = useMarketPriceHistory(market?.yesTokenId, 60);
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { deleteDraft, buildRemoveLiveCalls, notifyRemoval, pending, error } = useRemoveOrder();
+  const { deleteDraft, buildRemoveLiveCalls, pending, error } = useRemoveOrder();
+  const { signAction } = useSignAction();
   const [signOpen, setSignOpen] = useState(false);
   const [calls, setCalls] = useState<SafeCall[] | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  // Pre-tx signed `notify_remove` payload, captured during the modal's
+  // `prepare` step and replayed in `onConfirmed` after the on-chain remove
+  // confirms. Keeps the popup open across BOTH steps and avoids re-prompting
+  // the user after the tx.
+  const pendingNotifySigRef = useRef<SignedAction | null>(null);
 
   const cancellable = order?.phase === "draft" || order?.phase === "live";
 
@@ -61,19 +69,35 @@ export function SwapDetailPage({ orderId }: Props) {
   const onConfirmed = async () => {
     if (!order) return;
     const numericId = order.numericId;
-    try {
-      await notifyRemoval(numericId);
-    } catch {
-      // hook's error state already surfaces in the UI
+    const signed = pendingNotifySigRef.current;
+    if (!signed) {
+      // Shouldn't happen: prepare must run before send. Surface defensively.
+      setLocalError("Missing confirmation signature — please retry the cancel.");
       setSignOpen(false);
       setCalls(null);
       return;
     }
+    try {
+      await apiService.notifyRemoveOrder(numericId, signed.signature, signed.timestamp);
+    } catch (e) {
+      setLocalError(e instanceof Error ? e.message : "Failed to finalise cancel");
+      setSignOpen(false);
+      setCalls(null);
+      pendingNotifySigRef.current = null;
+      return;
+    }
+    pendingNotifySigRef.current = null;
     queryClient.invalidateQueries({ queryKey: ["orders", address] });
     setSignOpen(false);
     setCalls(null);
     router.push("/dashboard");
   };
+
+  const prepareCancel = useCallback(async () => {
+    if (!order) throw new Error("No order to cancel");
+    const signed = await signAction("notify_remove", String(order.numericId));
+    pendingNotifySigRef.current = signed;
+  }, [order, signAction]);
 
   const cancelSummary = useMemo(
     () => (order ? <>Cancel &ldquo;{order.nickname}&rdquo;</> : null),
@@ -109,11 +133,18 @@ export function SwapDetailPage({ orderId }: Props) {
   const chartData = useRealHistory ? priceHistory.map((p) => p.p) : order.spark;
   const chartTimestamps = useRealHistory ? priceHistory.map((p) => p.t) : undefined;
   const currentOdds = chartData[chartData.length - 1] ?? 0;
-  const triggered =
-    order.status === "ready" || order.status === "done" ? true : currentOdds >= order.threshold;
-  const distanceLabel = triggered
-    ? "Ready"
-    : `${fmtPointsAway(currentOdds, order.threshold)} until trigger`;
+  const isFilled = order.phase === "filled";
+  const thresholdMet = currentOdds >= order.threshold;
+  // Right-of-dial label, in priority order: filled fill → trigger fired
+  // (gate opened on-chain) → threshold met (market past the line, gate not
+  // yet observed) → live distance to threshold.
+  const distanceLabel = isFilled
+    ? "Filled"
+    : order.gateOpenedAt
+      ? "Trigger fired"
+      : thresholdMet
+        ? "Threshold met"
+        : `${fmtPointsAway(currentOdds, order.threshold)} until trigger`;
 
   const high = Math.max(...chartData);
   const low = Math.min(...chartData);
@@ -159,8 +190,8 @@ export function SwapDetailPage({ orderId }: Props) {
           {cancellable && (
             <div className="flex flex-col items-end gap-1">
               <Button
-                variant="ghost"
-                size="sm"
+                variant="ink"
+                size="md"
                 disabled={pending}
                 onClick={() => void handleCancelClick()}
               >
@@ -201,19 +232,28 @@ export function SwapDetailPage({ orderId }: Props) {
             {/* Vertical padding on top is generous so the execution-marker
                 icon (which floats above the chart top) isn't clipped by the
                 outer card. We deliberately don't use overflow-hidden here. */}
-            <div className="mt-5 border border-rule-soft bg-paper-2 px-3 pb-3 pt-7">
-              <Tape
-                data={chartData}
-                timestamps={chartTimestamps}
-                executedAt={executedAtSec}
-                threshold={order.threshold}
-                side="YES"
-                width={760}
-                height={200}
-                className="w-full"
-                animate
-                interactive
-              />
+            <div className="mt-5 flex gap-3 border border-rule-soft bg-paper-2 px-3 pb-3 pt-7">
+              <div className="num flex shrink-0 flex-col justify-between py-1 text-[11px] text-ink-3">
+                <span>100%</span>
+                <span>75%</span>
+                <span>50%</span>
+                <span>25%</span>
+                <span>0%</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <Tape
+                  data={chartData}
+                  timestamps={chartTimestamps}
+                  executedAt={executedAtSec}
+                  threshold={order.threshold}
+                  side="YES"
+                  width={760}
+                  height={200}
+                  className="w-full"
+                  animate
+                  interactive
+                />
+              </div>
             </div>
 
             <div className="mt-5 grid grid-cols-3 border border-ink">
@@ -239,17 +279,34 @@ export function SwapDetailPage({ orderId }: Props) {
           <div className="lg:sticky lg:top-6 lg:space-y-5">
             <section aria-label="The deal" className="border border-ink bg-paper-2 p-5">
               <p className="eyebrow mb-3">The deal</p>
-              <div className="flex items-center gap-3">
-                <TokenGlyph symbol={order.sellSymbol} size={28} />
-                <p className="num text-lg">
-                  {fmtNum(order.sellAmount, 2)} {order.sellSymbol}
-                </p>
-                <Icon.arrowRight size={14} className="text-ink-3" aria-hidden />
-                <TokenGlyph symbol={order.buySymbol} size={28} />
-                <p className="num text-lg">
-                  ≥ {fmtNum(order.minBuyAmount, 4)} {order.buySymbol}
-                </p>
+              <div className="grid grid-cols-[28px_1fr] items-center gap-x-3 gap-y-2">
+                <TokenLogo symbol={order.sellSymbol} logoURI={order.sellLogoURI} size={28} />
+                <span className="num text-lg">
+                  {isFilled
+                    ? fmtNum(order.actualSellAmount ?? order.sellAmount, 2)
+                    : fmtNum(order.sellAmount, 2)}{" "}
+                  {order.sellSymbol}
+                </span>
+                <span className="flex justify-center" aria-hidden>
+                  <Icon.arrowDown size={14} className="text-ink-3" />
+                </span>
+                <span aria-hidden />
+                <TokenLogo symbol={order.buySymbol} logoURI={order.buyLogoURI} size={28} />
+                <span className="num text-lg">
+                  {isFilled && order.actualBuyAmount !== null
+                    ? `${fmtNum(order.actualBuyAmount, 6)} ${order.buySymbol}`
+                    : order.buySymbol}
+                </span>
               </div>
+              {isFilled && order.actualBuyAmount !== null && order.actualSellAmount !== null && (
+                <p className="mt-3 text-xs text-ink-3">
+                  Filled at{" "}
+                  <span className="num text-ink-2">
+                    1 {order.sellSymbol} ={" "}
+                    {fmtNum(order.actualBuyAmount / order.actualSellAmount, 6)} {order.buySymbol}
+                  </span>
+                </p>
+              )}
               <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-t border-rule-soft pt-3 text-xs">
                 <Row k="Trigger" v={`YES ≥ ${Math.round(order.threshold * 100)}%`} />
                 <Row k="Created" v={fmtDate(order.startTime)} />
@@ -257,17 +314,68 @@ export function SwapDetailPage({ orderId }: Props) {
               </dl>
             </section>
 
-            <section
-              aria-label="Trust"
-              className="space-y-2 border border-ink bg-paper p-5 text-sm"
-            >
-              <p className="flex items-start gap-3">
-                <Icon.lock size={14} className="mt-0.5 text-accent" aria-hidden />
-                Money stays in your wallet until the trigger fires.
-              </p>
-              <p className="flex items-start gap-3">
-                <Icon.shield size={14} className="mt-0.5 text-accent" aria-hidden />
-                Cancel any time. No fee on cancel or expiry.
+            {market && (
+              <section aria-label="Market" className="border border-ink bg-paper p-5">
+                <p className="eyebrow mb-3">Market</p>
+                <p className="font-serif text-base leading-snug">{market.question}</p>
+                <a
+                  href={`https://polymarket.com/event/${market.eventSlug ?? market.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group mt-3 inline-flex items-center gap-2 text-sm hover:underline"
+                >
+                  <PolymarketIcon size={16} className="text-ink" />
+                  View on Polymarket
+                  <Icon.arrowUpRight
+                    size={12}
+                    className="text-ink-3 transition-colors group-hover:text-ink"
+                    aria-hidden
+                  />
+                </a>
+              </section>
+            )}
+
+            <section aria-label="Tracking" className="border border-ink bg-paper p-5">
+              <p className="eyebrow mb-3">CoW order</p>
+              {order.orderUid ? (
+                <a
+                  href={`https://explorer.cow.fi/pol/orders/${order.orderUid}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group inline-flex items-center gap-2 text-sm hover:underline"
+                >
+                  View on CoW Explorer
+                  <Icon.arrowUpRight
+                    size={12}
+                    className="text-ink-3 transition-colors group-hover:text-ink"
+                    aria-hidden
+                  />
+                </a>
+              ) : address ? (
+                <a
+                  href={`https://explorer.cow.fi/pol/address/${address}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group inline-flex items-center gap-2 text-sm hover:underline"
+                >
+                  See pending orders for this wallet
+                  <Icon.arrowUpRight
+                    size={12}
+                    className="text-ink-3 transition-colors group-hover:text-ink"
+                    aria-hidden
+                  />
+                </a>
+              ) : (
+                <p className="text-sm text-ink-3">
+                  Order will appear on CoW Explorer once the watch-tower picks it up.
+                </p>
+              )}
+              <p className="mt-2 text-xs text-ink-3">
+                {isFilled
+                  ? "Includes the actual fill price and the on-chain settlement."
+                  : order.gateOpenedAt
+                    ? "Trigger fired — waiting on the swap to settle."
+                    : "Will appear here once the trigger fires and the swap settles."}
               </p>
             </section>
           </div>
@@ -280,10 +388,16 @@ export function SwapDetailPage({ orderId }: Props) {
           onClose={() => {
             setSignOpen(false);
             setCalls(null);
+            pendingNotifySigRef.current = null;
           }}
           calls={calls}
           onConfirmed={() => void onConfirmed()}
           summary={cancelSummary}
+          prepare={{
+            run: prepareCancel,
+            heading: "Confirm cancel in your wallet",
+            body: "Sign the off-chain message authorising this cancel. The on-chain transaction follows immediately after.",
+          }}
         />
       )}
     </div>

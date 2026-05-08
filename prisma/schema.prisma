@@ -34,6 +34,9 @@ model Market {
   endDate      DateTime?  @map("end_date") @db.Timestamptz
   clobTokenIds String[]   @default([]) @map("clob_token_ids")
   active       Boolean?   @default(true)
+  // Lifetime user-visits count, incremented every time the market detail page
+  // is opened. Feeds the "interest" sort as a slight popularity boost.
+  viewCount    Int        @default(0) @map("view_count")
   updatedAt    DateTime?  @default(now()) @map("updated_at") @db.Timestamptz
   /// Generated tsvector — defined in migration SQL, not synthesised by Prisma.
   searchVec    Unsupported("tsvector")? @map("search_vec")
@@ -81,6 +84,11 @@ model PolyswapOrder {
   lastCheckedAt       DateTime? @map("last_checked_at") @db.Timestamptz
   cowOrderStatus      String?   @map("cow_order_status") @db.VarChar(32)
   filledAt            DateTime? @map("filled_at") @db.Timestamptz
+  // Set by orderHealthCheck the first time `getTradeableOrderWithSignature`
+  // succeeds (i.e. the Polymarket condition has fired and the conditional
+  // order is actually tradeable). Used to surface "trigger fired, waiting
+  // for the swap to settle" state in the UI.
+  gateOpenedAt        DateTime? @map("gate_opened_at") @db.Timestamptz
   fillTransactionHash String?   @map("fill_transaction_hash") @db.VarChar(66)
   fillBlockNumber     BigInt?   @map("fill_block_number")
   fillLogIndex        Int?      @map("fill_log_index")

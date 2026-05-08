@@ -54,12 +54,11 @@ export function Categories() {
           {CATS.map((c, i) => (
             <div
               key={c.k}
-              className={
-                "p-6 sm:p-7 lg:p-8 " +
-                (i < CATS.length - 1
+              className={`p-6 sm:p-7 lg:p-8 ${
+                i < CATS.length - 1
                   ? "border-b border-ink sm:[&:nth-child(odd)]:border-r sm:[&:nth-child(3)]:border-b-0 sm:[&:nth-child(4)]:border-b-0 lg:!border-b-0 lg:[&:not(:last-child)]:border-r"
-                  : "")
-              }
+                  : ""
+              }`}
             >
               <div className="mb-4 text-ink lg:mb-5">
                 <CatIllus category={c.k} size={56} />

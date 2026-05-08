@@ -55,20 +55,24 @@ export async function GET(req: NextRequest) {
     : undefined;
 
   const volumeMin = parseNonNegativeNumber(sp.get("volumeMin"), 0);
-  if (volumeMin === null)
+  if (volumeMin === null) {
     return NextResponse.json({ success: false, error: "invalid volumeMin" }, { status: 400 });
+  }
 
   const liquidityMin = parseNonNegativeNumber(sp.get("liquidityMin"), 0);
-  if (liquidityMin === null)
+  if (liquidityMin === null) {
     return NextResponse.json({ success: false, error: "invalid liquidityMin" }, { status: 400 });
+  }
 
   const limit = parsePositiveInt(sp.get("limit"), 50, 100);
-  if (limit === null)
+  if (limit === null) {
     return NextResponse.json({ success: false, error: "invalid limit" }, { status: 400 });
+  }
 
   const rawOffset = parseNonNegativeNumber(sp.get("offset"), 0);
-  if (rawOffset === null)
+  if (rawOffset === null) {
     return NextResponse.json({ success: false, error: "invalid offset" }, { status: 400 });
+  }
   const offset = Math.floor(rawOffset);
 
   const sortRaw = sp.get("sort") ?? "volume";

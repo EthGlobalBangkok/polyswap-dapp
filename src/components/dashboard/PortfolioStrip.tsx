@@ -92,12 +92,11 @@ export function PortfolioStrip({ orders }: Props) {
       {metrics.map((m, i) => (
         <div
           key={m.label}
-          className={
-            "relative p-4 sm:p-5 " +
-            (i < metrics.length - 1
+          className={`relative p-4 sm:p-5 ${
+            i < metrics.length - 1
               ? "border-b border-ink sm:[&:nth-child(odd)]:border-r sm:[&:nth-child(2)]:border-b-0 lg:!border-b-0 lg:[&:not(:last-child)]:border-r"
-              : "")
-          }
+              : ""
+          }`}
         >
           {m.badge && <span className="absolute right-3 top-3 z-10">{m.badge}</span>}
           <p className="eyebrow">{m.label}</p>
@@ -107,10 +106,9 @@ export function PortfolioStrip({ orders }: Props) {
             </p>
           ) : (
             <p
-              className={
-                "num mt-2 truncate text-2xl font-semibold text-ink lg:text-3xl " +
-                (m.breathe ? "breathe" : "")
-              }
+              className={`num mt-2 truncate text-2xl font-semibold text-ink lg:text-3xl ${
+                m.breathe ? "breathe" : ""
+              }`}
               title={m.value}
             >
               {m.value}

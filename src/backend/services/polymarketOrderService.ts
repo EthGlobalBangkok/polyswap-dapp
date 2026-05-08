@@ -64,7 +64,9 @@ export class PolymarketOrderService {
   private readonly CTF_EXCHANGE: Address =
     (process.env.CTF_EXCHANGE_V2_ADDRESS as Address) ?? CTF_EXCHANGE_V2_DEFAULT;
 
-  private constructor() {}
+  private constructor() {
+    /* singleton — see getInstance() */
+  }
 
   public static getInstance(): PolymarketOrderService {
     if (!polymarketOrderServiceInstance) {

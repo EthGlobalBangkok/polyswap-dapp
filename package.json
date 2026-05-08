@@ -16,19 +16,22 @@
     "start:market-updater": "tsx src/backend/listener/index.ts --market-update-only",
     "start:market-updater-standalone": "tsx script/marketUpdater.ts",
     "saveMarkets": "tsx script/getMarkets.ts",
-    "db:up": "docker compose -f docker-compose.dev.yml up -d postgres",
-    "db:down": "docker compose -f docker-compose.dev.yml down",
-    "db:logs": "docker compose -f docker-compose.dev.yml logs -f postgres",
+    "db:migrate": "prisma migrate deploy",
+    "db:diff": "prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --script",
+    "db:status": "prisma migrate status",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
     "db:import": "tsx script/importJsonData.ts",
-    "db:init": "tsx script/initDatabase.ts",
     "cancel-polymarket-orders": "tsx script/cancelPolymarketOrders.ts",
     "sell-polymarket-positions": "tsx script/sellPolymarketPositions.ts",
     "check-polymarket-orders": "tsx script/checkPolymarketOrders.ts",
     "pusd": "tsx script/wrapUnwrapPUSD.ts",
+    "postinstall": "prisma generate",
     "prepare": "husky"
   },
   "dependencies": {
     "@polymarket/clob-client-v2": "latest",
+    "@prisma/client": "^7.8.0",
     "@sentry/nextjs": "^10.35.0",
     "@tailwindcss/postcss": "^4.2.4",
     "@tanstack/react-query": "^5.85.3",
@@ -89,6 +92,13 @@
     ],
     "*.{json,css,md}": [
       "prettier --write"
+    ]
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma"
     ]
   }
 }

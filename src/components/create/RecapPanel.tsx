@@ -1,7 +1,6 @@
 import { Icon } from "@/components/icons";
 import { fmtNum, fmtUSD } from "@/lib/format";
-import { describeSentence } from "@/hooks/useCreateOrder";
-import type { CreateFormState } from "@/hooks/useCreateOrder";
+import { describeSentence, type CreateFormState } from "@/hooks/useCreateOrder";
 import type { SwapEstimates } from "@/hooks/useSwapEstimates";
 import type { MarketViewModel } from "@/types/design";
 

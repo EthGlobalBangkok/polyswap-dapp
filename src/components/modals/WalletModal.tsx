@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { useConnect } from "wagmi";
-import type { Connector } from "wagmi";
+import { useConnect, type Connector } from "wagmi";
 import { Modal, Button } from "@/components/primitives";
 import { Icon } from "@/components/icons";
 import { cn } from "@/lib/cn";

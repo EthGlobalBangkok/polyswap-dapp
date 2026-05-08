@@ -1,5 +1,5 @@
 allowBuilds:
-  '@prisma/engines': set this to true or false
+  '@prisma/engines': true
   '@scarf/scarf': true
   '@sentry/cli': true
   '@tree-sitter-grammars/tree-sitter-yaml': true
@@ -8,10 +8,17 @@ allowBuilds:
   core-js-pure: true
   esbuild: true
   keccak: true
-  prisma: set this to true or false
+  prisma: true
   protobufjs: true
   sharp: true
   tree-sitter: true
   tree-sitter-json: true
   unrs-resolver: true
   utf-8-validate: true
+
+# Pin pino to a non-vulnerable version. The chain wagmi → @wagmi/connectors →
+# @walletconnect/ethereum-provider → @reown/appkit → @walletconnect/logger
+# pulls pino@7.11.0, which has a known vulnerability. Upstream is blocked
+# on a licensing dispute; we pin manually until they ship a fix.
+overrides:
+  pino: "10.0.0"

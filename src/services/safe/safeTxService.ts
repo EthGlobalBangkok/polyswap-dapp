@@ -51,8 +51,7 @@ export async function isReplaced(
   targetSafeTxHash: Hash,
   signal?: AbortSignal
 ): Promise<boolean> {
-  const url =
-    `${TX_SVC_BASE}/safes/${safe}/multisig-transactions/` + `?nonce=${nonce}&executed=true`;
+  const url = `${TX_SVC_BASE}/safes/${safe}/multisig-transactions/?nonce=${nonce}&executed=true`;
   try {
     const res = await fetch(url, { signal, headers: { accept: "application/json" } });
     if (!res.ok) return false;

@@ -185,9 +185,7 @@ function Stat({
     <div className="border-r border-ink p-4 last:border-r-0 lg:p-5">
       <p className="eyebrow">{label}</p>
       <p
-        className={
-          "num mt-1 text-xl font-semibold lg:text-2xl " + (accent ? "text-yes" : "text-ink")
-        }
+        className={`num mt-1 text-xl font-semibold lg:text-2xl ${accent ? "text-yes" : "text-ink"}`}
       >
         {value}
       </p>

@@ -4,7 +4,6 @@ interface Props {
 }
 
 export function PolymarketIcon({ size = 20, className }: Props) {
-  // eslint-disable-next-line @next/next/no-img-element
   return (
     <img
       src="/polymarket-logo.svg"

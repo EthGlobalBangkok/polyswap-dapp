@@ -60,7 +60,7 @@ function mapStatus(status: DatabasePolyswapOrder["status"]): SwapStatus {
 
 function shortNickname(market: string | null, buy: string): string {
   if (!market) return `Watch → ${buy}`;
-  const trimmed = market.length > 28 ? market.slice(0, 25) + "…" : market;
+  const trimmed = market.length > 28 ? `${market.slice(0, 25)}…` : market;
   return `${trimmed} → ${buy}`;
 }
 
@@ -139,7 +139,7 @@ export function useOrders(): UseOrdersResult {
       if (!res.success || !res.data) return [];
       return res.data;
     },
-    enabled: !!address,
+    enabled: Boolean(address),
     staleTime: STALE,
   });
 

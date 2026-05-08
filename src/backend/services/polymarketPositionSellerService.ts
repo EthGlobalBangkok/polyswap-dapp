@@ -279,7 +279,7 @@ export class PolymarketPositionSellerService {
           asset_type: AssetType.CONDITIONAL,
         });
         console.log(
-          `[PositionSeller] Conditional tokens - Balance: ${conditionalStatus.balance}, Allowance: ${conditionalStatus.allowance}`
+          `[PositionSeller] Conditional tokens - Balance: ${conditionalStatus.balance}, Allowances: ${JSON.stringify(conditionalStatus.allowances)}`
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -292,7 +292,7 @@ export class PolymarketPositionSellerService {
           asset_type: AssetType.COLLATERAL,
         });
         console.log(
-          `[PositionSeller] Collateral (pUSD) - Balance: ${collateralStatus.balance}, Allowance: ${collateralStatus.allowance}`
+          `[PositionSeller] Collateral (pUSD) - Balance: ${collateralStatus.balance}, Allowances: ${JSON.stringify(collateralStatus.allowances)}`
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -567,14 +567,14 @@ export class PolymarketPositionSellerService {
               assetId: position.asset,
               conditionId: position.conditionId || "",
               size: sizeToSell,
-              sellPrice: sellPrice,
+              sellPrice,
               currentPrice: position.curPrice,
-              orderId: orderId,
+              orderId,
               marketTitle: position.title || "Unknown",
               outcome: position.outcome || "Unknown",
             });
-          } catch (dbError) {
-            // Don't fail if DB write fails - it's just for audit
+          } catch {
+            // Audit-only write; sale already happened on-chain.
             console.warn(`[PositionSeller] Warning: Failed to record sale in DB (audit only)`);
           }
 
@@ -610,7 +610,7 @@ export class PolymarketPositionSellerService {
 
       const midpoint = await client.getMidpoint(tokenId);
       return parseFloat(midpoint?.mid || "0");
-    } catch (error) {
+    } catch {
       return 0;
     }
   }

@@ -46,12 +46,11 @@ export function HowItWorks() {
           {STEPS.map((s, i) => (
             <div
               key={s.n}
-              className={
-                "p-6 sm:p-8 " +
-                (i < STEPS.length - 1
+              className={`p-6 sm:p-8 ${
+                i < STEPS.length - 1
                   ? "border-b border-ink lg:border-b-0 lg:[&:not(:last-child)]:border-r"
-                  : "")
-              }
+                  : ""
+              }`}
             >
               <div className="mb-4 flex items-baseline gap-4">
                 <span className="num text-sm text-ink-3">{s.n}</span>

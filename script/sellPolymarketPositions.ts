@@ -146,8 +146,8 @@ async function sellAllPositions() {
 
     // --- Approval Logic Start ---
     const CONDITIONAL_TOKEN_ADDRESS = process.env.CONDITIONAL_TOKEN as Address | undefined;
-    const POLYMARKET_EXCHANGE_ADDRESS: Address = (process.env.POLYMARKET_CONTRACT_ADDRESS ||
-      "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E") as Address;
+    const POLYMARKET_EXCHANGE_ADDRESS: Address = (process.env.CTF_EXCHANGE_V2_ADDRESS ||
+      "0xE111180000d2663C0091e4f400237545B87B996B") as Address;
 
     if (!CONDITIONAL_TOKEN_ADDRESS) {
       console.warn(

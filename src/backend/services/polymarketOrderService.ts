@@ -4,8 +4,9 @@ import {
   Side,
   OrderType,
   AssetType,
+  SignatureTypeV2,
   type OpenOrder,
-} from "@polymarket/clob-client";
+} from "@polymarket/clob-client-v2";
 import {
   createPublicClient,
   createWalletClient,
@@ -38,8 +39,13 @@ export interface PolymarketMarketOrderConfig {
   price?: number; // Optional price limit for market orders
 }
 
-const USDC_DEFAULT: Address = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
-const POLYMARKET_CTF_EXCHANGE_DEFAULT: Address = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
+// V2 collateral is pUSD (a 1:1 wrapper around USDC.e), not USDC.e directly.
+const PUSD_DEFAULT: Address = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB";
+const CTF_EXCHANGE_V2_DEFAULT: Address = "0xE111180000d2663C0091e4f400237545B87B996B";
+
+// V2 GTD orders require a safety buffer between `now` and the requested expiration,
+// otherwise the CLOB rejects them as "already expired".
+const GTD_SAFETY_BUFFER_SECONDS = 60;
 
 interface ReadyClients {
   clobClient: ClobClient;
@@ -53,11 +59,10 @@ let initializationPromise: Promise<void> | null = null;
 
 export class PolymarketOrderService {
   private ready: ReadyClients | null = null;
-  private nonce = 0;
 
-  private readonly USDC: Address = (process.env.USDC_ADDRESS as Address) ?? USDC_DEFAULT;
-  private readonly POLYMARKET_CONTRACT: Address =
-    (process.env.POLYMARKET_CONTRACT_ADDRESS as Address) ?? POLYMARKET_CTF_EXCHANGE_DEFAULT;
+  private readonly PUSD: Address = (process.env.PUSD_ADDRESS as Address) ?? PUSD_DEFAULT;
+  private readonly CTF_EXCHANGE: Address =
+    (process.env.CTF_EXCHANGE_V2_ADDRESS as Address) ?? CTF_EXCHANGE_V2_DEFAULT;
 
   private constructor() {}
 
@@ -104,8 +109,6 @@ export class PolymarketOrderService {
       transport: http(rpcUrl),
     });
 
-    this.nonce = Number(process.env.NONCE ?? 0);
-
     const creds: ApiKeyCreds = {
       key: process.env.CLOB_API_KEY ?? "",
       secret: process.env.CLOB_SECRET ?? "",
@@ -115,14 +118,13 @@ export class PolymarketOrderService {
       throw new Error("CLOB API credentials are not fully set in environment variables");
     }
 
-    const clobClient = new ClobClient(
+    const clobClient = new ClobClient({
       host,
-      chainId,
-      walletClient,
+      chain: chainId,
+      signer: walletClient,
       creds,
-      0, // signatureType — 0 = EOA
-      account.address
-    );
+      signatureType: SignatureTypeV2.EOA,
+    });
 
     try {
       await publicClient.getBlockNumber();
@@ -152,7 +154,7 @@ export class PolymarketOrderService {
 
   /**
    * Check if the token allowance is sufficient for the required amount.
-   * Reads on-chain via viem; spender is typically the Polymarket CTF Exchange contract.
+   * Reads on-chain via viem; spender is typically the V2 CTF Exchange contract.
    */
   private async checkAllowance(
     token: Address,
@@ -235,16 +237,16 @@ export class PolymarketOrderService {
       const minSizeForOneDollar = Math.ceil((1 / config.price) * 1_000_000) / 1_000_000;
       sizeToUse = config.size < minSizeForOneDollar ? minSizeForOneDollar : config.size;
 
-      const decimals = await this.getTokenDecimals(this.USDC);
+      const decimals = await this.getTokenDecimals(this.PUSD);
       const priceBigInt = BigInt(Math.floor(config.price * 1_000_000));
       const sizeBigInt = BigInt(Math.floor(sizeToUse * 1_000_000));
       const decimalsMultiplier = BigInt(10) ** BigInt(decimals);
       const requiredAmount =
         (priceBigInt * sizeBigInt * decimalsMultiplier) / (1_000_000n * 1_000_000n);
 
-      const ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
+      const ok = await this.checkAllowance(this.PUSD, requiredAmount, this.CTF_EXCHANGE);
       if (!ok) {
-        throw new Error("Insufficient allowance for USDC");
+        throw new Error("Insufficient allowance for pUSD");
       }
     }
 
@@ -255,7 +257,6 @@ export class PolymarketOrderService {
           price: config.price,
           side: config.side === "BUY" ? Side.BUY : Side.SELL,
           size: sizeToUse,
-          feeRateBps: config.feeRateBps ?? 0,
         },
         { tickSize: "0.01" },
         OrderType.GTC
@@ -270,6 +271,10 @@ export class PolymarketOrderService {
 
   /**
    * Create a Good Till Date (GTD) order.
+   *
+   * V2 requires a 60-second safety buffer between `now` and the order's `expiration`,
+   * otherwise the CLOB rejects the order as already-expired (memory `3036`). We bump
+   * the caller-supplied expiration up to that floor when needed, never down.
    */
   async postGTDOrder(config: PolymarketOrderConfig & { expiration: number }) {
     const { clobClient } = this.getReady();
@@ -281,7 +286,7 @@ export class PolymarketOrderService {
     const minSizeForOneDollar = Math.ceil((1 / config.price) * 1_000_000) / 1_000_000;
     const sizeToUse = config.size < minSizeForOneDollar ? minSizeForOneDollar : config.size;
 
-    const decimals = await this.getTokenDecimals(this.USDC);
+    const decimals = await this.getTokenDecimals(this.PUSD);
     const priceBigInt = BigInt(Math.floor(config.price * 1_000_000));
     const sizeBigInt = BigInt(Math.floor(sizeToUse * 1_000_000));
     const decimalsMultiplier = BigInt(10) ** BigInt(decimals);
@@ -291,12 +296,16 @@ export class PolymarketOrderService {
     // Refresh CLOB's internal balance/allowance cache against on-chain state.
     await clobClient.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
 
-    const ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
+    const ok = await this.checkAllowance(this.PUSD, requiredAmount, this.CTF_EXCHANGE);
     if (!ok) {
       throw new Error(
-        `Insufficient on-chain allowance for USDC. Please approve ${formatUnits(requiredAmount, decimals)} USDC for ${this.POLYMARKET_CONTRACT}`
+        `Insufficient on-chain allowance for pUSD. Please approve ${formatUnits(requiredAmount, decimals)} pUSD for ${this.CTF_EXCHANGE}`
       );
     }
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const minExpiration = nowSeconds + GTD_SAFETY_BUFFER_SECONDS;
+    const expiration = Math.max(config.expiration, minExpiration);
 
     try {
       const response = await clobClient.createAndPostOrder(
@@ -305,8 +314,7 @@ export class PolymarketOrderService {
           price: config.price,
           side: config.side === "BUY" ? Side.BUY : Side.SELL,
           size: sizeToUse,
-          feeRateBps: config.feeRateBps ?? 0,
-          expiration: config.expiration,
+          expiration,
         },
         { tickSize: "0.01" },
         OrderType.GTD

@@ -20,13 +20,15 @@
     "db:down": "docker compose -f docker-compose.dev.yml down",
     "db:logs": "docker compose -f docker-compose.dev.yml logs -f postgres",
     "db:import": "tsx script/importJsonData.ts",
+    "db:init": "tsx script/initDatabase.ts",
     "cancel-polymarket-orders": "tsx script/cancelPolymarketOrders.ts",
     "sell-polymarket-positions": "tsx script/sellPolymarketPositions.ts",
     "check-polymarket-orders": "tsx script/checkPolymarketOrders.ts",
+    "pusd": "tsx script/wrapUnwrapPUSD.ts",
     "prepare": "husky"
   },
   "dependencies": {
-    "@polymarket/clob-client": "^5.8.1",
+    "@polymarket/clob-client-v2": "latest",
     "@sentry/nextjs": "^10.35.0",
     "@tailwindcss/postcss": "^4.2.4",
     "@tanstack/react-query": "^5.85.3",
@@ -72,6 +74,7 @@
     "lint-staged": "^16.2.7",
     "prettier": "^3.7.4",
     "prettier-plugin-tailwindcss": "^0.8.0",
+    "prisma": "^7.8.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.3",
     "typescript": "^5"

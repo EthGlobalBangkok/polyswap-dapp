@@ -6,7 +6,7 @@ import { dirname, resolve } from "path";
 import { createPublicClient, http, parseAbiItem, type Address, type Hex } from "viem";
 import { polygon } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import type { OpenOrder } from "@polymarket/clob-client";
+import type { OpenOrder } from "@polymarket/clob-client-v2";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

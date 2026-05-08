@@ -3,6 +3,9 @@ import composableCowAbi from "@/abi/composableCoW.json";
 import { DatabaseService } from "@/backend/services/databaseService";
 import { calculateOrderHash, decodeStaticInput } from "../eventDecoder";
 import type { ConditionalOrderParams } from "@/backend/interfaces/PolyswapOrder";
+import { createLogger } from "@/backend/logger";
+
+const log = createLogger("conditional-order");
 
 interface DecodedConditionalOrderCreated {
   owner: Address;
@@ -32,26 +35,34 @@ function decodeLog(log: Log): DecodedConditionalOrderCreated | null {
   };
 }
 
-export async function handleConditionalOrderCreated(log: Log): Promise<void> {
+export async function handleConditionalOrderCreated(eventLog: Log): Promise<void> {
   const handlerEnv = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER;
   if (!handlerEnv) {
-    console.error("NEXT_PUBLIC_POLYSWAP_HANDLER not set; skipping event");
+    log.error("NEXT_PUBLIC_POLYSWAP_HANDLER not set; skipping event");
     return;
   }
 
-  const decoded = decodeLog(log);
+  const decoded = decodeLog(eventLog);
   if (!decoded) return;
 
   // Filter: only process orders for OUR handler.
-  if (decoded.params.handler.toLowerCase() !== handlerEnv.toLowerCase()) return;
+  if (decoded.params.handler.toLowerCase() !== handlerEnv.toLowerCase()) {
+    log.debug(`skipping event for foreign handler ${decoded.params.handler}`);
+    return;
+  }
 
-  if (log.transactionHash === null || log.blockNumber === null || log.logIndex === null) {
-    console.error("ConditionalOrderCreated log missing block/tx/index — skipping");
+  if (
+    eventLog.transactionHash === null ||
+    eventLog.blockNumber === null ||
+    eventLog.logIndex === null
+  ) {
+    log.error("event missing block/tx/index — skipping");
     return;
   }
 
   const orderHash = calculateOrderHash(decoded.params);
   const data = decodeStaticInput(decoded.params.staticInput as Hex);
+  log.debug(`accepted owner=${decoded.owner} orderHash=${orderHash} block=${eventLog.blockNumber}`);
 
   try {
     await DatabaseService.upsertLiveOrderFromEvent({
@@ -60,11 +71,12 @@ export async function handleConditionalOrderCreated(log: Log): Promise<void> {
       handler: decoded.params.handler,
       salt: decoded.params.salt,
       data,
-      transactionHash: log.transactionHash,
-      blockNumber: Number(log.blockNumber),
-      logIndex: Number(log.logIndex),
+      transactionHash: eventLog.transactionHash,
+      blockNumber: Number(eventLog.blockNumber),
+      logIndex: Number(eventLog.logIndex),
     });
+    log.info(`upserted live order ${orderHash} (owner ${decoded.owner})`);
   } catch (err) {
-    console.error("upsertLiveOrderFromEvent failed:", err);
+    log.error("upsertLiveOrderFromEvent failed:", err);
   }
 }

@@ -1,6 +1,16 @@
 import { PolymarketAPIService } from "./polymarketAPIService.js";
 import { DatabaseService } from "./databaseService.js";
 import * as Sentry from "@sentry/nextjs";
+import { createLogger } from "../logger.js";
+
+const log = createLogger("market-sync");
+
+export interface MarketUpdateStats {
+  fetched: number;
+  upserted: number;
+  removed: number;
+  tagsIndexed: number;
+}
 
 export class MarketUpdateService {
   private static updateInterval: NodeJS.Timeout | null = null;
@@ -14,7 +24,7 @@ export class MarketUpdateService {
     if (this.updateInterval) return;
 
     const intervalMs = intervalMinutes * 60 * 1000;
-    console.log(`Market update routine started (${intervalMinutes} min interval)`);
+    log.debug(`routine started (${intervalMinutes} min interval)`);
 
     void this.updateMarkets();
     this.updateInterval = setInterval(() => {
@@ -29,7 +39,7 @@ export class MarketUpdateService {
     if (this.updateInterval) {
       clearInterval(this.updateInterval);
       this.updateInterval = null;
-      console.log("Market update routine stopped");
+      log.debug("routine stopped");
     }
   }
 
@@ -37,27 +47,40 @@ export class MarketUpdateService {
    * Fetch all active Polymarket markets from Gamma and upsert them into the
    * lean search-index table. Then remove any markets whose end_date has passed.
    */
-  static async updateMarkets(): Promise<void> {
-    if (this.isUpdating) return;
+  static async updateMarkets(): Promise<MarketUpdateStats | null> {
+    if (this.isUpdating) return null;
 
     this.isUpdating = true;
     try {
+      log.debug("requesting open markets from Polymarket Gamma");
       const markets = await PolymarketAPIService.getOpenMarkets({
         endDateMin: new Date().toISOString(),
       });
+      log.debug(`fetched ${markets.length} markets from Gamma`);
 
+      log.debug(`upserting ${markets.length} markets into DB`);
       for (const market of markets) {
         await DatabaseService.upsertMarket(market);
       }
+      log.debug("upserts complete");
 
       const removed = await DatabaseService.removeEndedMarkets();
-      const tagCount = await DatabaseService.refreshTagIndex();
-      console.log(
-        `market sync: upserted ${markets.length}, removed ${removed} ended, ${tagCount} tags indexed`
+      const tagsIndexed = await DatabaseService.refreshTagIndex();
+
+      const stats: MarketUpdateStats = {
+        fetched: markets.length,
+        upserted: markets.length,
+        removed,
+        tagsIndexed,
+      };
+      log.info(
+        `upserted ${stats.upserted}, removed ${stats.removed} ended, ${stats.tagsIndexed} tags indexed`
       );
+      return stats;
     } catch (error) {
       Sentry.captureException(error);
-      console.error("Market update failed:", error);
+      log.error("update failed:", error);
+      return null;
     } finally {
       this.isUpdating = false;
     }

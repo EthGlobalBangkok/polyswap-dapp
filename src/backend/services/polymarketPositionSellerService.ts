@@ -12,20 +12,26 @@ import {
 } from "viem";
 import { polygon } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { AssetType } from "@polymarket/clob-client";
+import { AssetType } from "@polymarket/clob-client-v2";
 import { getPolymarketOrderService } from "./polymarketOrderService";
 import { DatabaseService } from "./databaseService";
 
 // Polymarket Data API endpoint for positions
 const POSITIONS_API_URL = "https://data-api.polymarket.com/positions";
 
-// Contract addresses on Polygon for CTF (Conditional Token Framework)
-// See: https://docs.polymarket.com/developers/CTF/deployment-resources
-const USDC_ADDRESS: Address = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"; // USDC on Polygon (6 decimals)
-const CTF_ADDRESS: Address = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"; // Conditional Token Framework (ERC1155)
-const CTF_EXCHANGE: Address = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"; // CTFExchange
-const NEG_RISK_CTF_EXCHANGE: Address = "0xC5d563A36AE78145C45a50134d48A1215220f80a"; // NegRiskCtfExchange
-const NEG_RISK_ADAPTER: Address = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"; // NegRiskAdapter
+// Polymarket V2 contract addresses on Polygon (cutover 2026-04-28).
+// See: https://docs.polymarket.com/resources/contracts
+const PUSD_ADDRESS: Address =
+  (process.env.PUSD_ADDRESS as Address) ?? "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"; // pUSD collateral (6 decimals)
+const CTF_ADDRESS: Address =
+  (process.env.CTF_ADDRESS as Address) ?? "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"; // Conditional Token Framework (ERC1155, unchanged in V2)
+const CTF_EXCHANGE: Address =
+  (process.env.CTF_EXCHANGE_V2_ADDRESS as Address) ?? "0xE111180000d2663C0091e4f400237545B87B996B"; // V2 CTFExchange
+const NEG_RISK_CTF_EXCHANGE: Address =
+  (process.env.NEG_RISK_CTF_EXCHANGE_V2_ADDRESS as Address) ??
+  "0xe2222d279d744050d28e00520010520000310F59"; // V2 NegRiskCtfExchange
+const NEG_RISK_ADAPTER: Address =
+  (process.env.NEG_RISK_ADAPTER_ADDRESS as Address) ?? "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"; // NegRiskAdapter
 
 // ERC1155 ABI for approval and balance checking (viem JSON form)
 const ERC1155_ABI = [
@@ -187,8 +193,8 @@ export class PolymarketPositionSellerService {
       }
     }
 
-    // Also ensure USDC is approved for CTF contract (required for settlements)
-    await this.ensureUSDCApproval();
+    // Also ensure pUSD is approved for the V2 exchanges (required for settlements)
+    await this.ensurePUSDApproval();
 
     this.ctfApproved = allApproved;
     if (allApproved) {
@@ -202,14 +208,15 @@ export class PolymarketPositionSellerService {
   }
 
   /**
-   * Ensure USDC is approved for the CTF contract (required by Polymarket)
+   * Ensure pUSD is approved for the V2 exchange contracts (required by Polymarket).
+   * V2 settles in pUSD; USDC.e is no longer used as collateral directly.
    */
-  private static async ensureUSDCApproval(): Promise<void> {
+  private static async ensurePUSDApproval(): Promise<void> {
     if (!this.walletClient || !this.publicClient || !this.ownerAddress) return;
 
-    console.log("[PositionSeller] Checking USDC approvals...");
+    console.log("[PositionSeller] Checking pUSD approvals...");
 
-    // Contracts that need USDC approval
+    // Contracts that need pUSD approval to pull collateral on settlement.
     const spenders: Array<{ name: string; address: Address }> = [
       { name: "CTF Contract", address: CTF_ADDRESS },
       { name: "CTFExchange", address: CTF_EXCHANGE },
@@ -220,7 +227,7 @@ export class PolymarketPositionSellerService {
     for (const spender of spenders) {
       try {
         const currentAllowance = await this.publicClient.readContract({
-          address: USDC_ADDRESS,
+          address: PUSD_ADDRESS,
           abi: erc20Abi,
           functionName: "allowance",
           args: [this.ownerAddress, spender.address],
@@ -230,21 +237,21 @@ export class PolymarketPositionSellerService {
           continue; // Already approved
         }
 
-        console.log(`[PositionSeller] Approving USDC for ${spender.name}...`);
+        console.log(`[PositionSeller] Approving pUSD for ${spender.name}...`);
         const txHash = await this.walletClient.writeContract({
           account: this.walletClient.account!,
           chain: polygon,
-          address: USDC_ADDRESS,
+          address: PUSD_ADDRESS,
           abi: erc20Abi,
           functionName: "approve",
           args: [spender.address, maxUint256],
         });
         console.log(`[PositionSeller] TX: ${txHash}`);
         await this.publicClient.waitForTransactionReceipt({ hash: txHash });
-        console.log(`[PositionSeller] ✅ USDC approved for ${spender.name}`);
+        console.log(`[PositionSeller] ✅ pUSD approved for ${spender.name}`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error(`[PositionSeller] Error approving USDC for ${spender.name}:`, message);
+        console.error(`[PositionSeller] Error approving pUSD for ${spender.name}:`, message);
       }
     }
   }
@@ -279,13 +286,13 @@ export class PolymarketPositionSellerService {
         console.log(`[PositionSeller] Could not check conditional balance: ${message}`);
       }
 
-      // Check current balance/allowance for collateral (USDC)
+      // Check current balance/allowance for collateral (pUSD)
       try {
         const collateralStatus = await client.getBalanceAllowance({
           asset_type: AssetType.COLLATERAL,
         });
         console.log(
-          `[PositionSeller] Collateral (USDC) - Balance: ${collateralStatus.balance}, Allowance: ${collateralStatus.allowance}`
+          `[PositionSeller] Collateral (pUSD) - Balance: ${collateralStatus.balance}, Allowance: ${collateralStatus.allowance}`
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

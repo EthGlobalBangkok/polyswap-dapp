@@ -6,6 +6,9 @@ import { handleOrderInvalidated } from "../handlers/orderInvalidated";
 import { DatabaseService } from "@/backend/services/databaseService";
 import composableCowAbi from "@/abi/composableCoW.json";
 import gpv2Abi from "@/abi/GPV2Settlement.json";
+import { createLogger } from "@/backend/logger";
+
+const log = createLogger("catchup");
 
 const DEFAULT_BATCH_SIZE = 5_000n;
 
@@ -34,7 +37,11 @@ export async function catchupHistoricalEvents(): Promise<void> {
   const head = await client.getBlockNumber();
 
   const fromBlock = dbCursor > startingBlock ? dbCursor + 1n : startingBlock;
-  if (fromBlock > head) return;
+  if (fromBlock > head) {
+    log.debug(`up to date at block ${head}`);
+    return;
+  }
+  log.info(`replaying blocks ${fromBlock}..${head} in batches of ${batchSize}`);
 
   const createdEvent = getAbiItem({
     abi: composableCowAbi,
@@ -67,10 +74,17 @@ export async function catchupHistoricalEvents(): Promise<void> {
       }),
     ]);
 
-    for (const log of createdLogs) await handleConditionalOrderCreated(log as Log);
-    for (const log of tradeLogs) await handleTrade(log as Log);
-    for (const log of invalidatedLogs) await handleOrderInvalidated(log as Log);
+    if (createdLogs.length || tradeLogs.length || invalidatedLogs.length) {
+      log.debug(
+        `blocks ${cursor}..${windowEnd}: created=${createdLogs.length} trades=${tradeLogs.length} invalidated=${invalidatedLogs.length}`
+      );
+    }
+
+    for (const entry of createdLogs) await handleConditionalOrderCreated(entry as Log);
+    for (const entry of tradeLogs) await handleTrade(entry as Log);
+    for (const entry of invalidatedLogs) await handleOrderInvalidated(entry as Log);
 
     await DatabaseService.setLatestProcessedBlock(Number(windowEnd));
   }
+  log.info(`catch-up complete; cursor at block ${head}`);
 }

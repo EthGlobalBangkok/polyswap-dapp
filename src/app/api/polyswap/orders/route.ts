@@ -14,7 +14,9 @@ import { getPolymarketOrderService } from "../../../../backend/services/polymark
 import { type PolyswapOrderData } from "../../../../backend/interfaces/PolyswapOrder";
 import { getPostHogClient } from "../../../../lib/posthog-server";
 
-const VAULT_RELAYER: Address = getAddress("0xC92E8bdf79f0507f65a392b0ab4667716BFE0110");
+const VAULT_RELAYER: Address = getAddress(
+  process.env.VAULT_RELAYER ?? "0xC92E8bdf79f0507f65a392b0ab4667716BFE0110"
+);
 const COMPOSABLE_COW: Address = getAddress(
   process.env.COMPOSABLE_COW ?? "0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74"
 );

@@ -10,6 +10,9 @@ import { handleOrderInvalidated } from "./handlers/orderInvalidated";
 import { catchupHistoricalEvents } from "./startup/catchupHistoricalEvents";
 import { backfillOrderUids } from "./startup/backfillOrderUids";
 import { startMarketSync, stopMarketSync } from "./cron/marketSync";
+import { createLogger, getActiveLogLevel } from "@/backend/logger";
+
+const log = createLogger("listener");
 import {
   startPositionSeller,
   stopPositionSeller,
@@ -42,7 +45,7 @@ function readArgs(): RuntimeFlags {
   const marketUpdateOnly = argv.has("--market-update-only") || argv.has("-u");
 
   if (listenerOnly && marketUpdateOnly) {
-    console.error("Cannot use both --market-update-only and --listener-only flags");
+    log.error("Cannot use both --market-update-only and --listener-only flags");
     process.exit(1);
   }
 
@@ -120,7 +123,7 @@ async function startListener(): Promise<Subscriptions> {
         void handleTrade(log as Log)
           .then(() => triggerPositionSell())
           .catch((err) => {
-            console.error("trade handler chain failed:", err);
+            createLogger("trade").error("handler chain failed:", err);
           });
       }
     },
@@ -156,35 +159,34 @@ async function main(): Promise<void> {
   }
 
   await testConnection();
-  console.log("listener: database connection verified");
+  log.info(`log level ${getActiveLogLevel()}`);
+  log.info("database connection verified");
 
   let subs: Subscriptions | null = null;
 
   if (!flags.marketUpdateOnly) {
-    console.log("listener: starting (catch-up + WebSocket subscriptions)");
+    log.info("starting (catch-up + WebSocket subscriptions)");
     subs = await startListener();
   }
 
   if (!flags.listenerOnly && !flags.marketUpdateOnly) {
-    console.log(`listener: starting position-seller cron every ${POSITION_SELL_INTERVAL_MIN}min`);
+    log.info(`starting position-seller cron every ${POSITION_SELL_INTERVAL_MIN}min`);
     await startPositionSeller(POSITION_SELL_INTERVAL_MIN);
 
-    console.log(`listener: starting draft-janitor cron every ${DRAFT_JANITOR_INTERVAL_SEC}s`);
+    log.info(`starting draft-janitor cron every ${DRAFT_JANITOR_INTERVAL_SEC}s`);
     startDraftJanitor(DRAFT_JANITOR_INTERVAL_SEC);
 
-    console.log(
-      `listener: starting order-health-check cron every ${ORDER_HEALTH_CHECK_INTERVAL_SEC}s`
-    );
+    log.info(`starting order-health-check cron every ${ORDER_HEALTH_CHECK_INTERVAL_SEC}s`);
     startOrderHealthCheck(ORDER_HEALTH_CHECK_INTERVAL_SEC);
   }
 
   if (!flags.listenerOnly) {
-    console.log(`listener: starting market-sync cron every ${MARKET_UPDATE_INTERVAL_MIN}min`);
+    log.info(`starting market-sync cron every ${MARKET_UPDATE_INTERVAL_MIN}min`);
     startMarketSync(MARKET_UPDATE_INTERVAL_MIN);
   }
 
   const shutdown = (signal: string): void => {
-    console.log(`listener: received ${signal}, shutting down`);
+    log.info(`received ${signal}, shutting down`);
     subs?.unsubscribeAll();
     if (!flags.listenerOnly) stopMarketSync();
     if (!flags.listenerOnly && !flags.marketUpdateOnly) {
@@ -203,7 +205,7 @@ async function main(): Promise<void> {
     : flags.listenerOnly
       ? "listener only"
       : "all services";
-  console.log(`listener: ready (${ready}). Press Ctrl+C to stop.`);
+  log.info(`ready (${ready}). Press Ctrl+C to stop.`);
 
   if (flags.marketUpdateOnly) {
     // Keep the process alive when only the market-sync cron is running.
@@ -213,7 +215,7 @@ async function main(): Promise<void> {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err) => {
-    console.error("listener fatal:", err);
+    log.error("fatal:", err);
     process.exit(1);
   });
 }

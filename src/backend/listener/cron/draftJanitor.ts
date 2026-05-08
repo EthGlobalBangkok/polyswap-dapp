@@ -3,6 +3,9 @@ import { getPublicClient } from "../blockchainProvider";
 import { DatabaseService } from "@/backend/services/databaseService";
 import { getPolymarketOrderService } from "@/backend/services/polymarketOrderService";
 import composableCowAbi from "@/abi/composableCoW.json";
+import { createLogger } from "@/backend/logger";
+
+const log = createLogger("draft-janitor");
 
 const STALE_AFTER_MS = 10 * 60 * 1000;
 
@@ -23,7 +26,11 @@ function requireComposableCow(): Address {
 export async function sweepStaleDrafts(): Promise<void> {
   const cutoff = new Date(Date.now() - STALE_AFTER_MS);
   const stale = await DatabaseService.findDraftsOlderThan(cutoff);
-  if (stale.length === 0) return;
+  if (stale.length === 0) {
+    log.debug("no stale drafts");
+    return;
+  }
+  log.debug(`found ${stale.length} stale draft(s) older than ${STALE_AFTER_MS / 60_000}min`);
 
   const client = getPublicClient();
   const composableCow = requireComposableCow();
@@ -49,8 +56,9 @@ export async function sweepStaleDrafts(): Promise<void> {
         await pm.cancelOrder(draft.polymarket_order_hash);
       }
       await DatabaseService.deletePolyswapOrderById(draft.id);
+      log.info(`swept draft ${draft.id} (owner ${draft.owner})`);
     } catch (err) {
-      console.warn(`draftJanitor failed for order ${draft.id}:`, err);
+      log.warn(`failed for order ${draft.id}:`, err);
     }
   }
 }
@@ -58,9 +66,7 @@ export async function sweepStaleDrafts(): Promise<void> {
 export function startDraftJanitor(intervalSeconds = 60): void {
   if (timer) return;
   timer = setInterval(() => void sweepStaleDrafts(), intervalSeconds * 1000);
-  console.log(
-    `draftJanitor started: sweep every ${intervalSeconds}s, stale > ${STALE_AFTER_MS / 60_000}min`
-  );
+  log.debug(`sweep every ${intervalSeconds}s, stale > ${STALE_AFTER_MS / 60_000}min`);
 }
 
 export function stopDraftJanitor(): void {

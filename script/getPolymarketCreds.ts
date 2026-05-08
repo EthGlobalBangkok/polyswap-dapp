@@ -1,7 +1,7 @@
 import { config as dotenvConfig } from "dotenv";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { Chain, ClobClient } from "@polymarket/clob-client";
+import { Chain, ClobClient } from "@polymarket/clob-client-v2";
 import { createWalletClient, http, type Hex } from "viem";
 import { polygon } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
@@ -32,7 +32,7 @@ async function main() {
   console.log(`Address: ${account.address}, chainId: ${chainId}`);
 
   const host = process.env.CLOB_API_URL || "https://clob.polymarket.com";
-  const clobClient = new ClobClient(host, chainId, walletClient);
+  const clobClient = new ClobClient({ host, chain: chainId, signer: walletClient });
 
   const resp = await clobClient.createApiKey(nonce);
   console.log("🎉 API Key Created Successfully!");

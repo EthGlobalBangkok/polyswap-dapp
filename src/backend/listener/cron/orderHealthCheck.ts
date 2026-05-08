@@ -10,6 +10,9 @@ import { decodePollError, type CowConditionalErrorName } from "../eventDecoder";
 import { DatabaseService } from "@/backend/services/databaseService";
 import composableCowAbi from "@/abi/composableCoW.json";
 import type { DatabasePolyswapOrder } from "@/backend/interfaces/PolyswapOrder";
+import { createLogger } from "@/backend/logger";
+
+const log = createLogger("order-health");
 
 const COMPOSABLE_COW: Address = getAddress(
   process.env.COMPOSABLE_COW ?? "0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74"
@@ -82,7 +85,7 @@ async function checkOne(order: DatabasePolyswapOrder): Promise<void> {
         ? (err.cause as { data?: Hex } | undefined)?.data
         : undefined;
     if (!data) {
-      console.error(`orderHealthCheck: unrecognised error for order ${order.id}`, err);
+      log.error(`unrecognised error for order ${order.id}`, err);
       return;
     }
 
@@ -117,7 +120,7 @@ async function pollCowOrderbook(order: DatabasePolyswapOrder): Promise<void> {
   try {
     res = await fetch(url);
   } catch (err) {
-    console.warn(`orderHealthCheck: cow.fi fetch failed for order ${order.id}`, err);
+    log.warn(`cow.fi fetch failed for order ${order.id}`, err);
     return;
   }
   if (res.status === 404) {
@@ -125,7 +128,7 @@ async function pollCowOrderbook(order: DatabasePolyswapOrder): Promise<void> {
     return;
   }
   if (!res.ok) {
-    console.warn(`orderHealthCheck: cow.fi returned ${res.status} for order ${order.id}`);
+    log.warn(`cow.fi returned ${res.status} for order ${order.id}`);
     return;
   }
   const json: unknown = await res.json();
@@ -144,12 +147,17 @@ async function pollCowOrderbook(order: DatabasePolyswapOrder): Promise<void> {
 
 export async function runOrderHealthCheck(): Promise<void> {
   const live = await DatabaseService.getLiveOrders();
+  if (live.length === 0) {
+    log.debug("no live orders to check");
+    return;
+  }
+  log.debug(`checking ${live.length} live order(s)`);
   for (const order of live) {
     try {
       await checkOne(order);
       await pollCowOrderbook(order);
     } catch (err) {
-      console.error(`orderHealthCheck: order ${order.id} crashed`, err);
+      log.error(`order ${order.id} crashed`, err);
     }
   }
 }
@@ -157,7 +165,7 @@ export async function runOrderHealthCheck(): Promise<void> {
 export function startOrderHealthCheck(intervalSeconds = 60): void {
   if (timer) return;
   timer = setInterval(() => void runOrderHealthCheck(), intervalSeconds * 1000);
-  console.log(`orderHealthCheck started: every ${intervalSeconds}s`);
+  log.debug(`every ${intervalSeconds}s`);
 }
 
 export function stopOrderHealthCheck(): void {

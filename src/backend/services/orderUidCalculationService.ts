@@ -1,69 +1,97 @@
-import { ethers } from "ethers";
+import { encodePacked, getAddress, type Address, type Hex, type PublicClient } from "viem";
+import {
+  type DatabasePolyswapOrder,
+  type PolyswapOrderData,
+} from "@/backend/interfaces/PolyswapOrder";
+import { createLogger } from "@/backend/logger";
 
-export interface PolyswapOrderData {
-  sellToken: string;
-  buyToken: string;
-  receiver: string;
-  sellAmount: string;
-  minBuyAmount: string;
-  t0: string; // start valid date (uint256)
-  t: string; // maximum date (uint256)
-  polymarketOrderHash: string;
-  appData: string;
+const log = createLogger("order-uid");
+
+const ZERO_BYTES32: Hex = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+const orderHashAbi = [
+  {
+    type: "function",
+    name: "getOrderHash",
+    stateMutability: "view",
+    inputs: [
+      {
+        type: "tuple",
+        components: [
+          { name: "sellToken", type: "address" },
+          { name: "buyToken", type: "address" },
+          { name: "receiver", type: "address" },
+          { name: "sellAmount", type: "uint256" },
+          { name: "minBuyAmount", type: "uint256" },
+          { name: "t0", type: "uint256" },
+          { name: "t", type: "uint256" },
+          { name: "polymarketOrderHash", type: "bytes32" },
+          { name: "appData", type: "bytes32" },
+        ],
+      },
+    ],
+    outputs: [{ type: "bytes32" }],
+  },
+] as const;
+
+function getPolyswapHandlerAddress(): Address {
+  const addr = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER;
+  if (!addr) {
+    throw new Error("NEXT_PUBLIC_POLYSWAP_HANDLER environment variable not set");
+  }
+  return getAddress(addr);
 }
 
 /**
- * Service for calculating CoW Protocol order UIDs using EIP-712
+ * Service for calculating CoW Protocol order UIDs.
+ *
+ * The on-chain `getOrderHash` view on the PolySwap handler is the source of
+ * truth for the EIP-712 digest; the order UID is the canonical concatenation
+ * of `digest ‖ owner ‖ validTo`.
  */
 export class OrderUidCalculationService {
-  private static provider: ethers.Provider | null = null;
+  private static publicClient: PublicClient | null = null;
 
   /**
-   * Initialize the service with a provider
+   * Initialize the service with a viem PublicClient.
    */
-  static initialize(provider: ethers.Provider): void {
-    this.provider = provider;
+  static initialize(publicClient: PublicClient): void {
+    this.publicClient = publicClient;
   }
 
   /**
-   * Calculate the order hash using the PolySwap Handler contract
+   * Calculate the order hash by calling `getOrderHash` on the PolySwap handler.
    */
-  static async calculateOrderHashOnChain(polyswapOrderData: PolyswapOrderData): Promise<string> {
-    if (!this.provider) {
-      throw new Error("OrderUidCalculationService not initialized with provider");
+  static async calculateOrderHashOnChain(polyswapOrderData: PolyswapOrderData): Promise<Hex> {
+    if (!this.publicClient) {
+      throw new Error("OrderUidCalculationService not initialized with publicClient");
     }
 
+    const handlerAddress = getPolyswapHandlerAddress();
+
     try {
-      const polyswapHandlerAddress = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER;
-      if (!polyswapHandlerAddress) {
-        throw new Error("NEXT_PUBLIC_POLYSWAP_HANDLER environment variable not set");
-      }
-
-      const orderHashContract = new ethers.Contract(
-        polyswapHandlerAddress,
-        [
-          "function getOrderHash((address,address,address,uint256,uint256,uint256,uint256,bytes32,bytes32)) view returns (bytes32)",
+      const result = await this.publicClient.readContract({
+        address: handlerAddress,
+        abi: orderHashAbi,
+        functionName: "getOrderHash",
+        args: [
+          {
+            sellToken: polyswapOrderData.sellToken as Address,
+            buyToken: polyswapOrderData.buyToken as Address,
+            receiver: polyswapOrderData.receiver as Address,
+            sellAmount: BigInt(polyswapOrderData.sellAmount),
+            minBuyAmount: BigInt(polyswapOrderData.minBuyAmount),
+            t0: BigInt(polyswapOrderData.t0),
+            t: BigInt(polyswapOrderData.t),
+            polymarketOrderHash: polyswapOrderData.polymarketOrderHash as Hex,
+            appData: polyswapOrderData.appData as Hex,
+          },
         ],
-        this.provider
-      );
+      });
 
-      const orderTuple = [
-        polyswapOrderData.sellToken,
-        polyswapOrderData.buyToken,
-        polyswapOrderData.receiver,
-        polyswapOrderData.sellAmount,
-        polyswapOrderData.minBuyAmount,
-        polyswapOrderData.t0,
-        polyswapOrderData.t,
-        polyswapOrderData.polymarketOrderHash,
-        polyswapOrderData.appData,
-      ];
-
-      const orderHash = await orderHashContract.getOrderHash(orderTuple);
-
-      return orderHash;
+      return result;
     } catch (error) {
-      console.error("❌ Error calculating order hash on-chain:", error);
+      log.error("failed to calculate order hash on-chain:", error);
       throw new Error(
         `Failed to calculate order hash on-chain: ${error instanceof Error ? error.message : "Unknown error"}`
       );
@@ -71,21 +99,15 @@ export class OrderUidCalculationService {
   }
 
   /**
-   * Calculate the order UID from digest, owner, and validTo
-   * According to CoW Protocol docs: orderUid = orderDigest ‖ owner ‖ validTo (concatenation, not hash)
+   * Calculate the CoW Protocol order UID.
+   * Per CoW Protocol: orderUid = orderDigest (32 bytes) ‖ owner (20 bytes) ‖ validTo (4 bytes)
+   * = 56 bytes total (0x + 112 hex chars).
    */
-  static calculateOrderUid(orderDigest: string, owner: string, validTo: number): string {
+  static calculateOrderUid(orderDigest: Hex, owner: Address, validTo: number): Hex {
     try {
-      // Concatenate orderDigest (32 bytes) + owner (20 bytes) + validTo (4 bytes)
-      // Total length: 56 bytes (0x + 112 hex chars)
-      const orderUid = ethers.solidityPacked(
-        ["bytes32", "address", "uint32"],
-        [orderDigest, owner, validTo]
-      );
-
-      return orderUid;
+      return encodePacked(["bytes32", "address", "uint32"], [orderDigest, owner, validTo]);
     } catch (error) {
-      console.error("❌ Error calculating order UID:", error);
+      log.error("failed to calculate order UID:", error);
       throw new Error(
         `Failed to calculate order UID: ${error instanceof Error ? error.message : "Unknown error"}`
       );
@@ -93,24 +115,19 @@ export class OrderUidCalculationService {
   }
 
   /**
-   * Calculate the complete order UID using the PolySwap Handler contract
+   * Calculate the complete order UID end-to-end: read on-chain digest, then pack.
+   * Uses `t` (end time) as `validTo` for the UID.
    */
   static async calculateCompleteOrderUidOnChain(
     polyswapOrderData: PolyswapOrderData,
-    owner: string
-  ): Promise<string> {
+    owner: Address
+  ): Promise<Hex> {
     try {
-      // Step 1: Calculate the order hash using PolySwap Handler contract
       const orderHash = await this.calculateOrderHashOnChain(polyswapOrderData);
-
-      // Step 2: Calculate the order UID
-      // Use the 't' field (end time) as validTo for order UID calculation
       const validTo = parseInt(polyswapOrderData.t);
-      const orderUid = this.calculateOrderUid(orderHash, owner, validTo);
-
-      return orderUid;
+      return this.calculateOrderUid(orderHash, owner, validTo);
     } catch (error) {
-      console.error("❌ Error calculating complete order UID on-chain:", error);
+      log.error("failed to calculate complete order UID on-chain:", error);
       throw new Error(
         `Failed to calculate complete order UID on-chain: ${error instanceof Error ? error.message : "Unknown error"}`
       );
@@ -118,22 +135,21 @@ export class OrderUidCalculationService {
   }
 
   /**
-   * Create PolyswapOrder data structure from database order record
+   * Build PolyswapOrderData from a database row.
+   * Defaults `polymarketOrderHash` and `appData` to bytes32 zero when null,
+   * matching the legacy behavior used by drafts.
    */
-  static createPolyswapOrderDataFromDbOrder(dbOrder: any): PolyswapOrderData {
+  static createPolyswapOrderDataFromDbOrder(dbOrder: DatabasePolyswapOrder): PolyswapOrderData {
     return {
       sellToken: dbOrder.sell_token,
       buyToken: dbOrder.buy_token,
       receiver: dbOrder.owner, // In PolySwap, the receiver is typically the owner
       sellAmount: dbOrder.sell_amount.toString(),
       minBuyAmount: dbOrder.min_buy_amount.toString(),
-      t0: Math.floor(new Date(dbOrder.start_time).getTime() / 1000).toString(), // Convert to Unix timestamp as string
-      t: Math.floor(new Date(dbOrder.end_time).getTime() / 1000).toString(), // Convert to Unix timestamp as string
-      polymarketOrderHash:
-        dbOrder.polymarket_order_hash ||
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
-      appData:
-        dbOrder.app_data || "0x0000000000000000000000000000000000000000000000000000000000000000",
+      t0: Math.floor(new Date(dbOrder.start_time).getTime() / 1000).toString(),
+      t: Math.floor(new Date(dbOrder.end_time).getTime() / 1000).toString(),
+      polymarketOrderHash: dbOrder.polymarket_order_hash || ZERO_BYTES32,
+      appData: dbOrder.app_data || ZERO_BYTES32,
     };
   }
 }

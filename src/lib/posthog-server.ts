@@ -1,14 +1,28 @@
 import { PostHog } from "posthog-node";
 
-let posthogClient: PostHog | null = null;
+interface CaptureClient {
+  capture: (event: Parameters<PostHog["capture"]>[0]) => void;
+}
 
-export function getPostHogClient(): PostHog {
-  if (!posthogClient) {
-    posthogClient = new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
-      host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
-      flushAt: 1,
-      flushInterval: 0,
-    });
+let cachedClient: CaptureClient | null = null;
+
+const noopClient: CaptureClient = {
+  capture: () => undefined,
+};
+
+export function getPostHogClient(): CaptureClient {
+  if (cachedClient) return cachedClient;
+
+  const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
+  if (!key) {
+    cachedClient = noopClient;
+    return cachedClient;
   }
-  return posthogClient;
+
+  cachedClient = new PostHog(key, {
+    host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+    flushAt: 1,
+    flushInterval: 0,
+  });
+  return cachedClient;
 }

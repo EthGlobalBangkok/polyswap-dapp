@@ -1,0 +1,143 @@
+// Prisma schema for PolySwap.
+//
+// Migrations workflow (no shadow DB — Nile doesn't allow CREATE DATABASE):
+//   1. Edit this file.
+//   2. `pnpm db:diff <migration_name>` — generates migration SQL into
+//      prisma/migrations/<timestamp>_<name>/migration.sql.
+//   3. Hand-edit the migration SQL if needed (e.g. for the tsvector
+//      generated column on `markets.search_vec`).
+//   4. `pnpm db:migrate` — applies pending migrations via `prisma migrate deploy`.
+//
+// `markets.search_vec` is a Postgres TSVECTOR with a STORED GENERATED expression
+// that Prisma cannot express in the data model. It's defined in the initial
+// migration SQL and read back here as `Unsupported("tsvector")`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Market {
+  id           String     @id @db.VarChar(80)
+  slug         String     @unique @db.VarChar(255)
+  eventSlug    String?    @map("event_slug") @db.VarChar(255)
+  question     String
+  description  String?
+  category     String?    @db.VarChar(64)
+  tags         String[]   @default([])
+  outcomes     Json       @default("[]")
+  volume       Decimal?   @default(0) @db.Decimal(30, 6)
+  liquidity    Decimal?   @default(0) @db.Decimal(30, 6)
+  endDate      DateTime?  @map("end_date") @db.Timestamptz
+  clobTokenIds String[]   @default([]) @map("clob_token_ids")
+  active       Boolean?   @default(true)
+  // Lifetime user-visits count, incremented every time the market detail page
+  // is opened. Feeds the "interest" sort as a slight popularity boost.
+  viewCount    Int        @default(0) @map("view_count")
+  updatedAt    DateTime?  @default(now()) @map("updated_at") @db.Timestamptz
+  /// Generated tsvector — defined in migration SQL, not synthesised by Prisma.
+  searchVec    Unsupported("tsvector")? @map("search_vec")
+
+  orders PolyswapOrder[]
+
+  @@index([category], map: "markets_category_idx")
+  @@index([volume(sort: Desc)], map: "markets_volume_idx")
+  @@index([liquidity(sort: Desc)], map: "markets_liquidity_idx")
+  @@map("markets")
+}
+
+model TagIndex {
+  tag         String @id
+  marketCount Int    @map("market_count")
+
+  @@map("tag_index")
+}
+
+model PolyswapOrder {
+  id                  Int       @id @default(autoincrement())
+  orderHash           String?   @unique @map("order_hash") @db.VarChar(66)
+  owner               String    @db.VarChar(42)
+  handler             String?   @db.VarChar(42)
+  sellToken           String    @map("sell_token") @db.VarChar(42)
+  buyToken            String    @map("buy_token") @db.VarChar(42)
+  sellAmount          Decimal   @map("sell_amount") @db.Decimal(78, 0)
+  minBuyAmount        Decimal   @map("min_buy_amount") @db.Decimal(78, 0)
+  startTime           DateTime  @map("start_time") @db.Timestamptz
+  endTime             DateTime  @map("end_time") @db.Timestamptz
+  polymarketOrderHash String?   @map("polymarket_order_hash") @db.VarChar(66)
+  appData             String?   @map("app_data") @db.VarChar(66)
+  blockNumber         BigInt?   @map("block_number")
+  transactionHash     String?   @map("transaction_hash") @db.VarChar(66)
+  logIndex            Int?      @map("log_index")
+  marketId            String?   @map("market_id") @db.VarChar(80)
+  outcomeSelected     String?   @map("outcome_selected") @db.VarChar(256)
+  betPercentage       Decimal?  @map("bet_percentage") @db.Decimal(5, 2)
+  status              String    @default("draft") @db.VarChar(20)
+  orderUid            String?   @map("order_uid") @db.VarChar(114)
+  salt                String?   @db.VarChar(66)
+  lastErrorName       String?   @map("last_error_name") @db.VarChar(64)
+  lastErrorReason     String?   @map("last_error_reason")
+  lastErrorRetryAt    BigInt?   @map("last_error_retry_at")
+  lastCheckedAt       DateTime? @map("last_checked_at") @db.Timestamptz
+  cowOrderStatus      String?   @map("cow_order_status") @db.VarChar(32)
+  filledAt            DateTime? @map("filled_at") @db.Timestamptz
+  // Set by orderHealthCheck the first time `getTradeableOrderWithSignature`
+  // succeeds (i.e. the Polymarket condition has fired and the conditional
+  // order is actually tradeable). Used to surface "trigger fired, waiting
+  // for the swap to settle" state in the UI.
+  gateOpenedAt        DateTime? @map("gate_opened_at") @db.Timestamptz
+  fillTransactionHash String?   @map("fill_transaction_hash") @db.VarChar(66)
+  fillBlockNumber     BigInt?   @map("fill_block_number")
+  fillLogIndex        Int?      @map("fill_log_index")
+  actualSellAmount    Decimal?  @map("actual_sell_amount") @db.Decimal(78, 0)
+  actualBuyAmount     Decimal?  @map("actual_buy_amount") @db.Decimal(78, 0)
+  feeAmount           Decimal?  @map("fee_amount") @db.Decimal(78, 0)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  market Market? @relation(fields: [marketId], references: [id], onDelete: SetNull, map: "fk_market")
+
+  @@index([orderHash], map: "idx_polyswap_orders_order_hash")
+  @@index([owner], map: "idx_polyswap_orders_owner")
+  @@index([handler], map: "idx_polyswap_orders_handler")
+  @@index([sellToken], map: "idx_polyswap_orders_sell_token")
+  @@index([buyToken], map: "idx_polyswap_orders_buy_token")
+  @@index([startTime], map: "idx_polyswap_orders_start_time")
+  @@index([endTime], map: "idx_polyswap_orders_end_time")
+  @@index([blockNumber], map: "idx_polyswap_orders_block_number")
+  @@index([polymarketOrderHash], map: "idx_polyswap_orders_polymarket_hash")
+  @@index([marketId], map: "idx_polyswap_orders_market_id")
+  @@index([status], map: "idx_polyswap_orders_status")
+  @@index([orderUid], map: "idx_polyswap_orders_order_uid")
+  @@map("polyswap_orders")
+}
+
+model SoldPosition {
+  id            Int      @id @default(autoincrement())
+  assetId       String   @map("asset_id") @db.VarChar(100)
+  conditionId   String   @map("condition_id") @db.VarChar(66)
+  size          Decimal  @db.Decimal(20, 6)
+  sellPrice     Decimal  @map("sell_price") @db.Decimal(10, 6)
+  currentPrice  Decimal  @map("current_price") @db.Decimal(10, 6)
+  orderId       String   @map("order_id") @db.VarChar(100)
+  marketTitle   String?  @map("market_title")
+  outcome       String?  @db.VarChar(100)
+  soldAt        DateTime @default(now()) @map("sold_at") @db.Timestamptz
+
+  @@index([assetId], map: "idx_sold_positions_asset_id")
+  @@index([conditionId], map: "idx_sold_positions_condition_id")
+  @@index([soldAt], map: "idx_sold_positions_sold_at")
+  @@index([orderId], map: "idx_sold_positions_order_id")
+  @@map("sold_positions")
+}
+
+model ListenerState {
+  key       String   @id @db.VarChar(64)
+  value     BigInt
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@map("listener_state")
+}

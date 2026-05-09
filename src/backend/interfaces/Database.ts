@@ -1,16 +1,16 @@
 export interface DatabaseMarket {
   id: string;
+  slug: string;
+  event_slug: string | null;
   question: string;
-  condition_id: string;
-  slug: string; // Market slug for URL-friendly identifiers
-  event_slug?: string; // Parent event slug for Polymarket links (used for multi-choice markets)
-  category: string;
-  start_date: Date;
-  end_date: Date;
+  description: string | null;
+  category: string | null;
+  tags: string[];
+  outcomes: string[];
   volume: number;
-  outcomes: string[]; // JSON array
-  outcome_prices: string[]; // JSON array
-  clob_token_ids: string[]; // JSON array of CLOB token IDs
-  created_at?: Date;
+  liquidity: number;
+  end_date: Date | null;
+  clob_token_ids: string[];
+  active: boolean;
   updated_at?: Date;
 }

@@ -1,152 +1,186 @@
-import { Market } from "../interfaces/Market";
+import { type Market } from "../interfaces/Market";
+import { createLogger } from "../logger";
+
+const log = createLogger("polymarket-api");
+
+interface GammaApiMarket {
+  id: string;
+  slug?: string;
+  question?: string;
+  description?: string;
+  outcomes?: string;
+  volume?: string | number;
+  volumeNum?: number;
+  liquidity?: string | number;
+  liquidityNum?: number;
+  liquidityClob?: number;
+  endDate?: string;
+  clobTokenIds?: string;
+  active?: boolean;
+}
+
+interface GammaApiTag {
+  label?: string;
+}
+
+interface GammaApiEvent {
+  slug?: string;
+  tags?: GammaApiTag[];
+  markets?: GammaApiMarket[];
+}
 
 export interface GetOpenMarketsOptions {
-  endDateMin: string; // ISO date string like "2025-07-24T12:00:00Z"
-  maxNb?: number; // Optional maximum number of markets to fetch
+  endDateMin?: string;
+  limit?: number;
+  maxNb?: number;
+}
+
+const CANONICAL_CATEGORIES: readonly string[] = [
+  "Politics",
+  "Elections",
+  "Geopolitics",
+  "Crypto",
+  "Sports",
+  "Soccer",
+  "Esports",
+  "Tech",
+  "AI",
+  "Culture",
+  "Finance",
+  "Economy",
+  "Weather",
+];
+
+function derivePrimaryCategory(tags: readonly string[]): string | null {
+  if (tags.length === 0) return null;
+  const tagSet = new Set(tags);
+  for (const canonical of CANONICAL_CATEGORIES) {
+    if (tagSet.has(canonical)) return canonical;
+  }
+  return null;
 }
 
 export class PolymarketAPIService {
   private static readonly BASE_URL =
-    process.env.POLYMARKET_API_URL || "https://gamma-api.polymarket.com";
+    process.env.POLYMARKET_API_URL ?? "https://gamma-api.polymarket.com";
 
-  /**
-   * Fetch all active markets from Polymarket API with pagination support
-   * @param options Configuration object with endDateMin and optional maxNb
-   * @returns Promise<Market[]> Array of all fetched markets
-   */
-  static async getOpenMarkets(options: GetOpenMarketsOptions): Promise<Market[]> {
-    const { endDateMin, maxNb } = options;
-    const baseUrl = `${this.BASE_URL}/markets`;
+  // Uses /events because /markets does not return tag labels.
+  static async getOpenMarkets(options: GetOpenMarketsOptions = {}): Promise<Market[]> {
+    const { endDateMin, maxNb, limit: pageLimit = 500 } = options;
     const allMarkets: Market[] = [];
-    const limit = 1000;
-    let nextCursor = 0;
-    let fetchedCount = 0;
+    let offset = 0;
 
     try {
       do {
-        // Build URL with query parameters
-        const url = new URL(baseUrl);
+        const url = new URL(`${this.BASE_URL}/events`);
         url.searchParams.set("active", "true");
         url.searchParams.set("closed", "false");
-        url.searchParams.set("end_date_min", endDateMin);
-        url.searchParams.set("limit", limit.toString());
-
-        if (nextCursor) {
-          url.searchParams.set("offset", nextCursor.toString());
+        if (endDateMin) {
+          url.searchParams.set("end_date_min", endDateMin);
         }
+        url.searchParams.set("limit", pageLimit.toString());
+        url.searchParams.set("offset", offset.toString());
 
         const response = await fetch(url.toString());
-
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          throw new Error(`Gamma API error: ${response.status}`);
         }
 
-        const data = await response.json();
+        const raw: unknown = await response.json();
+        if (!Array.isArray(raw)) {
+          throw new Error(`Unexpected Gamma response: ${JSON.stringify(raw)}`);
+        }
+        const page = raw as GammaApiEvent[];
 
-        let markets: Market[];
-        if (Array.isArray(data)) {
-          markets = data;
-          nextCursor += markets.length;
-        } else {
-          throw new Error(`Unexpected response structure: ${JSON.stringify(data)}`);
+        if (page.length === 0) break;
+
+        for (const event of page) {
+          const tags = (event.tags ?? [])
+            .map((t) => t.label)
+            .filter((l): l is string => typeof l === "string" && l.length > 0);
+          const category = derivePrimaryCategory(tags);
+          const eventSlug = event.slug ?? null;
+          for (const market of event.markets ?? []) {
+            const lean = this.toLeanMarket(market, tags, category, eventSlug);
+            if (lean) allMarkets.push(lean);
+          }
         }
 
-        allMarkets.push(...markets);
-        fetchedCount += markets.length;
+        offset += page.length;
 
-        if (maxNb && fetchedCount >= maxNb) {
-          break;
-        }
-        if (markets.length === 0) {
-          break;
-        }
+        if (maxNb && allMarkets.length >= maxNb) break;
 
-        // Add a small delay to be respectful to the API
         await new Promise((resolve) => setTimeout(resolve, 50));
       } while (true);
-
-      if (maxNb && allMarkets.length > maxNb) {
-        return allMarkets.slice(0, maxNb);
-      }
-
-      return allMarkets;
     } catch (error) {
-      console.error("Error fetching markets:", error);
-      if (allMarkets.length === 0) {
-        throw error;
-      }
-
-      if (maxNb && allMarkets.length > maxNb) {
-        return allMarkets.slice(0, maxNb);
-      }
-
-      return allMarkets;
+      log.error("failed to fetch markets from Gamma:", error);
+      if (allMarkets.length === 0) throw error;
     }
+
+    if (maxNb && allMarkets.length > maxNb) {
+      return allMarkets.slice(0, maxNb);
+    }
+    return allMarkets;
   }
 
-  /**
-   * Fetch a market by its condition ID
-   * @param conditionId The condition ID to search for
-   * @returns Promise<Market | null> The market or null if not found
-   */
-  static async getMarketByConditionId(conditionId: string): Promise<Market | null> {
-    const baseUrl = `${this.BASE_URL}/markets`;
+  private static toLeanMarket(
+    raw: GammaApiMarket,
+    tags: string[],
+    category: string | null,
+    eventSlug: string | null
+  ): Market | null {
+    if (!raw.id || !raw.slug || !raw.question) return null;
 
-    try {
-      // Build URL with query parameters
-      const url = new URL(baseUrl);
-      url.searchParams.set("condition_id", conditionId);
+    const volume =
+      raw.volumeNum !== undefined
+        ? raw.volumeNum
+        : typeof raw.volume === "number"
+          ? raw.volume
+          : parseFloat(raw.volume ?? "0") || 0;
 
-      const response = await fetch(url.toString());
+    const liquidity =
+      raw.liquidityClob !== undefined
+        ? raw.liquidityClob
+        : raw.liquidityNum !== undefined
+          ? raw.liquidityNum
+          : typeof raw.liquidity === "number"
+            ? raw.liquidity
+            : parseFloat(raw.liquidity ?? "0") || 0;
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+    let clobTokenIds: string[] = [];
+    if (raw.clobTokenIds) {
+      try {
+        const parsed: unknown = JSON.parse(raw.clobTokenIds);
+        clobTokenIds = Array.isArray(parsed) ? (parsed as string[]) : [];
+      } catch {
+        clobTokenIds = [];
       }
-
-      const data = await response.json();
-
-      if (!Array.isArray(data)) {
-        throw new Error(`Unexpected response structure: ${JSON.stringify(data)}`);
-      }
-
-      return data[0] || null;
-    } catch (error) {
-      console.error("Error fetching market by condition ID:", error);
-      throw error;
     }
-  }
 
-  /**
-   * Fetch a market by its ID
-   * @param id The market ID to search for
-   * @returns Promise<Market | null> The market or null if not found
-   */
-  static async getMarketById(id: string): Promise<Market | null> {
-    const baseUrl = `${this.BASE_URL}/markets`;
-
-    try {
-      // Build URL with query parameters
-      const url = new URL(baseUrl);
-      url.searchParams.set("id", id);
-
-      const response = await fetch(url.toString());
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+    let outcomes: string[] = [];
+    if (raw.outcomes) {
+      try {
+        const parsed: unknown = JSON.parse(raw.outcomes);
+        outcomes = Array.isArray(parsed) ? (parsed as string[]) : [];
+      } catch {
+        outcomes = [];
       }
-
-      const data = await response.json();
-
-      // Check if data is an array
-      if (!Array.isArray(data)) {
-        throw new Error(`Unexpected response structure: ${JSON.stringify(data)}`);
-      }
-
-      // Return the first market found or null
-      return data[0] || null;
-    } catch (error) {
-      console.error("Error fetching market by ID:", error);
-      throw error;
     }
+
+    return {
+      id: raw.id,
+      slug: raw.slug,
+      eventSlug,
+      question: raw.question,
+      description: raw.description ?? null,
+      category,
+      tags,
+      outcomes,
+      volume,
+      liquidity,
+      endDate: raw.endDate ? new Date(raw.endDate) : null,
+      clobTokenIds,
+      active: raw.active ?? true,
+    };
   }
 }

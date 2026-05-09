@@ -1,63 +1,49 @@
 #!/usr/bin/env tsx
 import dotenv from "dotenv";
+dotenv.config();
+
 import { MarketUpdateService } from "../src/backend/services/marketUpdateService.js";
 import { testConnection } from "../src/backend/db/database.js";
+import { createLogger } from "../src/backend/logger.js";
 
-// Load environment variables
-dotenv.config();
+const log = createLogger("market-updater");
 
 const MARKET_UPDATE_INTERVAL = parseInt(process.env.MARKET_UPDATE_INTERVAL_MINUTES!) || 60;
 
-/**
- * Market Update Service - Standalone runner
- * Runs only the market update routine without the blockchain listener
- */
 async function main() {
-  console.log("🔄 Starting Market Update Service (Standalone)");
-  console.log("===============================================");
-  console.log(`📅 Update interval: ${MARKET_UPDATE_INTERVAL} minutes`);
+  log.info(`starting standalone market-update runner (interval ${MARKET_UPDATE_INTERVAL}min)`);
 
   try {
-    // Test database connection first
-    console.log("🔍 Testing database connection...");
     const isConnected = await testConnection();
     if (!isConnected) {
-      console.error("❌ Failed to connect to database");
+      log.error("failed to connect to database");
       process.exit(1);
     }
-    console.log("✅ Database connected successfully!");
 
-    // Handle graceful shutdown
     process.on("SIGINT", () => {
-      console.log("\n🛑 Received SIGINT, shutting down gracefully...");
+      log.info("received SIGINT, shutting down");
       MarketUpdateService.stopUpdateRoutine();
       process.exit(0);
     });
-
     process.on("SIGTERM", () => {
-      console.log("\n🛑 Received SIGTERM, shutting down gracefully...");
+      log.info("received SIGTERM, shutting down");
       MarketUpdateService.stopUpdateRoutine();
       process.exit(0);
     });
 
-    // Start the market update routine
     MarketUpdateService.startUpdateRoutine(MARKET_UPDATE_INTERVAL);
+    log.info("market-update routine started; status at http://localhost:3000/api/markets/update");
 
-    console.log("✅ Market update service started successfully. Press Ctrl+C to stop.");
-    console.log("💡 To check status, visit: http://localhost:3000/api/markets/update");
-
-    // Keep the process alive
     process.stdin.resume();
   } catch (error) {
-    console.error("❌ Failed to start market update service:", error);
+    log.error("failed to start market-update service:", error);
     process.exit(1);
   }
 }
 
-// Run if this file is executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error) => {
-    console.error("❌ Fatal error:", error);
+    log.error("fatal:", error);
     process.exit(1);
   });
 }

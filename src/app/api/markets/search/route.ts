@@ -1,183 +1,107 @@
-import { NextRequest, NextResponse } from "next/server";
-import { DatabaseService } from "../../../../backend/services/databaseService";
-import { transformDatabaseMarkets } from "../../../../backend/utils/transformers";
-import { DatabaseMarket } from "@/backend/interfaces/Database";
+import { type NextRequest, NextResponse } from "next/server";
+import { DatabaseService } from "@/backend/services/databaseService";
 
 /**
  * @swagger
  * /api/markets/search:
  *   get:
- *     tags:
- *       - Markets
+ *     tags: [Markets]
  *     summary: Search markets
- *     description: Search markets by question text with multi-word support
+ *     description: >
+ *       Unified market search. The "interest" sort blends log-scaled volume +
+ *       liquidity + view count with a time-to-resolve decay.
  *     parameters:
- *       - name: q
- *         in: query
- *         schema:
- *           type: string
- *         description: Search query (space-separated keywords)
- *       - name: type
- *         in: query
- *         schema:
- *           type: string
- *           enum: [all, any, slug]
- *           default: all
- *         description: Search type (all=AND, any=OR, slug=exact slug match)
- *       - name: category
- *         in: query
- *         schema:
- *           type: string
- *         description: Filter by category
- *       - name: limit
- *         in: query
- *         schema:
- *           type: integer
- *           default: 100
- *         description: Number of results to return (max 500)
- *       - name: offset
- *         in: query
- *         schema:
- *           type: integer
- *           default: 0
- *         description: Offset for pagination
+ *       - { name: q,            in: query, schema: { type: string },  description: "Full-text query (tsvector)" }
+ *       - { name: category,     in: query, schema: { type: string },  description: "Exact category filter" }
+ *       - { name: categories,   in: query, schema: { type: string },  description: "Comma-separated category list" }
+ *       - { name: volumeMin,    in: query, schema: { type: number, default: 0 } }
+ *       - { name: liquidityMin, in: query, schema: { type: number, default: 0 } }
+ *       - { name: sort,         in: query, schema: { type: string, enum: [volume, liquidity, end_date, interest], default: volume } }
+ *       - { name: limit,        in: query, schema: { type: integer, default: 50, maximum: 100 } }
+ *       - { name: offset,       in: query, schema: { type: integer, default: 0 } }
  *     responses:
- *       200:
- *         description: Search results
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Market'
- *                 count:
- *                   type: integer
- *                 searchType:
- *                   type: string
- *                 keywords:
- *                   type: array
- *                   items:
- *                     type: string
- *       400:
- *         description: Missing search parameters
- *       404:
- *         description: No markets found
+ *       200: { description: List of markets with total count }
+ *       400: { description: Invalid query parameter }
+ *       500: { description: Server error }
  */
-export async function GET(request: NextRequest) {
+
+/**
+ * Parse a non-negative number from a raw query-param string.
+ * Returns the fallback when raw is null, null when the value is invalid.
+ */
+function parseNonNegativeNumber(raw: string | null, fallback: number): number | null {
+  if (raw === null) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
+
+/**
+ * Parse a positive integer from a raw query-param string.
+ * Returns the fallback when raw is null, null when the value is out-of-range.
+ */
+function parsePositiveInt(raw: string | null, fallback: number, max: number): number | null {
+  if (raw === null) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > max) return null;
+  return n;
+}
+
+export async function GET(req: NextRequest) {
+  const sp = req.nextUrl.searchParams;
+
+  const q = sp.get("q") ?? undefined;
+  const category = sp.get("category") ?? undefined;
+  const categoriesRaw = sp.get("categories");
+  const categories = categoriesRaw
+    ? categoriesRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : undefined;
+
+  const volumeMin = parseNonNegativeNumber(sp.get("volumeMin"), 0);
+  if (volumeMin === null) {
+    return NextResponse.json({ success: false, error: "invalid volumeMin" }, { status: 400 });
+  }
+
+  const liquidityMin = parseNonNegativeNumber(sp.get("liquidityMin"), 0);
+  if (liquidityMin === null) {
+    return NextResponse.json({ success: false, error: "invalid liquidityMin" }, { status: 400 });
+  }
+
+  const limit = parsePositiveInt(sp.get("limit"), 50, 100);
+  if (limit === null) {
+    return NextResponse.json({ success: false, error: "invalid limit" }, { status: 400 });
+  }
+
+  const rawOffset = parseNonNegativeNumber(sp.get("offset"), 0);
+  if (rawOffset === null) {
+    return NextResponse.json({ success: false, error: "invalid offset" }, { status: 400 });
+  }
+  const offset = Math.floor(rawOffset);
+
+  const sortRaw = sp.get("sort") ?? "volume";
+  const sort: "volume" | "liquidity" | "end_date" | "interest" =
+    sortRaw === "liquidity" || sortRaw === "end_date" || sortRaw === "interest"
+      ? sortRaw
+      : "volume";
+
   try {
-    const { searchParams } = new URL(request.url);
-    const q = searchParams.get("q");
-    const type = searchParams.get("type") || "all"; // Default to 'all' for better multi-word search
-    const category = searchParams.get("category");
-    const limit = searchParams.get("limit") || "100";
-    const offset = searchParams.get("offset") || "0";
+    const filterOpts = { q, category, categories, volumeMin, liquidityMin };
+    const [markets, total] = await Promise.all([
+      DatabaseService.searchMarkets({ ...filterOpts, sort, limit, offset }),
+      DatabaseService.countMarkets(filterOpts),
+    ]);
 
-    // Allow category-only search (no query required)
-    if (!q && !category) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Missing search parameters",
-          message: "Please provide either a search query (q) or a category",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Parse search query into keywords (split by spaces for multi-word search)
-    const keywords = q
-      ? q
-          .split(/\s+/)
-          .map((keyword: string) => keyword.trim())
-          .filter(Boolean)
-      : [];
-    const maxResults = Math.min(parseInt(limit) || 100, 500); // Cap at 500
-    const offsetNum = Math.max(parseInt(offset) || 0, 0);
-
-    let markets: DatabaseMarket[] = [];
-
-    if (category) {
-      if (keywords.length === 0) {
-        // Category-only search
-        markets = await DatabaseService.getMarketsByCategory(category, maxResults, offsetNum);
-      } else {
-        // Search by keywords AND category
-        if (type === "all") {
-          markets = await DatabaseService.searchMarketsByKeywordsAndCategory(
-            keywords,
-            category,
-            maxResults,
-            offsetNum
-          );
-        } else {
-          markets = await DatabaseService.searchMarketsByAnyKeywordAndCategory(
-            keywords,
-            category,
-            maxResults,
-            offsetNum
-          );
-        }
-      }
-    } else {
-      // Search by keywords only
-      if (keywords.length === 0) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "No valid keywords provided",
-            message: "Please provide at least one keyword",
-          },
-          { status: 400 }
-        );
-      }
-      if (type === "slug") {
-        const market = await DatabaseService.getMarketBySlug(keywords[0]);
-        if (market) {
-          markets.push(market);
-        }
-      } else if (type === "all") {
-        markets = await DatabaseService.searchMarketsByKeywords(keywords, maxResults, offsetNum);
-      } else {
-        markets = await DatabaseService.searchMarketsByAnyKeyword(keywords, maxResults, offsetNum);
-      }
-    }
-    if (!markets) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "No markets found",
-          message: "No markets found",
-        },
-        { status: 404 }
-      );
-    }
     return NextResponse.json({
       success: true,
-      data: transformDatabaseMarkets(markets),
-      count: markets.length,
-      searchType: type,
-      keywords: keywords,
-      category: category || null,
-      pagination: {
-        limit: maxResults,
-        offset: offsetNum,
-        hasMore: markets.length === maxResults,
-      },
-      message: `Found ${markets.length} markets`,
+      data: { markets, count: markets.length, total },
     });
-  } catch (error) {
-    console.error("Error searching markets:", error);
+  } catch (err) {
+    console.error("Market search error:", err);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to search markets",
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
+      { success: false, error: err instanceof Error ? err.message : "search failed" },
       { status: 500 }
     );
   }

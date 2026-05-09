@@ -1,5 +1,29 @@
-import { ApiKeyCreds, ClobClient, Side, OrderType, AssetType } from "@polymarket/clob-client";
-import { ethers } from "ethers";
+import {
+  type ApiKeyCreds,
+  ClobClient,
+  Side,
+  OrderType,
+  AssetType,
+  SignatureTypeV2,
+  type OpenOrder,
+} from "@polymarket/clob-client-v2";
+import {
+  createPublicClient,
+  createWalletClient,
+  isAddress,
+  erc20Abi,
+  formatUnits,
+  type Address,
+  type Hex,
+  type PublicClient,
+  type WalletClient,
+} from "viem";
+import { resilientHttp } from "@/lib/rpc/resilientHttp";
+import { polygon } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
+import { createLogger } from "../logger";
+
+const log = createLogger("polymarket-order");
 
 export interface PolymarketOrderConfig {
   tokenID: string;
@@ -18,28 +42,35 @@ export interface PolymarketMarketOrderConfig {
   price?: number; // Optional price limit for market orders
 }
 
-// Global variables for singleton pattern
+// V2 collateral is pUSD (a 1:1 wrapper around USDC.e), not USDC.e directly.
+const PUSD_DEFAULT: Address = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB";
+const CTF_EXCHANGE_V2_DEFAULT: Address = "0xE111180000d2663C0091e4f400237545B87B996B";
+
+// V2 GTD orders require a safety buffer between `now` and the requested expiration,
+// otherwise the CLOB rejects them as "already expired".
+const GTD_SAFETY_BUFFER_SECONDS = 60;
+
+interface ReadyClients {
+  clobClient: ClobClient;
+  publicClient: PublicClient;
+  walletClient: WalletClient;
+  ownerAddress: Address;
+}
+
 let polymarketOrderServiceInstance: PolymarketOrderService | null = null;
 let initializationPromise: Promise<void> | null = null;
 
 export class PolymarketOrderService {
-  private clobClient: ClobClient | null = null;
-  private isInitialized = false;
-  private nonce = 0;
-  private provider: ethers.Provider | null = null;
-  private signer: ethers.Wallet | null = null;
-  private USDC = process.env.USDC_ADDRESS || "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
-  private POLYMARKET_CONTRACT =
-    process.env.POLYMARKET_CONTRACT_ADDRESS || "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
+  private ready: ReadyClients | null = null;
 
-  /**
-   * Private constructor to prevent direct instantiation
-   */
-  private constructor() {}
+  private readonly PUSD: Address = (process.env.PUSD_ADDRESS as Address) ?? PUSD_DEFAULT;
+  private readonly CTF_EXCHANGE: Address =
+    (process.env.CTF_EXCHANGE_V2_ADDRESS as Address) ?? CTF_EXCHANGE_V2_DEFAULT;
 
-  /**
-   * Get the singleton instance of PolymarketOrderService
-   */
+  private constructor() {
+    /* singleton — see getInstance() */
+  }
+
   public static getInstance(): PolymarketOrderService {
     if (!polymarketOrderServiceInstance) {
       polymarketOrderServiceInstance = new PolymarketOrderService();
@@ -47,382 +78,311 @@ export class PolymarketOrderService {
     return polymarketOrderServiceInstance;
   }
 
-  /**
-   * Initialize the Polymarket CLOB client (singleton pattern)
-   */
   public async initialize(): Promise<void> {
-    if (this.isInitialized) {
-      return;
-    }
-
-    if (initializationPromise) {
-      return initializationPromise;
-    }
+    if (this.ready) return;
+    if (initializationPromise) return initializationPromise;
 
     initializationPromise = this.performInitialization();
     try {
       await initializationPromise;
-      this.isInitialized = true;
     } catch (error) {
       initializationPromise = null;
       throw error;
     }
   }
 
-  /**
-   * Perform the actual initialization
-   */
   private async performInitialization(): Promise<void> {
-    try {
-      const host = process.env.CLOB_API_URL || "https://clob.polymarket.com";
-      const chainId = parseInt(process.env.CHAIN_ID || "137");
-      const rpcUrl = process.env.RPC_URL || "https://polygon-rpc.com";
+    const host = process.env.CLOB_API_URL ?? "https://clob.polymarket.com";
+    const chainId = Number(process.env.CHAIN_ID ?? polygon.id);
+    const rpcUrl = process.env.RPC_URL ?? "https://polygon-rpc.com";
 
-      this.provider = new ethers.JsonRpcProvider(rpcUrl);
-
-      // Create ethers v6 signer
-      // Ensure private key has 0x prefix for ethers v6
-      const pk = process.env.PK;
-      if (!pk) {
-        throw new Error("Private key (PK) is not set in environment variables");
-      }
-      const privateKey = pk.startsWith("0x") ? pk : `0x${pk}`;
-      const v6Signer = new ethers.Wallet(privateKey, this.provider);
-
-      // Add the ethers v5 method name for compatibility
-      (v6Signer as any)._signTypedData = v6Signer.signTypedData.bind(v6Signer);
-
-      this.nonce = parseInt(process.env.NONCE || "0");
-
-      // Create or derive API key
-      const creds: ApiKeyCreds = {
-        key: process.env.CLOB_API_KEY || "",
-        secret: process.env.CLOB_SECRET || "",
-        passphrase: process.env.CLOB_PASS_PHRASE || "",
-      };
-      if (!creds.key || !creds.secret || !creds.passphrase) {
-        throw new Error("CLOB API credentials are not fully set in environment variables");
-      }
-
-      // Initialize the client with the v6 signer that has the compatibility method
-      this.clobClient = new ClobClient(
-        host,
-        chainId,
-        v6Signer as any,
-        creds,
-        0,
-        await v6Signer.getAddress()
-      );
-
-      this.signer = v6Signer;
-
-      try {
-        await this.provider.getBlockNumber();
-      } catch (networkError) {
-        console.error("Failed to connect to Polygon network:", networkError);
-        throw new Error(`Failed to connect to Polygon network: ${networkError}`);
-      }
-    } catch (error) {
-      console.error("Failed to initialize Polymarket CLOB client:", error);
-      throw new Error(`Failed to initialize Polymarket client: ${error}`);
+    const pk = process.env.PK;
+    if (!pk) {
+      throw new Error("Private key (PK) is not set in environment variables");
     }
+    const privateKey: Hex = (pk.startsWith("0x") ? pk : `0x${pk}`) as Hex;
+
+    const account = privateKeyToAccount(privateKey);
+
+    const publicClient = createPublicClient({
+      chain: polygon,
+      transport: resilientHttp(rpcUrl),
+    });
+    const walletClient = createWalletClient({
+      account,
+      chain: polygon,
+      transport: resilientHttp(rpcUrl),
+    });
+
+    const creds: ApiKeyCreds = {
+      key: process.env.CLOB_API_KEY ?? "",
+      secret: process.env.CLOB_SECRET ?? "",
+      passphrase: process.env.CLOB_PASS_PHRASE ?? "",
+    };
+    if (!creds.key || !creds.secret || !creds.passphrase) {
+      throw new Error("CLOB API credentials are not fully set in environment variables");
+    }
+
+    const clobClient = new ClobClient({
+      host,
+      chain: chainId,
+      signer: walletClient,
+      creds,
+      signatureType: SignatureTypeV2.EOA,
+    });
+
+    try {
+      await publicClient.getBlockNumber();
+    } catch (networkError) {
+      log.error("failed to connect to Polygon network:", networkError);
+      throw new Error(`Failed to connect to Polygon network: ${networkError}`);
+    }
+
+    this.ready = {
+      clobClient,
+      publicClient,
+      walletClient,
+      ownerAddress: account.address,
+    };
   }
 
   /**
-   * Check if the service is initialized
+   * Returns the initialized clients, throwing if `initialize()` hasn't completed.
+   * Callers should destructure what they need rather than reaching through `this`.
    */
-  private checkInitialization(): void {
-    if (!this.isInitialized || !this.clobClient) {
+  private getReady(): ReadyClients {
+    if (!this.ready) {
       throw new Error("PolymarketOrderService not initialized. Call initialize() first.");
     }
+    return this.ready;
   }
 
   /**
-   * Check if the token allowance is sufficient for the required amount
-   * @param token - Token contract address
-   * @param requiredAmount - Required amount in wei (as BigInt)
-   * @param spender - Spender address (usually the Polymarket contract)
-   * @returns Promise<boolean> - true if allowance is sufficient
+   * Check if the token allowance is sufficient for the required amount.
+   * Reads on-chain via viem; spender is typically the V2 CTF Exchange contract.
    */
   private async checkAllowance(
-    token: string,
+    token: Address,
     requiredAmount: bigint,
-    spender: string
+    spender: Address
   ): Promise<boolean> {
-    this.checkInitialization();
-
-    if (!this.provider || !this.signer) {
-      throw new Error("Provider or signer not initialized");
+    const { publicClient, ownerAddress } = this.getReady();
+    if (!isAddress(token)) {
+      throw new Error(`Invalid token address: ${token}`);
     }
 
-    try {
-      // ERC20 ABI for allowance function
-      const erc20Abi = [
-        "function allowance(address owner, address spender) view returns (uint256)",
-        "function approve(address spender, uint256 amount) returns (bool)",
-        "function balanceOf(address account) view returns (uint256)",
-        "function decimals() view returns (uint8)",
-      ];
+    const currentAllowance = await publicClient.readContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [ownerAddress, spender],
+    });
 
-      // Create contract instance
-      const tokenContract = new ethers.Contract(token, erc20Abi, this.provider);
-
-      // Get current allowance
-      const ownerAddress = await this.signer.getAddress();
-      const currentAllowance = await tokenContract.allowance(
-        ownerAddress, // owner
-        spender // spender (Polymarket contract)
-      );
-
-      const isSufficient = currentAllowance >= requiredAmount;
-      return isSufficient;
-    } catch (error) {
-      console.error("Failed to check allowance:", error);
-      throw new Error(`Failed to check token allowance: ${error}`);
-    }
+    return currentAllowance >= requiredAmount;
   }
 
-  private async getTokenDecimals(token: string): Promise<number> {
-    this.checkInitialization();
-    if (!this.provider) {
-      throw new Error("Provider not initialized");
+  private async getTokenDecimals(token: Address): Promise<number> {
+    const { publicClient } = this.getReady();
+    if (!isAddress(token)) {
+      throw new Error(`Invalid token address: ${token}`);
     }
 
-    try {
-      if (!ethers.isAddress(token)) {
-        throw new Error(`Invalid token address format: ${token}`);
-      }
-
-      const erc20Abi = ["function decimals() view returns (uint8)"];
-
-      const tokenContract = new ethers.Contract(token, erc20Abi, this.provider);
-      const decimalsResult = await tokenContract.decimals();
-      const decimals: number = Number(decimalsResult);
-
-      return decimals;
-    } catch (error: any) {
-      console.error("Failed to get token decimals:", error);
-      throw new Error(`Failed to get token decimals for token ${token}: ${error}`);
-    }
+    return publicClient.readContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: "decimals",
+    });
   }
 
   async cancelAllOrders() {
-    this.checkInitialization();
-    try {
-      const result = await this.clobClient!.cancelAll();
-      return result;
-    } catch (error) {
-      console.error("Failed to cancel all orders:", error);
-      throw new Error("Failed to cancel all orders");
-    }
+    const { clobClient } = this.getReady();
+    return clobClient.cancelAll();
   }
 
   async cancelOrder(orderId: string) {
-    this.checkInitialization();
-    try {
-      const result = await this.clobClient!.cancelOrder({
-        orderID: orderId,
-      });
-      return result;
-    } catch (error) {
-      console.error("Failed to cancel order:", error);
-      throw new Error(`Failed to cancel order ${orderId}: ${error}`);
-    }
+    const { clobClient } = this.getReady();
+    return clobClient.cancelOrder({ orderID: orderId });
   }
 
   async getOrder(id: string) {
-    this.checkInitialization();
-    try {
-      const orders = await this.clobClient!.getOrder(id);
-      return orders;
-    } catch (error) {
-      console.error("Failed to fetch orders:", error);
-      throw new Error("Failed to fetch orders");
-    }
+    const { clobClient } = this.getReady();
+    return clobClient.getOrder(id);
   }
 
   /**
-   * Get all open orders for the authenticated user
-   * @param params - Optional filter parameters (market, asset_id, etc.)
+   * Get all open orders for the authenticated user.
    */
-  async getOpenOrders(params?: any) {
-    this.checkInitialization();
-    try {
-      const orders = await this.clobClient!.getOpenOrders(params || {});
-      return orders;
-    } catch (error) {
-      console.error("Failed to fetch open orders:", error);
-      throw new Error("Failed to fetch open orders");
-    }
+  async getOpenOrders(params: { market?: string; asset_id?: string } = {}): Promise<OpenOrder[]> {
+    const { clobClient } = this.getReady();
+    return clobClient.getOpenOrders(params);
   }
 
   /**
-   * Get all active BUY orders
-   * @param marketId - Optional market ID to filter
+   * Get all active BUY orders, optionally filtered by market.
    */
-  async getActiveBuyOrders(marketId?: string) {
-    this.checkInitialization();
-    try {
-      const params = marketId ? { market: marketId } : {};
-      const orders = await this.getOpenOrders(params);
-
-      // Filter for BUY orders only
-      const buyOrders = orders.filter((order: any) => order.side === "BUY");
-      return buyOrders;
-    } catch (error) {
-      console.error("Failed to fetch active BUY orders:", error);
-      throw new Error("Failed to fetch active BUY orders");
-    }
+  async getActiveBuyOrders(marketId?: string): Promise<OpenOrder[]> {
+    const orders = await this.getOpenOrders(marketId ? { market: marketId } : {});
+    return orders.filter((order) => order.side === "BUY");
   }
 
   /**
-   * Create a Good Till Cancelled (GTC) order
+   * Create a Good Till Cancelled (GTC) order.
    */
   async postGTCOrder(config: PolymarketOrderConfig) {
-    this.checkInitialization();
+    const { clobClient } = this.getReady();
+
+    if (!(config.price > 0)) {
+      throw new Error("Price must be greater than 0");
+    }
+
+    // For BUY orders: ensure order notional (price * size) is at least $1.
+    // For SELL orders: use the exact size provided (no minimum).
+    let sizeToUse = config.size;
+    if (config.side === "BUY") {
+      const minSizeForOneDollar = Math.ceil((1 / config.price) * 1_000_000) / 1_000_000;
+      sizeToUse = config.size < minSizeForOneDollar ? minSizeForOneDollar : config.size;
+
+      const decimals = await this.getTokenDecimals(this.PUSD);
+      const priceBigInt = BigInt(Math.floor(config.price * 1_000_000));
+      const sizeBigInt = BigInt(Math.floor(sizeToUse * 1_000_000));
+      const decimalsMultiplier = BigInt(10) ** BigInt(decimals);
+      const requiredAmount =
+        (priceBigInt * sizeBigInt * decimalsMultiplier) / (1_000_000n * 1_000_000n);
+
+      const ok = await this.checkAllowance(this.PUSD, requiredAmount, this.CTF_EXCHANGE);
+      if (!ok) {
+        throw new Error("Insufficient allowance for pUSD");
+      }
+    }
 
     try {
-      if (!(config.price > 0)) {
-        throw new Error("Price must be greater than 0");
-      }
-
-      // For BUY orders: ensure order notional (price * size) is at least $1
-      // For SELL orders: use the exact size provided (no minimum)
-      let sizeToUse = config.size;
-      if (config.side === "BUY") {
-        const minSizeForOneDollar = Math.ceil((1 / config.price) * 1_000_000) / 1_000_000; // 6-decimal precision
-        sizeToUse = config.size < minSizeForOneDollar ? minSizeForOneDollar : config.size;
-      }
-
-      // Only check USDC allowance for BUY orders (SELL orders don't need USDC)
-      if (config.side === "BUY") {
-        const decimals = await this.getTokenDecimals(this.USDC);
-        // Convert all values to BigInt for arithmetic operations in ethers v6
-        const priceBigInt = BigInt(Math.floor(config.price * 1000000));
-        const sizeBigInt = BigInt(Math.floor(sizeToUse * 1000000));
-        const decimalsMultiplier = BigInt(10) ** BigInt(decimals);
-        // Calculate required amount: (price * size) * (10 ** decimals)
-        // We need to be careful with the precision here
-        const requiredAmount =
-          (priceBigInt * sizeBigInt * decimalsMultiplier) / (1000000n * 1000000n);
-
-        const ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
-        if (!ok) {
-          throw new Error("Insufficient allowance for USDC");
-        }
-      }
-
-      try {
-        const response = await this.clobClient!.createAndPostOrder(
-          {
-            tokenID: config.tokenID,
-            price: config.price,
-            side: config.side === "BUY" ? Side.BUY : Side.SELL,
-            size: sizeToUse,
-            feeRateBps: config.feeRateBps || 0,
-          },
-          { tickSize: "0.01" },
-          OrderType.GTC
-        );
-
-        return { response };
-      } catch (error: any) {
-        console.error("Failed to create GTC order:", error);
-        // Provide more detailed error information
-        const errorMessage = error.message || error.toString();
-        const errorDetails =
-          error.response?.data || error.response || error.stack || "No additional details";
-        throw new Error(
-          `Failed to create GTC order: ${errorMessage}. Details: ${JSON.stringify(errorDetails)}`
-        );
-      }
+      const response = await clobClient.createAndPostOrder(
+        {
+          tokenID: config.tokenID,
+          price: config.price,
+          side: config.side === "BUY" ? Side.BUY : Side.SELL,
+          size: sizeToUse,
+        },
+        { tickSize: "0.01" },
+        OrderType.GTC
+      );
+      log.info(`GTC response: ${JSON.stringify(response)}`);
+      assertCLOBOrderAccepted(response, "GTC");
+      return { response };
     } catch (error) {
-      console.error("Error in postGTCOrder:", error);
-      throw error;
+      const { message, details } = describeOrderError(error);
+      log.error("failed to create GTC order:", error);
+      throw new Error(`Failed to create GTC order: ${message}. Details: ${details}`);
     }
   }
 
   /**
-   * Create a Good Till Date (GTD) order
+   * Create a Good Till Date (GTD) order.
+   *
+   * V2 requires a 60-second safety buffer between `now` and the order's `expiration`,
+   * otherwise the CLOB rejects the order as already-expired (memory `3036`). We bump
+   * the caller-supplied expiration up to that floor when needed, never down.
    */
   async postGTDOrder(config: PolymarketOrderConfig & { expiration: number }) {
-    this.checkInitialization();
+    const { clobClient } = this.getReady();
+
+    if (!(config.price > 0)) {
+      throw new Error("Price must be greater than 0");
+    }
+
+    const minSizeForOneDollar = Math.ceil((1 / config.price) * 1_000_000) / 1_000_000;
+    const sizeToUse = config.size < minSizeForOneDollar ? minSizeForOneDollar : config.size;
+
+    const decimals = await this.getTokenDecimals(this.PUSD);
+    const priceBigInt = BigInt(Math.floor(config.price * 1_000_000));
+    const sizeBigInt = BigInt(Math.floor(sizeToUse * 1_000_000));
+    const decimalsMultiplier = BigInt(10) ** BigInt(decimals);
+    const requiredAmount =
+      (priceBigInt * sizeBigInt * decimalsMultiplier) / (1_000_000n * 1_000_000n);
+
+    // Refresh CLOB's internal balance/allowance cache against on-chain state.
+    await clobClient.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+
+    const ok = await this.checkAllowance(this.PUSD, requiredAmount, this.CTF_EXCHANGE);
+    if (!ok) {
+      throw new Error(
+        `Insufficient on-chain allowance for pUSD. Please approve ${formatUnits(requiredAmount, decimals)} pUSD for ${this.CTF_EXCHANGE}`
+      );
+    }
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const minExpiration = nowSeconds + GTD_SAFETY_BUFFER_SECONDS;
+    const expiration = Math.max(config.expiration, minExpiration);
 
     try {
-      if (!(config.price > 0)) {
-        throw new Error("Price must be greater than 0");
-      }
-
-      // Ensure order notional (price * size) is at least $1
-      const minSizeForOneDollar = Math.ceil((1 / config.price) * 1_000_000) / 1_000_000; // 6-decimal precision
-      const sizeToUse = config.size < minSizeForOneDollar ? minSizeForOneDollar : config.size;
-
-      const decimals = await this.getTokenDecimals(this.USDC);
-      // Convert all values to BigInt for arithmetic operations in ethers v6
-      const priceBigInt = BigInt(Math.floor(config.price * 1000000));
-      const sizeBigInt = BigInt(Math.floor(sizeToUse * 1000000));
-      const decimalsMultiplier = BigInt(10) ** BigInt(decimals);
-      // Calculate required amount: (price * size) * (10 ** decimals)
-      const requiredAmount =
-        (priceBigInt * sizeBigInt * decimalsMultiplier) / (1000000n * 1000000n);
-
-      // TODO what does this do?
-      await this.clobClient?.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
-
-      const ok = await this.checkAllowance(this.USDC, requiredAmount, this.POLYMARKET_CONTRACT);
-      if (!ok) {
-        throw new Error(
-          `Insufficient on-chain allowance for USDC. Please approve ${ethers.formatUnits(requiredAmount, decimals)} USDC for ${this.POLYMARKET_CONTRACT}`
-        );
-      }
-
-      try {
-        const response = await this.clobClient!.createAndPostOrder(
-          {
-            tokenID: config.tokenID,
-            price: config.price,
-            side: config.side === "BUY" ? Side.BUY : Side.SELL,
-            size: sizeToUse,
-            feeRateBps: config.feeRateBps || 0,
-            expiration: config.expiration,
-          },
-          { tickSize: "0.01" },
-          OrderType.GTD
-        );
-
-        return { response };
-      } catch (error: any) {
-        console.error("Failed to create GTD order:", error);
-        // Provide more detailed error information
-        const errorMessage = error.message || error.toString();
-        const errorDetails =
-          error.response?.data || error.response || error.stack || "No additional details";
-        throw new Error(
-          `Failed to create GTD order: ${errorMessage}. Details: ${JSON.stringify(errorDetails)}`
-        );
-      }
+      const response = await clobClient.createAndPostOrder(
+        {
+          tokenID: config.tokenID,
+          price: config.price,
+          side: config.side === "BUY" ? Side.BUY : Side.SELL,
+          size: sizeToUse,
+          expiration,
+        },
+        { tickSize: "0.01" },
+        OrderType.GTD
+      );
+      log.info(`GTD response: ${JSON.stringify(response)}`);
+      assertCLOBOrderAccepted(response, "GTD");
+      return { response };
     } catch (error) {
-      console.error("Error in postGTDOrder:", error);
-      throw error;
+      const { message, details } = describeOrderError(error);
+      log.error("failed to create GTD order:", error);
+      throw new Error(`Failed to create GTD order: ${message}. Details: ${details}`);
     }
   }
 
-  /**
-   * Get the current client instance
-   */
   getClient(): ClobClient | null {
-    return this.clobClient;
+    return this.ready?.clobClient ?? null;
   }
 
-  /**
-   * Check if the service is ready
-   */
   isReady(): boolean {
-    return this.isInitialized && this.clobClient !== null;
+    return this.ready !== null;
   }
 }
 
-// Export a singleton instance getter
-export const getPolymarketOrderService = (): PolymarketOrderService => {
-  return PolymarketOrderService.getInstance();
-};
+export const getPolymarketOrderService = (): PolymarketOrderService =>
+  PolymarketOrderService.getInstance();
+
+/**
+ * V2 CLOB returns OrderResponse soft-failures ({ success: false, errorMsg, orderID: "" })
+ * without throwing. Surface the real reason instead of letting an empty orderID propagate
+ * as a generic "no order ID" error.
+ */
+function assertCLOBOrderAccepted(response: unknown, kind: "GTC" | "GTD"): void {
+  if (!response || typeof response !== "object") {
+    throw new Error(`${kind} order: empty response from CLOB`);
+  }
+  const r = response as { success?: unknown; errorMsg?: unknown; orderID?: unknown };
+  if (r.success === false) {
+    const reason =
+      typeof r.errorMsg === "string" && r.errorMsg.length > 0 ? r.errorMsg : "rejected";
+    throw new Error(`${kind} order rejected by CLOB: ${reason}`);
+  }
+  if (typeof r.orderID !== "string" || r.orderID.length === 0) {
+    throw new Error(`${kind} order: CLOB returned no orderID (raw: ${JSON.stringify(response)})`);
+  }
+}
+
+/**
+ * Extract a human-readable message + structured details from a clob-client error.
+ * Errors thrown by the SDK may be axios-shaped (response.data) or plain Error.
+ */
+function describeOrderError(error: unknown): { message: string; details: string } {
+  if (error instanceof Error) {
+    const maybeAxios = error as Error & {
+      response?: { data?: unknown };
+      stack?: string;
+    };
+    const detailsObj = maybeAxios.response?.data ?? maybeAxios.stack ?? "No additional details";
+    return {
+      message: error.message,
+      details: typeof detailsObj === "string" ? detailsObj : JSON.stringify(detailsObj),
+    };
+  }
+  return { message: String(error), details: "No additional details" };
+}

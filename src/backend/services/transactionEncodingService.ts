@@ -1,5 +1,12 @@
-import { ethers } from "ethers";
-import { PolyswapOrderData, ConditionalOrderParams } from "../interfaces/PolyswapOrder";
+import {
+  encodeAbiParameters,
+  encodeFunctionData,
+  getAddress,
+  keccak256,
+  type Address,
+  type Hex,
+} from "viem";
+import { type PolyswapOrderData, type ConditionalOrderParams } from "../interfaces/PolyswapOrder";
 import composableCowAbi from "../../abi/composableCoW.json";
 
 export interface TransactionData {
@@ -9,102 +16,139 @@ export interface TransactionData {
   chainId: number;
 }
 
+// Canonical Polygon ComposableCoW deployment address
+const COMPOSABLE_COW_ADDRESS: Address = getAddress(
+  process.env.COMPOSABLE_COW ?? "0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74"
+);
+
+const VALUE_FACTORY_ADDRESS: Address = getAddress(
+  process.env.VALUE_FACTORY ?? "0x52eD56Da04309Aca4c3FECC595298d80C2f16BAc"
+);
+
+// Minimal Safe FallbackManager ABI — only the function the dApp needs to encode.
+// `setFallbackHandler` carries the `authorized` modifier on Safe so it can only
+// be invoked via a self-call through `execTransaction`. The dApp encodes the
+// inner call; Safe Wallet wraps it into the multisig tx.
+const SAFE_SET_FALLBACK_HANDLER_ABI = [
+  {
+    type: "function",
+    name: "setFallbackHandler",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "handler", type: "address" }],
+    outputs: [],
+  },
+] as const;
+
+const CHAIN_ID = parseInt(process.env.CHAIN_ID ?? "137");
+
+function getPolyswapHandlerAddress(): Address {
+  const addr = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER;
+  if (!addr) {
+    throw new Error(
+      "NEXT_PUBLIC_POLYSWAP_HANDLER env var is required but not set. " +
+        "An empty handler address would produce silently broken calldata."
+    );
+  }
+  return getAddress(addr);
+}
+
+// Normalise a hex string to a valid bytes32 Hex value.
+// On-chain the polymarketOrderHash and appData are bytes32 slots, so they
+// must be exactly 32 bytes (66 hex chars including the 0x prefix).
+function formatBytes32(value: string): Hex {
+  if (!value || value === "") {
+    return "0x0000000000000000000000000000000000000000000000000000000000000000";
+  }
+  const stripped = value.startsWith("0x") ? value.slice(2) : value;
+  if (stripped.length > 64) {
+    throw new Error(`bytes32 value too long: ${value.length} chars (max 66 with 0x prefix)`);
+  }
+  return `0x${stripped.padStart(64, "0")}` as Hex;
+}
+
+function toBigInt(value: string, field: string): bigint {
+  try {
+    return BigInt(value);
+  } catch {
+    throw new Error(`PolyswapOrderData.${field} is not a valid integer string: ${value}`);
+  }
+}
+
 export class TransactionEncodingService {
-  private static readonly COMPOSABLE_COW_ADDRESS = process.env.COMPOSABLE_COW || "";
-  private static readonly POLYSWAP_HANDLER_ADDRESS = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER || "";
-  private static readonly VALUE_FACTORY_ADDRESS =
-    process.env.VALUE_FACTORY || "0x52eD56Da04309Aca4c3FECC595298d80C2f16BAc";
-  private static readonly CHAIN_ID = parseInt(process.env.CHAIN_ID || "137");
-
   static encodePolyswapOrderData(orderData: PolyswapOrderData): string {
-    // Validate and sanitize input data
-    const sellToken = orderData.sellToken || "0x0000000000000000000000000000000000000000";
-    const buyToken = orderData.buyToken || "0x0000000000000000000000000000000000000000";
-    const receiver = orderData.receiver || "0x0000000000000000000000000000000000000000";
-    const sellAmount = orderData.sellAmount || "0";
-    const minBuyAmount = orderData.minBuyAmount || "0";
-    const t0 = orderData.t0 || "0";
-    const t = orderData.t || "0";
-    const polymarketOrderHash =
-      orderData.polymarketOrderHash ||
-      "0x0000000000000000000000000000000000000000000000000000000000000000";
-    const appData =
-      orderData.appData || "0x0000000000000000000000000000000000000000000000000000000000000000";
-
-    // Validate that all required fields are present
     if (!orderData.sellToken || !orderData.buyToken || !orderData.polymarketOrderHash) {
       throw new Error(
         "Missing required order data fields: sellToken, buyToken, or polymarketOrderHash"
       );
     }
 
-    // Ensure bytes32 fields are properly formatted
-    const formatBytes32 = (value: string): string => {
-      if (!value || value === "")
-        return "0x0000000000000000000000000000000000000000000000000000000000000000";
-      if (!value.startsWith("0x")) return "0x" + value.padStart(64, "0");
-      if (value.length !== 66) return value.padEnd(66, "0");
-      return value;
-    };
+    const sellToken = orderData.sellToken as Address;
+    const buyToken = orderData.buyToken as Address;
+    const receiver = (orderData.receiver ||
+      "0x0000000000000000000000000000000000000000") as Address;
 
-    const types = [
-      "address", // sellToken
-      "address", // buyToken
-      "address", // receiver
-      "uint256", // sellAmount
-      "uint256", // minBuyAmount
-      "uint256", // t0
-      "uint256", // t
-      "bytes32", // polymarketOrderHash
-      "bytes32", // appData
-    ];
-
-    const values = [
-      sellToken,
-      buyToken,
-      receiver,
-      sellAmount,
-      minBuyAmount,
-      t0,
-      t,
-      formatBytes32(polymarketOrderHash),
-      formatBytes32(appData),
-    ];
-
-    console.log("Encoding PolyswapOrder with values:", values);
-
-    return ethers.AbiCoder.defaultAbiCoder().encode(types, values);
+    // Field order must exactly match the on-chain PolyswapOrderData struct layout.
+    return encodeAbiParameters(
+      [
+        { type: "address" }, // sellToken
+        { type: "address" }, // buyToken
+        { type: "address" }, // receiver
+        { type: "uint256" }, // sellAmount
+        { type: "uint256" }, // minBuyAmount
+        { type: "uint256" }, // t0
+        { type: "uint256" }, // t
+        { type: "bytes32" }, // polymarketOrderHash
+        { type: "bytes32" }, // appData
+      ],
+      [
+        sellToken,
+        buyToken,
+        receiver,
+        toBigInt(orderData.sellAmount || "0", "sellAmount"),
+        toBigInt(orderData.minBuyAmount || "0", "minBuyAmount"),
+        toBigInt(orderData.t0 || "0", "t0"),
+        toBigInt(orderData.t || "0", "t"),
+        formatBytes32(orderData.polymarketOrderHash),
+        formatBytes32(
+          orderData.appData || "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ),
+      ]
+    );
   }
 
   static createConditionalOrderParams(
     orderData: PolyswapOrderData,
     salt?: string
   ): ConditionalOrderParams {
-    // Generate salt if not provided
     const orderSalt =
-      salt ||
-      ethers.keccak256(
-        ethers.AbiCoder.defaultAbiCoder().encode(["string", "uint256"], ["Polyswap", Date.now()])
+      salt ??
+      keccak256(
+        encodeAbiParameters(
+          [{ type: "string" }, { type: "uint256" }],
+          ["Polyswap", BigInt(Date.now())]
+        )
       );
 
     const staticInput = this.encodePolyswapOrderData(orderData);
 
     return {
-      handler: this.POLYSWAP_HANDLER_ADDRESS,
+      handler: getPolyswapHandlerAddress(),
       salt: orderSalt,
-      staticInput: staticInput,
+      staticInput,
     };
   }
 
   static encodeCreateWithContextCallData(
     params: ConditionalOrderParams,
-    valueFactory: string = this.VALUE_FACTORY_ADDRESS,
-    data: string = "0x",
+    valueFactory: Address = VALUE_FACTORY_ADDRESS,
+    data: Hex = "0x",
     dispatch: boolean = true
   ): string {
-    const iface = new ethers.Interface(composableCowAbi);
-
-    return iface.encodeFunctionData("createWithContext", [params, valueFactory, data, dispatch]);
+    return encodeFunctionData({
+      abi: composableCowAbi,
+      functionName: "createWithContext",
+      args: [params, valueFactory, data, dispatch],
+    });
   }
 
   static createTransaction(orderData: PolyswapOrderData, salt?: string): TransactionData {
@@ -112,27 +156,42 @@ export class TransactionEncodingService {
     const callData = this.encodeCreateWithContextCallData(params);
 
     return {
-      to: this.COMPOSABLE_COW_ADDRESS,
+      to: COMPOSABLE_COW_ADDRESS,
       data: callData,
       value: "0",
-      chainId: this.CHAIN_ID,
+      chainId: CHAIN_ID,
     };
   }
 
+  static encodeSetFallbackHandlerCalldata(handler: Address): Hex {
+    return encodeFunctionData({
+      abi: SAFE_SET_FALLBACK_HANDLER_ABI,
+      functionName: "setFallbackHandler",
+      args: [getAddress(handler)],
+    });
+  }
+
   static calculateOrderHash(params: ConditionalOrderParams): string {
-    const iface = new ethers.Interface(composableCowAbi);
-
-    // Use the hash function from the ABI to calculate the order hash
-    // This matches the composableCow.hash(params) call from the Solidity example
-    const types = ["address", "bytes32", "bytes"];
-    const values = [params.handler, params.salt, params.staticInput];
-
-    // Encode the params struct
-    const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
-      ["tuple(address,bytes32,bytes)"],
-      [[params.handler, params.salt, params.staticInput]]
+    const encoded = encodeAbiParameters(
+      [
+        {
+          type: "tuple",
+          components: [
+            { name: "handler", type: "address" },
+            { name: "salt", type: "bytes32" },
+            { name: "staticInput", type: "bytes" },
+          ],
+        },
+      ],
+      [
+        {
+          handler: params.handler as Address,
+          salt: params.salt as Hex,
+          staticInput: params.staticInput as Hex,
+        },
+      ]
     );
 
-    return ethers.keccak256(encoded);
+    return keccak256(encoded);
   }
 }

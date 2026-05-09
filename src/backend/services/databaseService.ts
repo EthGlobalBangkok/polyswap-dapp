@@ -1,774 +1,563 @@
-import { query } from "../db/database";
-import { Market } from "../interfaces/Market";
-import { DatabaseMarket } from "../interfaces/Database";
 import {
-  PolyswapOrderRecord,
-  DatabasePolyswapOrder,
-  SoldPosition,
-  SoldPositionInput,
+  Prisma,
+  type Market as PrismaMarket,
+  type PolyswapOrder as PrismaPolyswapOrder,
+  type SoldPosition as PrismaSoldPosition,
+} from "@prisma/client";
+import { prisma } from "../db/prisma";
+import { createLogger } from "../logger";
+
+const log = createLogger("db-service");
+import { type Market } from "../interfaces/Market";
+import { type DatabaseMarket } from "../interfaces/Database";
+import {
+  type PolyswapOrderData,
+  type PolyswapOrderRecord,
+  type DatabasePolyswapOrder,
+  type SoldPosition,
+  type SoldPositionInput,
 } from "../interfaces/PolyswapOrder";
 
+export interface SearchMarketsOptions {
+  q?: string;
+  category?: string;
+  categories?: string[];
+  volumeMin?: number;
+  liquidityMin?: number;
+  sort?: "volume" | "liquidity" | "end_date" | "interest";
+  limit?: number;
+  offset?: number;
+}
+
+const INTEREST_MIN_VOLUME = 10_000;
+
+const INTEREST_CATEGORY_BOOSTS: Record<string, number> = {
+  Economy: 1.1,
+  Crypto: 1.05,
+};
+
+const INTEREST_NOISE_REGEX = [
+  "how many tweets",
+  "number of tweets",
+  "tweet count",
+  "tweets in \\d{4}",
+  "tweets between",
+  "tweets per",
+  "posts? \\d+(-\\d+)? tweets",
+  "posts? \\d+\\+? tweets",
+].join("|");
+
+type OrderStatus = "draft" | "live" | "filled" | "canceled" | "errored";
+
+type CowOrderStatus = NonNullable<DatabasePolyswapOrder["cow_order_status"]>;
+
+function buildPrefixTsQuery(input: string): string | null {
+  const terms = input
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 0);
+  if (terms.length === 0) return null;
+  return terms.map((t) => `${t}:*`).join(" & ");
+}
+
+function decimalToNumber(value: Prisma.Decimal | number | null | undefined): number {
+  if (value === null || value === undefined) return 0;
+  return typeof value === "number" ? value : value.toNumber();
+}
+
+function toMarketRow(m: PrismaMarket): DatabaseMarket {
+  return {
+    id: m.id,
+    slug: m.slug,
+    event_slug: m.eventSlug,
+    question: m.question,
+    description: m.description,
+    category: m.category,
+    tags: m.tags,
+    outcomes: Array.isArray(m.outcomes) ? (m.outcomes as string[]) : [],
+    volume: decimalToNumber(m.volume),
+    liquidity: decimalToNumber(m.liquidity),
+    end_date: m.endDate,
+    clob_token_ids: m.clobTokenIds,
+    active: m.active ?? true,
+    updated_at: m.updatedAt ?? undefined,
+  };
+}
+
+function toPolyswapOrderRow(o: PrismaPolyswapOrder): DatabasePolyswapOrder {
+  return {
+    id: o.id,
+    order_hash: o.orderHash,
+    owner: o.owner,
+    handler: o.handler ?? "",
+    sell_token: o.sellToken,
+    buy_token: o.buyToken,
+    sell_amount: o.sellAmount.toString(),
+    min_buy_amount: o.minBuyAmount.toString(),
+    start_time: o.startTime,
+    end_time: o.endTime,
+    polymarket_order_hash: o.polymarketOrderHash ?? "",
+    app_data: o.appData ?? "",
+    block_number: Number(o.blockNumber ?? 0),
+    transaction_hash: o.transactionHash ?? "",
+    log_index: o.logIndex ?? 0,
+    market_id: o.marketId,
+    outcome_selected: o.outcomeSelected,
+    bet_percentage: o.betPercentage === null ? null : decimalToNumber(o.betPercentage),
+    status: o.status as OrderStatus,
+    order_uid: o.orderUid,
+    salt: o.salt,
+    last_error_name: o.lastErrorName,
+    last_error_reason: o.lastErrorReason,
+    last_error_retry_at: o.lastErrorRetryAt === null ? null : o.lastErrorRetryAt.toString(),
+    last_checked_at: o.lastCheckedAt,
+    cow_order_status: (o.cowOrderStatus as CowOrderStatus | null) ?? null,
+    filled_at: o.filledAt ?? null,
+    gate_opened_at: o.gateOpenedAt ?? null,
+    actual_sell_amount: o.actualSellAmount === null ? null : o.actualSellAmount.toString(),
+    actual_buy_amount: o.actualBuyAmount === null ? null : o.actualBuyAmount.toString(),
+    created_at: o.createdAt,
+    updated_at: o.updatedAt,
+  };
+}
+
+function toSoldPositionRow(s: PrismaSoldPosition): SoldPosition {
+  return {
+    id: s.id,
+    asset_id: s.assetId,
+    condition_id: s.conditionId,
+    size: decimalToNumber(s.size),
+    sell_price: decimalToNumber(s.sellPrice),
+    current_price: decimalToNumber(s.currentPrice),
+    order_id: s.orderId,
+    market_title: s.marketTitle ?? "",
+    outcome: s.outcome ?? "",
+    sold_at: s.soldAt,
+  };
+}
+
 export class DatabaseService {
-  /**
-   * Escape special characters for SQL LIKE patterns
-   * Prevents SQL injection via LIKE wildcards (% and _)
-   */
-  private static escapeLikePattern(input: string): string {
-    return input
-      .replace(/\\/g, "\\\\") // Escape backslashes first
-      .replace(/%/g, "\\%") // Escape percent
-      .replace(/_/g, "\\_"); // Escape underscore
+  static async upsertMarket(market: Market): Promise<void> {
+    const data = {
+      slug: market.slug,
+      eventSlug: market.eventSlug ?? null,
+      question: market.question,
+      description: market.description ?? null,
+      category: market.category ?? null,
+      tags: market.tags,
+      outcomes: market.outcomes as Prisma.InputJsonValue,
+      volume: new Prisma.Decimal(market.volume ?? 0),
+      liquidity: new Prisma.Decimal(market.liquidity ?? 0),
+      endDate: market.endDate ?? null,
+      clobTokenIds: market.clobTokenIds,
+      active: market.active,
+      updatedAt: new Date(),
+    } satisfies Prisma.MarketUpdateInput;
+
+    await prisma.market.upsert({
+      where: { id: market.id },
+      create: { id: market.id, ...data },
+      update: data,
+    });
   }
 
   /**
-   * Extract category from market question
+   * Recomputes `markets.search_vec` (multi-field weighted tsvector) for rows
+   * touched in the last hour or where the column is NULL. Raw SQL is required
+   * because `searchVec Unsupported("tsvector")` is excluded from Prisma's
+   * typed API, and Nile blocks both GENERATED columns and CREATE TRIGGER —
+   * so the index has to be refreshed in application code after writes.
    */
-  private static extractCategory(question: string): string {
-    const lowerQuestion = question.toLowerCase();
-
-    if (
-      lowerQuestion.includes("bitcoin") ||
-      lowerQuestion.includes("ethereum") ||
-      lowerQuestion.includes("crypto") ||
-      lowerQuestion.includes("eth") ||
-      lowerQuestion.includes("btc")
-    ) {
-      return "crypto";
-    } else if (
-      lowerQuestion.includes("trump") ||
-      lowerQuestion.includes("biden") ||
-      lowerQuestion.includes("election") ||
-      lowerQuestion.includes("president") ||
-      lowerQuestion.includes("politics")
-    ) {
-      return "politics";
-    } else if (
-      lowerQuestion.includes("fed") ||
-      lowerQuestion.includes("interest") ||
-      lowerQuestion.includes("recession") ||
-      lowerQuestion.includes("economy") ||
-      lowerQuestion.includes("inflation")
-    ) {
-      return "economics";
-    } else if (
-      lowerQuestion.includes("champion") ||
-      lowerQuestion.includes("series") ||
-      lowerQuestion.includes("sport") ||
-      lowerQuestion.includes("f1") ||
-      lowerQuestion.includes("football") ||
-      lowerQuestion.includes("basketball")
-    ) {
-      return "sports";
-    } else if (
-      lowerQuestion.includes("movie") ||
-      lowerQuestion.includes("film") ||
-      lowerQuestion.includes("entertainment")
-    ) {
-      return "entertainment";
-    } else if (
-      lowerQuestion.includes("china") ||
-      lowerQuestion.includes("russia") ||
-      lowerQuestion.includes("ukraine") ||
-      lowerQuestion.includes("iran") ||
-      lowerQuestion.includes("war")
-    ) {
-      return "world";
-    } else if (
-      lowerQuestion.includes("ai") ||
-      lowerQuestion.includes("artificial intelligence") ||
-      lowerQuestion.includes("technology")
-    ) {
-      return "technology";
-    } else {
-      return "other";
-    }
-  }
-
-  /**
-   * Insert a new market into the database with only essential fields
-   */
-  static async insertMarket(market: Market): Promise<void> {
-    // Validate required fields first - skip market if any required field is null/invalid
-    if (
-      !market.id ||
-      !market.question ||
-      !market.conditionId ||
-      !market.startDate ||
-      !market.endDate
-    ) {
-      console.warn(`Skipping market ${market.id || "unknown"}: Missing required basic fields`);
-      return;
-    }
-
-    // Validate outcomes and outcomePrices are not null and are valid
-    if (!market.outcomes || !market.outcomePrices) {
-      // console.warn(
-      //   `Skipping market ${market.id}: Missing required outcomes or outcomePrices (outcomes: ${!!market.outcomes}, outcomePrices: ${!!market.outcomePrices})`
-      // );
-      return;
-    }
-
-    let outcomesData;
-    let pricesData;
-
-    try {
-      // Parse outcomes data
-      outcomesData =
-        typeof market.outcomes === "string" ? JSON.parse(market.outcomes) : market.outcomes;
-
-      // Parse outcome prices data
-      pricesData =
-        typeof market.outcomePrices === "string"
-          ? JSON.parse(market.outcomePrices)
-          : market.outcomePrices;
-
-      // Validate parsed data
-      if (!Array.isArray(outcomesData) || outcomesData.length === 0) {
-        console.warn(`Skipping market ${market.id}: Invalid outcomes data - not a valid array`);
-        return;
-      }
-
-      if (!Array.isArray(pricesData) || pricesData.length === 0) {
-        console.warn(
-          `Skipping market ${market.id}: Invalid outcomePrices data - not a valid array`
-        );
-        return;
-      }
-
-      // Ensure prices array matches outcomes array length
-      if (pricesData.length !== outcomesData.length) {
-        console.warn(
-          `Skipping market ${market.id}: Mismatched outcomes/prices lengths (outcomes: ${outcomesData.length}, prices: ${pricesData.length})`
-        );
-        return;
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.warn(
-        `Skipping market ${market.id}: Error parsing outcomes or prices data - ${errorMessage}`
-      );
-      return;
-    }
-
-    // Extract event slug from the events array (used for Polymarket links on multi-choice markets)
-    const eventSlug = market.events && market.events.length > 0 ? market.events[0].slug : null;
-
-    const sql = `
-      INSERT INTO markets (
-        id, question, condition_id, slug, event_slug, category, start_date, end_date, volume, outcomes, outcome_prices, clob_token_ids
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+  static async refreshStaleSearchVectors(): Promise<number> {
+    const result = await prisma.$executeRaw`
+      UPDATE markets SET search_vec = (
+        setweight(to_tsvector('english', question), 'A') ||
+        setweight(to_tsvector('simple',  regexp_replace(tags::text, '[{},"]', ' ', 'g')), 'B') ||
+        setweight(to_tsvector('simple',  slug), 'C') ||
+        setweight(to_tsvector('english', coalesce(description, '')), 'D')
       )
-      ON CONFLICT (condition_id) DO UPDATE SET
-        question = EXCLUDED.question,
-        slug = EXCLUDED.slug,
-        event_slug = EXCLUDED.event_slug,
-        category = EXCLUDED.category,
-        start_date = EXCLUDED.start_date,
-        end_date = EXCLUDED.end_date,
-        volume = EXCLUDED.volume,
-        outcomes = EXCLUDED.outcomes,
-        outcome_prices = EXCLUDED.outcome_prices,
-        clob_token_ids = EXCLUDED.clob_token_ids,
-        updated_at = CURRENT_TIMESTAMP
+      WHERE search_vec IS NULL OR updated_at >= NOW() - INTERVAL '1 hour'
     `;
-
-    const values = [
-      market.id,
-      market.question,
-      market.conditionId,
-      market.slug,
-      eventSlug,
-      this.extractCategory(market.question),
-      new Date(market.startDate),
-      new Date(market.endDate),
-      parseFloat(market.volume) || 0,
-      JSON.stringify(outcomesData),
-      JSON.stringify(pricesData),
-      JSON.stringify(market.clobTokenIds),
-    ];
-
-    try {
-      await query(sql, values);
-    } catch (error) {
-      console.error(`Failed to insert market ${market.id}:`, error);
-      throw error;
-    }
+    return Number(result);
   }
 
   /**
-   * Get market by condition ID
+   * Tags are stored already lowercased so the suggestion lookup index can be
+   * a plain B-tree (Nile blocks function calls in index expressions).
    */
-  static async getMarketByConditionId(conditionId: string): Promise<DatabaseMarket | null> {
-    const sql = "SELECT * FROM markets WHERE condition_id = $1";
-    const result = await query(sql, [conditionId]);
-    return result.rows[0] || null;
-  }
+  static async refreshTagIndex(): Promise<number> {
+    const fetchStart = Date.now();
+    const rows = await prisma.market.findMany({
+      where: { active: true },
+      select: { tags: true },
+    });
+    log.debug(`tag-index: fetched ${rows.length} active markets in ${Date.now() - fetchStart}ms`);
 
-  /**
-   * Get market by ID
-   */
-  static async getMarketById(id: string): Promise<DatabaseMarket | null> {
-    const sql = "SELECT * FROM markets WHERE id = $1";
-    const result = await query(sql, [id]);
-    return result.rows[0] || null;
-  }
-
-  /**
-   * Get all markets from the database with pagination
-   */
-  static async getAllMarkets(limit: number = 100, offset: number = 0): Promise<DatabaseMarket[]> {
-    const sql = "SELECT * FROM markets ORDER BY created_at DESC LIMIT $1 OFFSET $2";
-    const result = await query(sql, [limit, offset]);
-    return result.rows;
-  }
-
-  /**
-   * Get top markets by volume
-   */
-  static async getTopMarkets(limit: number = 50): Promise<DatabaseMarket[]> {
-    const sql = "SELECT * FROM markets ORDER BY volume DESC LIMIT $1";
-    const result = await query(sql, [limit]);
-    return result.rows;
-  }
-
-  /**
-   * Search markets by question
-   */
-  static async searchMarkets(searchTerm: string, limit: number = 100): Promise<DatabaseMarket[]> {
-    const sql = `
-      SELECT * FROM markets
-      WHERE question ILIKE $1 ESCAPE '\\'
-      ORDER BY volume DESC
-      LIMIT $2
-    `;
-    const escapedTerm = this.escapeLikePattern(searchTerm);
-    const result = await query(sql, [`%${escapedTerm}%`, limit]);
-    return result.rows;
-  }
-
-  /**
-   * Search markets by keywords (AND search - all keywords must be present)
-   */
-  static async searchMarketsByKeywords(
-    keywords: string[],
-    limit: number = 100,
-    offset: number = 0
-  ): Promise<DatabaseMarket[]> {
-    const conditions = keywords
-      .map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`)
-      .join(" AND ");
-    const limitIndex = keywords.length + 1;
-    const offsetIndex = keywords.length + 2;
-    const sql = `
-      SELECT * FROM markets
-      WHERE ${conditions}
-      ORDER BY volume DESC
-      LIMIT $${limitIndex} OFFSET $${offsetIndex}
-    `;
-    const values = [...keywords.map((k) => `%${this.escapeLikePattern(k)}%`), limit, offset];
-    const result = await query(sql, values);
-    return result.rows;
-  }
-
-  /**
-   * Search markets by any keyword (OR search - any keyword can match)
-   */
-  static async searchMarketsByAnyKeyword(
-    keywords: string[],
-    limit: number = 100,
-    offset: number = 0
-  ): Promise<DatabaseMarket[]> {
-    const conditions = keywords
-      .map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`)
-      .join(" OR ");
-    const limitIndex = keywords.length + 1;
-    const offsetIndex = keywords.length + 2;
-    const sql = `
-      SELECT * FROM markets
-      WHERE ${conditions}
-      ORDER BY volume DESC
-      LIMIT $${limitIndex} OFFSET $${offsetIndex}
-    `;
-    const values = [...keywords.map((k) => `%${this.escapeLikePattern(k)}%`), limit, offset];
-    const result = await query(sql, values);
-    return result.rows;
-  }
-
-  /**
-   * Search markets by keywords AND category (AND search - all keywords must be present)
-   */
-  static async searchMarketsByKeywordsAndCategory(
-    keywords: string[],
-    category: string,
-    limit: number = 100,
-    offset: number = 0
-  ): Promise<DatabaseMarket[]> {
-    const conditions = keywords
-      .map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`)
-      .join(" AND ");
-    const categoryIndex = keywords.length + 1;
-    const limitIndex = keywords.length + 2;
-    const offsetIndex = keywords.length + 3;
-    const sql = `
-      SELECT * FROM markets
-      WHERE ${conditions} AND category = $${categoryIndex}
-      ORDER BY volume DESC
-      LIMIT $${limitIndex} OFFSET $${offsetIndex}
-    `;
-    const values = [
-      ...keywords.map((k) => `%${this.escapeLikePattern(k)}%`),
-      category,
-      limit,
-      offset,
-    ];
-    const result = await query(sql, values);
-    return result.rows;
-  }
-
-  /**
-   * Search markets by any keyword AND category (OR search - any keyword can match)
-   */
-  static async searchMarketsByAnyKeywordAndCategory(
-    keywords: string[],
-    category: string,
-    limit: number = 100,
-    offset: number = 0
-  ): Promise<DatabaseMarket[]> {
-    const conditions = keywords
-      .map((_, index) => `question ILIKE $${index + 1} ESCAPE '\\'`)
-      .join(" OR ");
-    const categoryIndex = keywords.length + 1;
-    const limitIndex = keywords.length + 2;
-    const offsetIndex = keywords.length + 3;
-    const sql = `
-      SELECT * FROM markets
-      WHERE (${conditions}) AND category = $${categoryIndex}
-      ORDER BY volume DESC
-      LIMIT $${limitIndex} OFFSET $${offsetIndex}
-    `;
-    const values = [
-      ...keywords.map((k) => `%${this.escapeLikePattern(k)}%`),
-      category,
-      limit,
-      offset,
-    ];
-    const result = await query(sql, values);
-    return result.rows;
-  }
-
-  /**
-   * Get markets by volume threshold
-   */
-  static async getMarketsByVolume(
-    minVolume: number,
-    limit: number = 100,
-    offset: number = 0
-  ): Promise<DatabaseMarket[]> {
-    const sql = `
-      SELECT * FROM markets 
-      WHERE volume >= $1 
-      ORDER BY volume DESC 
-      LIMIT $2 OFFSET $3
-    `;
-    const result = await query(sql, [minVolume, limit, offset]);
-    return result.rows;
-  }
-
-  /**
-   * Get markets by question (partial word matching, case-insensitive)
-   */
-  static async getMarketsByQuestion(question: string): Promise<DatabaseMarket[]> {
-    const sql =
-      "SELECT * FROM markets WHERE LOWER(question) LIKE LOWER($1) ESCAPE '\\' ORDER BY created_at DESC";
-    const escapedQuestion = this.escapeLikePattern(question);
-    const searchPattern = `%${escapedQuestion}%`;
-    const result = await query(sql, [searchPattern]);
-    return result.rows;
-  }
-
-  /**
-   * Get market by slug
-   */
-  static async getMarketBySlug(slug: string): Promise<DatabaseMarket | null> {
-    const sql = "SELECT * FROM markets WHERE slug = $1";
-    const result = await query(sql, [slug]);
-    if (result.rows.length > 0) {
-      return result.rows[0];
-    } else {
-      return null;
-    }
-  }
-
-  /**
-   * Get markets ending after a specific date with pagination
-   */
-  static async getMarketsEndingAfter(
-    endDate: Date,
-    limit: number = 100,
-    offset: number = 0
-  ): Promise<DatabaseMarket[]> {
-    const sql = `
-      SELECT * FROM markets 
-      WHERE end_date > $1 
-      ORDER BY end_date ASC 
-      LIMIT $2 OFFSET $3
-    `;
-    const result = await query(sql, [endDate, limit, offset]);
-    return result.rows;
-  }
-
-  /**
-   * Get markets by category
-   */
-  static async getMarketsByCategory(
-    category: string,
-    limit: number = 100,
-    offset: number = 0
-  ): Promise<DatabaseMarket[]> {
-    const sql = `
-      SELECT * FROM markets 
-      WHERE category = $1 
-      ORDER BY volume DESC 
-      LIMIT $2 OFFSET $3
-    `;
-    const result = await query(sql, [category, limit, offset]);
-    return result.rows;
-  }
-
-  /**
-   * Get markets by CLOB token ID
-   */
-  static async getMarketsByClobTokenId(clobTokenId: string): Promise<DatabaseMarket[]> {
-    const sql = `
-      SELECT * FROM markets
-      WHERE clob_token_ids::text LIKE $1 ESCAPE '\\'
-      ORDER BY volume DESC
-    `;
-    const escapedId = this.escapeLikePattern(clobTokenId);
-    const result = await query(sql, [`%${escapedId}%`]);
-    return result.rows;
-  }
-
-  /**
-   * Delete a market by condition ID
-   */
-  static async deleteMarket(conditionId: string): Promise<boolean> {
-    const sql = "DELETE FROM markets WHERE condition_id = $1";
-    const result = await query(sql, [conditionId]);
-    return result.rowCount > 0;
-  }
-
-  /**
-   * Remove all markets that have ended (past their end_date)
-   */
-  static async removeClosedMarkets(): Promise<number> {
-    const sql = "DELETE FROM markets WHERE end_date < CURRENT_TIMESTAMP";
-    const result = await query(sql);
-    return result.rowCount || 0;
-  }
-
-  /**
-   * Remove markets that ended before a specific date
-   */
-  static async removeMarketsEndedBefore(beforeDate: Date): Promise<number> {
-    const sql = "DELETE FROM markets WHERE end_date < $1";
-    const result = await query(sql, [beforeDate]);
-    return result.rowCount || 0;
-  }
-
-  /**
-   * Insert multiple markets at once
-   */
-  static async insertMarkets(markets: Market[]): Promise<void> {
-    if (markets.length === 0) return;
-
-    for (const market of markets) {
-      try {
-        // Use the same validation logic as insertMarket - skip if invalid
-        await this.insertMarket(market);
-      } catch (error) {
-        console.error(`Error inserting market ${market.id}:`, error);
-        // Continue with other markets even if one fails
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      for (const tag of row.tags) {
+        const key = tag.toLowerCase();
+        counts.set(key, (counts.get(key) ?? 0) + 1);
       }
     }
+    log.debug(`tag-index: aggregated ${counts.size} unique tags`);
+
+    return prisma.$transaction(
+      async (tx) => {
+        const deleted = await tx.tagIndex.deleteMany();
+        log.debug(`tag-index: cleared ${deleted.count} old rows`);
+
+        if (counts.size === 0) {
+          log.warn("tag-index: no active markets had any tags");
+          return 0;
+        }
+
+        const insertStart = Date.now();
+        await tx.tagIndex.createMany({
+          data: Array.from(counts, ([tag, marketCount]) => ({ tag, marketCount })),
+        });
+        log.debug(`tag-index: inserted ${counts.size} rows in ${Date.now() - insertStart}ms`);
+        return counts.size;
+      },
+      { timeout: 60_000 }
+    );
   }
 
-  /**
-   * Get market statistics
-   */
-  static async getMarketStats(): Promise<{
-    totalMarkets: number;
-    totalVolume: number;
-    avgVolume: number;
-    marketsEndingToday: number;
-  }> {
-    const sql = `
-      SELECT 
-        COUNT(*) as total_markets,
-        COALESCE(SUM(volume), 0) as total_volume,
-        COALESCE(AVG(volume), 0) as avg_volume,
-        COUNT(CASE WHEN DATE(end_date) = CURRENT_DATE THEN 1 END) as markets_ending_today
-      FROM markets
+  static async getTagSuggestions(
+    prefix: string,
+    limit: number
+  ): Promise<Array<{ tag: string; count: number }>> {
+    if (prefix.length === 0) return [];
+    const rows = await prisma.tagIndex.findMany({
+      where: { tag: { startsWith: prefix.toLowerCase() } },
+      orderBy: [{ marketCount: "desc" }, { tag: "asc" }],
+      take: limit,
+    });
+    return rows.map((r) => ({ tag: r.tag, count: r.marketCount }));
+  }
+
+  static async removeEndedMarkets(): Promise<number> {
+    const { count } = await prisma.market.deleteMany({
+      where: { endDate: { lt: new Date() } },
+    });
+    return count;
+  }
+
+  static async countMarkets(opts: SearchMarketsOptions): Promise<number> {
+    const where = this.buildSearchWhere(opts);
+    const rows = await prisma.$queryRaw<{ total: number }[]>`
+      SELECT COUNT(*)::int AS total FROM markets WHERE ${where}
     `;
-    const result = await query(sql);
-    const row = result.rows[0];
+    return rows[0]?.total ?? 0;
+  }
 
-    return {
-      totalMarkets: parseInt(row.total_markets),
-      totalVolume: parseFloat(row.total_volume),
-      avgVolume: parseFloat(row.avg_volume),
-      marketsEndingToday: parseInt(row.markets_ending_today),
-    };
+  static async getMarketCountsByCategory(categories: string[]): Promise<Record<string, number>> {
+    if (categories.length === 0) return {};
+    const rows = await prisma.market.groupBy({
+      by: ["category"],
+      where: { active: true, category: { in: categories } },
+      _count: { _all: true },
+    });
+    const out: Record<string, number> = Object.fromEntries(categories.map((c) => [c, 0]));
+    for (const r of rows) {
+      if (r.category) out[r.category] = r._count._all;
+    }
+    return out;
+  }
+
+  static async searchMarkets(opts: SearchMarketsOptions): Promise<DatabaseMarket[]> {
+    const { sort = "volume", limit = 50, offset = 0, category, q } = opts;
+
+    const filters: Prisma.Sql[] = [this.buildSearchWhere(opts)];
+    if (sort === "interest") {
+      if (!category) {
+        filters.push(Prisma.sql`end_date > NOW() + INTERVAL '48 hours'`);
+        filters.push(Prisma.sql`volume >= ${INTEREST_MIN_VOLUME}`);
+      }
+      if (!q) {
+        filters.push(Prisma.sql`question !~* ${INTEREST_NOISE_REGEX}`);
+      }
+    }
+    const where = Prisma.join(filters, " AND ");
+
+    const orderBy = this.buildOrderBy(sort, Boolean(category));
+
+    const rows = await prisma.$queryRaw<PrismaMarket[]>`
+      SELECT id, slug, event_slug AS "eventSlug", question, description, category,
+             tags, outcomes, volume, liquidity, end_date AS "endDate",
+             clob_token_ids AS "clobTokenIds", active, updated_at AS "updatedAt"
+      FROM markets
+      WHERE ${where}
+      ORDER BY ${orderBy}
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    return rows.map(toMarketRow);
+  }
+
+  static async getMarketById(id: string): Promise<DatabaseMarket | null> {
+    const row = await prisma.market.findUnique({ where: { id } });
+    return row ? toMarketRow(row) : null;
+  }
+
+  static async getMarketBySlug(slug: string): Promise<DatabaseMarket | null> {
+    const row = await prisma.market.findUnique({ where: { slug } });
+    return row ? toMarketRow(row) : null;
   }
 
   /**
-   * Insert a polyswap order from frontend form
+   * Atomically increment `view_count` for a market. Identifier is matched
+   * against the primary key first, then `slug`, mirroring `getMarketById/BySlug`.
+   * Returns true if a row was updated. `updateMany` is used so an unknown
+   * identifier resolves to `count: 0` instead of throwing P2025.
    */
+  static async incrementMarketViews(identifier: string): Promise<boolean> {
+    const data = { viewCount: { increment: 1 } };
+    const byId = await prisma.market.updateMany({ where: { id: identifier }, data });
+    if (byId.count > 0) return true;
+    const bySlug = await prisma.market.updateMany({ where: { slug: identifier }, data });
+    return bySlug.count > 0;
+  }
+
+  // ============================================================
+  // PolySwap Orders
+  // ============================================================
+
   static async insertPolyswapOrderFromForm(orderData: {
     sellToken: string;
     buyToken: string;
     sellAmount: string;
     minBuyAmount: string;
-    selectedOutcome: string;
     startDate: string;
     deadline: string;
     marketId: string;
     owner: string;
-    outcomeSelected: number;
+    outcomeSelected: string;
     betPercentageValue: number;
+    polymarketOrderHash: string;
+    salt: string;
   }): Promise<number> {
-    const sql = `
-      INSERT INTO polyswap_orders (
-        owner, sell_token, buy_token,
-        sell_amount, min_buy_amount, start_time, end_time, market_id, 
-        outcome_selected, bet_percentage, status
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-      )
-      RETURNING id
-    `;
-
-    const values = [
-      orderData.owner.toLowerCase(), // Use actual owner address from request
-      orderData.sellToken.toLowerCase(),
-      orderData.buyToken.toLowerCase(),
-      orderData.sellAmount,
-      orderData.minBuyAmount,
-      new Date(orderData.startDate), // startDate is now ISO string from backend
-      new Date(orderData.deadline), // Use the date string directly
-      orderData.marketId, // Market ID linking the order to the market
-      orderData.outcomeSelected, // Outcome selected index
-      orderData.betPercentageValue, // Bet percentage
-      "draft", // Default status for frontend-created orders
-    ];
-
-    try {
-      const result = await query(sql, values);
-      const orderId = result.rows[0].id;
-      return orderId;
-    } catch (error) {
-      console.error(`❌ Database error inserting frontend order:`, error);
-      throw error;
-    }
+    const created = await prisma.polyswapOrder.create({
+      data: {
+        owner: orderData.owner.toLowerCase(),
+        sellToken: orderData.sellToken.toLowerCase(),
+        buyToken: orderData.buyToken.toLowerCase(),
+        sellAmount: new Prisma.Decimal(orderData.sellAmount),
+        minBuyAmount: new Prisma.Decimal(orderData.minBuyAmount),
+        startTime: new Date(orderData.startDate),
+        endTime: new Date(orderData.deadline),
+        marketId: orderData.marketId,
+        outcomeSelected: orderData.outcomeSelected,
+        betPercentage: new Prisma.Decimal(orderData.betPercentageValue),
+        polymarketOrderHash: orderData.polymarketOrderHash,
+        salt: orderData.salt,
+        status: "draft",
+      },
+      select: { id: true },
+    });
+    return created.id;
   }
 
-  /**
-   * Insert a polyswap order from blockchain event
-   */
   static async insertPolyswapOrder(order: PolyswapOrderRecord): Promise<void> {
-    const sql = `
-      INSERT INTO polyswap_orders (
-        order_hash, owner, handler, sell_token, buy_token,
-        sell_amount, min_buy_amount, start_time, end_time, polymarket_order_hash,
-        app_data, block_number, transaction_hash, log_index, market_id,
-        outcome_selected, bet_percentage, status
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
-      )
-      ON CONFLICT (order_hash) DO UPDATE SET
-        owner = EXCLUDED.owner,
-        handler = EXCLUDED.handler,
-        sell_token = EXCLUDED.sell_token,
-        buy_token = EXCLUDED.buy_token,
-        sell_amount = EXCLUDED.sell_amount,
-        min_buy_amount = EXCLUDED.min_buy_amount,
-        start_time = EXCLUDED.start_time,
-        end_time = EXCLUDED.end_time,
-        polymarket_order_hash = EXCLUDED.polymarket_order_hash,
-        app_data = EXCLUDED.app_data,
-        block_number = EXCLUDED.block_number,
-        transaction_hash = EXCLUDED.transaction_hash,
-        log_index = EXCLUDED.log_index,
-        market_id = EXCLUDED.market_id,
-        outcome_selected = EXCLUDED.outcome_selected,
-        bet_percentage = EXCLUDED.bet_percentage,
-        status = EXCLUDED.status,
-        updated_at = CURRENT_TIMESTAMP
-    `;
-
-    // Validate required numeric fields
     const blockNumber = Number(order.blockNumber);
     const logIndex = Number(order.logIndex);
-
-    if (isNaN(blockNumber) || isNaN(logIndex)) {
+    if (!Number.isFinite(blockNumber) || !Number.isFinite(logIndex)) {
       throw new Error(`Invalid numeric values: blockNumber=${blockNumber}, logIndex=${logIndex}`);
     }
 
-    const values = [
-      order.orderHash,
-      order.owner.toLowerCase(),
-      order.handler.toLowerCase(),
-      order.sellToken.toLowerCase(),
-      order.buyToken.toLowerCase(),
-      order.sellAmount,
-      order.minBuyAmount,
-      new Date(order.startTime * 1000), // Convert Unix timestamp to Date
-      new Date(order.endTime * 1000), // Convert Unix timestamp to Date
-      order.polymarketOrderHash,
-      order.appData,
-      blockNumber,
-      order.transactionHash,
+    const data: Prisma.PolyswapOrderUncheckedCreateInput = {
+      orderHash: order.orderHash,
+      owner: order.owner.toLowerCase(),
+      handler: order.handler.toLowerCase(),
+      sellToken: order.sellToken.toLowerCase(),
+      buyToken: order.buyToken.toLowerCase(),
+      sellAmount: new Prisma.Decimal(order.sellAmount),
+      minBuyAmount: new Prisma.Decimal(order.minBuyAmount),
+      startTime: new Date(order.startTime * 1000),
+      endTime: new Date(order.endTime * 1000),
+      polymarketOrderHash: order.polymarketOrderHash,
+      appData: order.appData,
+      blockNumber: BigInt(blockNumber),
+      transactionHash: order.transactionHash,
       logIndex,
-      null, // market_id - not available from blockchain events
-      null, // outcome_selected - not available from blockchain events
-      null, // bet_percentage - not available from blockchain events
-      "live", // Blockchain events indicate live orders
-    ];
+      salt: order.salt ?? null,
+      status: "live",
+    };
 
-    try {
-      await query(sql, values);
-    } catch (error) {
-      console.error(`❌ Database error inserting order ${order.orderHash}:`, error);
-      console.error("Order data:", {
-        orderHash: order.orderHash,
-        blockNumber,
-        logIndex,
-        transactionHash: order.transactionHash,
-      });
-      throw error;
-    }
+    await prisma.polyswapOrder.upsert({
+      where: { orderHash: order.orderHash },
+      create: data,
+      update: {
+        owner: data.owner,
+        handler: data.handler,
+        sellToken: data.sellToken,
+        buyToken: data.buyToken,
+        sellAmount: data.sellAmount,
+        minBuyAmount: data.minBuyAmount,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        polymarketOrderHash: data.polymarketOrderHash,
+        appData: data.appData,
+        blockNumber: data.blockNumber,
+        transactionHash: data.transactionHash,
+        logIndex: data.logIndex,
+        salt: data.salt,
+        status: data.status,
+        updatedAt: new Date(),
+      },
+    });
   }
 
   /**
-   * Get polyswap orders by owner address
+   * - If a draft row exists for (polymarket_order_hash, owner) → upgrade to live
+   *   and stamp the on-chain coordinates. Standard frontend-then-listener path.
+   * - Otherwise → fresh live insert. Catch-up path when the draft was lost.
    */
+  static async upsertLiveOrderFromEvent(input: {
+    owner: string;
+    orderHash: string;
+    handler: string;
+    salt: string;
+    data: PolyswapOrderData;
+    blockNumber: number;
+    transactionHash: string;
+    logIndex: number;
+  }): Promise<void> {
+    const ownerLc = input.owner.toLowerCase();
+    const draft = await prisma.polyswapOrder.findFirst({
+      where: {
+        polymarketOrderHash: input.data.polymarketOrderHash,
+        owner: ownerLc,
+        status: "draft",
+      },
+      select: { id: true },
+    });
+
+    if (draft) {
+      await prisma.polyswapOrder.update({
+        where: { id: draft.id },
+        data: {
+          status: "live",
+          orderHash: input.orderHash,
+          handler: input.handler.toLowerCase(),
+          transactionHash: input.transactionHash,
+          blockNumber: BigInt(input.blockNumber),
+          logIndex: input.logIndex,
+          appData: input.data.appData,
+          salt: input.salt,
+          updatedAt: new Date(),
+        },
+      });
+      return;
+    }
+
+    await this.insertPolyswapOrder({
+      orderHash: input.orderHash,
+      owner: ownerLc,
+      handler: input.handler.toLowerCase(),
+      sellToken: input.data.sellToken,
+      buyToken: input.data.buyToken,
+      sellAmount: input.data.sellAmount,
+      minBuyAmount: input.data.minBuyAmount,
+      startTime: parseInt(input.data.t0, 10),
+      endTime: parseInt(input.data.t, 10),
+      polymarketOrderHash: input.data.polymarketOrderHash,
+      appData: input.data.appData,
+      blockNumber: input.blockNumber,
+      transactionHash: input.transactionHash,
+      logIndex: input.logIndex,
+      createdAt: new Date(),
+      salt: input.salt,
+    });
+  }
+
   static async getPolyswapOrdersByOwner(
     ownerAddress: string,
     limit: number = 100,
     offset: number = 0
   ): Promise<DatabasePolyswapOrder[]> {
-    let sql: string;
-    let params: any[];
-
-    if (ownerAddress && ownerAddress.trim() !== "") {
-      sql = `
-        SELECT * FROM polyswap_orders 
-        WHERE owner = $1 
-        ORDER BY created_at DESC 
-        LIMIT $2 OFFSET $3
-      `;
-      params = [ownerAddress.toLowerCase(), limit, offset];
-    } else {
-      // Get all orders if no owner specified
-      sql = `
-        SELECT * FROM polyswap_orders 
-        ORDER BY created_at DESC 
-        LIMIT $1 OFFSET $2
-      `;
-      params = [limit, offset];
-    }
-
-    const result = await query(sql, params);
-    return result.rows;
+    const where = ownerAddress.trim() ? { owner: ownerAddress.toLowerCase() } : undefined;
+    const rows = await prisma.polyswapOrder.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      skip: offset,
+    });
+    return rows.map(toPolyswapOrderRow);
   }
 
-  /**
-   * Get polyswap order by order hash
-   */
   static async getPolyswapOrderByHash(orderHash: string): Promise<DatabasePolyswapOrder | null> {
-    const sql = "SELECT * FROM polyswap_orders WHERE order_hash = $1";
-    const result = await query(sql, [orderHash]);
-    return result.rows[0] || null;
+    const row = await prisma.polyswapOrder.findUnique({ where: { orderHash } });
+    return row ? toPolyswapOrderRow(row) : null;
   }
 
-  /**
-   * Get polyswap order by numerical ID
-   */
   static async getPolyswapOrderById(id: number): Promise<DatabasePolyswapOrder | null> {
-    const sql = "SELECT * FROM polyswap_orders WHERE id = $1";
-    const result = await query(sql, [id]);
-    return result.rows[0] || null;
+    const row = await prisma.polyswapOrder.findUnique({ where: { id } });
+    return row ? toPolyswapOrderRow(row) : null;
   }
 
   /**
-   * Get the latest processed block number for the listener
+   * Persisted cursor lives in `listener_state.last_processed_block`. Fall back
+   * to MAX(block_number) on first run / pre-cursor environments.
    */
   static async getLatestProcessedBlock(): Promise<number> {
-    const sql = "SELECT MAX(block_number) as latest_block FROM polyswap_orders";
-    const result = await query(sql);
-    return result.rows[0].latest_block || 0;
+    const state = await prisma.listenerState.findUnique({
+      where: { key: "last_processed_block" },
+    });
+    if (state) return Number(state.value);
+
+    const fallback = await prisma.polyswapOrder.aggregate({ _max: { blockNumber: true } });
+    return Number(fallback._max.blockNumber ?? 0);
   }
 
-  /**
-   * Get polyswap orders by block range
-   */
+  static async setLatestProcessedBlock(blockNumber: number): Promise<void> {
+    await prisma.listenerState.upsert({
+      where: { key: "last_processed_block" },
+      create: { key: "last_processed_block", value: BigInt(blockNumber) },
+      update: { value: BigInt(blockNumber), updatedAt: new Date() },
+    });
+  }
+
   static async getPolyswapOrdersByBlockRange(
     fromBlock: number,
     toBlock: number
   ): Promise<DatabasePolyswapOrder[]> {
-    const sql = `
-      SELECT * FROM polyswap_orders 
-      WHERE block_number >= $1 AND block_number <= $2 
-      ORDER BY block_number ASC, log_index ASC
-    `;
-    const result = await query(sql, [fromBlock, toBlock]);
-    return result.rows;
+    const rows = await prisma.polyswapOrder.findMany({
+      where: { blockNumber: { gte: BigInt(fromBlock), lte: BigInt(toBlock) } },
+      orderBy: [{ blockNumber: "asc" }, { logIndex: "asc" }],
+    });
+    return rows.map(toPolyswapOrderRow);
   }
 
-  /**
-   * Get polyswap orders by polymarket order hash
-   */
   static async getPolyswapOrdersByPolymarketHash(
     polymarketHash: string
   ): Promise<DatabasePolyswapOrder[]> {
-    const sql = `
-      SELECT * FROM polyswap_orders 
-      WHERE polymarket_order_hash = $1 
-      ORDER BY created_at DESC
-    `;
-    const result = await query(sql, [polymarketHash]);
-    return result.rows;
+    const rows = await prisma.polyswapOrder.findMany({
+      where: { polymarketOrderHash: polymarketHash },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map(toPolyswapOrderRow);
   }
 
-  /**
-   * Update order status
-   */
   static async updateOrderStatus(
     orderHash: string,
     status: "draft" | "live" | "filled" | "canceled"
   ): Promise<boolean> {
-    const sql = `
-      UPDATE polyswap_orders
-      SET status = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE order_hash = $2
-      RETURNING order_hash
-    `;
     try {
-      const result = await query(sql, [status, orderHash]);
-      return result.rows.length > 0;
+      const result = await prisma.polyswapOrder.updateMany({
+        where: { orderHash },
+        data: { status, updatedAt: new Date() },
+      });
+      return result.count > 0;
     } catch (error) {
-      console.error(`❌ Error updating order status for ${orderHash}:`, error);
+      log.error(`failed to update order status for hash ${orderHash}:`, error);
       return false;
     }
   }
 
-  /**
-   * Update order status by ID with optional fill details
-   */
   static async updateOrderStatusById(
     orderId: number,
-    status: "draft" | "live" | "filled" | "canceled",
+    status: OrderStatus,
     fillDetails?: {
       filledAt?: Date;
       fillTransactionHash?: string;
@@ -779,161 +568,179 @@ export class DatabaseService {
       feeAmount?: string;
     }
   ): Promise<boolean> {
-    let sql = `
-      UPDATE polyswap_orders
-      SET status = $1, updated_at = CURRENT_TIMESTAMP
-    `;
-    const values: unknown[] = [status];
-    let paramIndex = 2;
-
-    if (fillDetails) {
-      if (fillDetails.filledAt) {
-        sql += `, filled_at = $${paramIndex}`;
-        values.push(fillDetails.filledAt);
-        paramIndex++;
-      }
-      if (fillDetails.fillTransactionHash) {
-        sql += `, fill_transaction_hash = $${paramIndex}`;
-        values.push(fillDetails.fillTransactionHash);
-        paramIndex++;
-      }
-      if (fillDetails.fillBlockNumber) {
-        sql += `, fill_block_number = $${paramIndex}`;
-        values.push(fillDetails.fillBlockNumber);
-        paramIndex++;
-      }
-      if (fillDetails.fillLogIndex) {
-        sql += `, fill_log_index = $${paramIndex}`;
-        values.push(fillDetails.fillLogIndex);
-        paramIndex++;
-      }
-      if (fillDetails.actualSellAmount) {
-        sql += `, actual_sell_amount = $${paramIndex}`;
-        values.push(fillDetails.actualSellAmount);
-        paramIndex++;
-      }
-      if (fillDetails.actualBuyAmount) {
-        sql += `, actual_buy_amount = $${paramIndex}`;
-        values.push(fillDetails.actualBuyAmount);
-        paramIndex++;
-      }
-      if (fillDetails.feeAmount) {
-        sql += `, fee_amount = $${paramIndex}`;
-        values.push(fillDetails.feeAmount);
-        paramIndex++;
-      }
+    const data: Prisma.PolyswapOrderUpdateInput = { status, updatedAt: new Date() };
+    if (fillDetails?.filledAt) data.filledAt = fillDetails.filledAt;
+    if (fillDetails?.fillTransactionHash) {
+      data.fillTransactionHash = fillDetails.fillTransactionHash;
     }
-
-    sql += ` WHERE id = $${paramIndex} RETURNING id`;
-    values.push(orderId);
+    if (fillDetails?.fillBlockNumber !== undefined) {
+      data.fillBlockNumber = BigInt(fillDetails.fillBlockNumber);
+    }
+    if (fillDetails?.fillLogIndex !== undefined) data.fillLogIndex = fillDetails.fillLogIndex;
+    if (fillDetails?.actualSellAmount) {
+      data.actualSellAmount = new Prisma.Decimal(fillDetails.actualSellAmount);
+    }
+    if (fillDetails?.actualBuyAmount) {
+      data.actualBuyAmount = new Prisma.Decimal(fillDetails.actualBuyAmount);
+    }
+    if (fillDetails?.feeAmount) data.feeAmount = new Prisma.Decimal(fillDetails.feeAmount);
 
     try {
-      const result = await query(sql, values);
-      return result.rows.length > 0;
+      await prisma.polyswapOrder.update({ where: { id: orderId }, data });
+      return true;
     } catch (error) {
-      console.error(`❌ Error updating order status for ID ${orderId}:`, error);
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return false;
+      }
+      log.error(`failed to update order status for id ${orderId}:`, error);
       return false;
     }
   }
 
+  static async setOrderError(
+    id: number,
+    errorName: string,
+    reason: string,
+    retryAt: number | null
+  ): Promise<void> {
+    await prisma.polyswapOrder.update({
+      where: { id },
+      data: {
+        lastErrorName: errorName,
+        lastErrorReason: reason,
+        lastErrorRetryAt: retryAt === null ? null : BigInt(retryAt),
+        lastCheckedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  static async clearOrderError(id: number): Promise<void> {
+    await prisma.polyswapOrder.update({
+      where: { id },
+      data: {
+        lastErrorName: null,
+        lastErrorReason: null,
+        lastErrorRetryAt: null,
+        lastCheckedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+  }
+
   /**
-   * Update Polymarket order hash for a draft order using order hash
+   * Stamp `gate_opened_at` the first time the conditional order is observed
+   * to be tradeable — i.e. the Polymarket condition has fired. Idempotent:
+   * subsequent calls are no-ops because we filter by `gateOpenedAt: null`.
    */
+  static async markGateOpened(id: number): Promise<void> {
+    await prisma.polyswapOrder.updateMany({
+      where: { id, gateOpenedAt: null },
+      data: { gateOpenedAt: new Date(), updatedAt: new Date() },
+    });
+  }
+
+  static async setCowOrderStatus(id: number, status: string): Promise<boolean> {
+    try {
+      await prisma.polyswapOrder.update({
+        where: { id },
+        data: { cowOrderStatus: status, updatedAt: new Date() },
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  static async deletePolyswapOrderById(id: number): Promise<void> {
+    await prisma.polyswapOrder.delete({ where: { id } });
+  }
+
+  static async findDraftsOlderThan(cutoff: Date): Promise<DatabasePolyswapOrder[]> {
+    const rows = await prisma.polyswapOrder.findMany({
+      where: { status: "draft", createdAt: { lt: cutoff } },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toPolyswapOrderRow);
+  }
+
   static async updateOrderPolymarketHash(
     orderHash: string,
     polymarketOrderHash: string
   ): Promise<boolean> {
-    const sql = `
-      UPDATE polyswap_orders 
-      SET polymarket_order_hash = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE order_hash = $2
-      RETURNING order_hash
-    `;
-    try {
-      const result = await query(sql, [polymarketOrderHash, orderHash]);
-      return result.rows.length > 0;
-    } catch (error) {
-      console.error(`❌ Error updating Polymarket order hash for ${orderHash}:`, error);
-      return false;
-    }
+    const result = await prisma.polyswapOrder.updateMany({
+      where: { orderHash },
+      data: { polymarketOrderHash, updatedAt: new Date() },
+    });
+    return result.count > 0;
   }
 
-  /**
-   * Update Polymarket order hash for a draft order using numerical ID
-   */
   static async updateOrderPolymarketHashById(
     orderId: number,
     polymarketOrderHash: string
   ): Promise<boolean> {
-    const sql = `
-      UPDATE polyswap_orders
-      SET polymarket_order_hash = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2
-      RETURNING id
-    `;
     try {
-      const result = await query(sql, [polymarketOrderHash, orderId]);
-      return result.rows.length > 0;
+      await prisma.polyswapOrder.update({
+        where: { id: orderId },
+        data: { polymarketOrderHash, updatedAt: new Date() },
+      });
+      return true;
     } catch (error) {
-      console.error(`❌ Error updating Polymarket order hash for order ID ${orderId}:`, error);
-      return false;
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return false;
+      }
+      throw error;
     }
   }
 
-  /**
-   * Update transaction hash for an order using numerical ID and set status to live
-   */
   static async updateOrderTransactionHashById(
     orderId: number,
     transactionHash: string
   ): Promise<boolean> {
-    const sql = `
-      UPDATE polyswap_orders
-      SET transaction_hash = $1, status = 'live', updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2
-      RETURNING id
-    `;
     try {
-      const result = await query(sql, [transactionHash, orderId]);
-      return result.rows.length > 0;
+      await prisma.polyswapOrder.update({
+        where: { id: orderId },
+        data: { transactionHash, status: "live", updatedAt: new Date() },
+      });
+      return true;
     } catch (error) {
-      console.error(`❌ Error updating transaction hash for order ID ${orderId}:`, error);
-      return false;
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return false;
+      }
+      throw error;
     }
   }
 
-  /**
-   * Get orders by status
-   */
   static async getOrdersByStatus(
     status: "draft" | "live" | "filled" | "canceled",
     limit: number = 100,
     offset: number = 0
   ): Promise<DatabasePolyswapOrder[]> {
-    const sql = `
-      SELECT * FROM polyswap_orders
-      WHERE status = $1
-      ORDER BY created_at DESC
-      LIMIT $2 OFFSET $3
-    `;
-    const result = await query(sql, [status, limit, offset]);
-    return result.rows;
+    const rows = await prisma.polyswapOrder.findMany({
+      where: { status },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      skip: offset,
+    });
+    return rows.map(toPolyswapOrderRow);
   }
 
-  /**
-   * Get polyswap order by order hash and owner address
-   */
   static async getPolyswapOrderByHashAndOwner(
     orderHash: string,
     ownerAddress: string
   ): Promise<DatabasePolyswapOrder | null> {
-    const sql = "SELECT * FROM polyswap_orders WHERE order_hash = $1 AND owner = $2";
-    const result = await query(sql, [orderHash, ownerAddress.toLowerCase()]);
-    return result.rows[0] || null;
+    const row = await prisma.polyswapOrder.findFirst({
+      where: { orderHash, owner: ownerAddress.toLowerCase() },
+    });
+    return row ? toPolyswapOrderRow(row) : null;
   }
 
   /**
-   * Update order with transaction details including block number, log index, app_data, and handler
+   * Listener catch-up path: stamp the full set of on-chain coordinates and
+   * advance the row to "live" in a single update.
    */
   static async updateOrderTransactionDetails(
     orderId: number,
@@ -945,310 +752,220 @@ export class DatabaseService {
     orderHash: string,
     orderUid?: string
   ): Promise<boolean> {
-    const sql = `
-      UPDATE polyswap_orders
-      SET
-        transaction_hash = $1,
-        block_number = $2,
-        log_index = $3,
-        handler = $4,
-        app_data = $5,
-        order_hash = $6,
-        order_uid = $7,
-        status = 'live',
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $8
-      RETURNING id
-    `;
     try {
-      const result = await query(sql, [
-        transactionHash,
-        blockNumber,
-        logIndex,
-        handler.toLowerCase(),
-        appData,
-        orderHash,
-        orderUid || null,
-        orderId,
-      ]);
-      return result.rows.length > 0;
+      await prisma.polyswapOrder.update({
+        where: { id: orderId },
+        data: {
+          transactionHash,
+          blockNumber: BigInt(blockNumber),
+          logIndex,
+          handler: handler.toLowerCase(),
+          appData,
+          orderHash,
+          orderUid: orderUid ?? null,
+          status: "live",
+          updatedAt: new Date(),
+        },
+      });
+      return true;
     } catch (error) {
-      console.error(`❌ Error updating transaction details for order ID ${orderId}:`, error);
-      return false;
-    }
-  }
-
-  /**
-   * Update order UID for an existing order
-   */
-  static async updateOrderUid(orderHash: string, orderUid: string): Promise<boolean> {
-    const sql = `
-      UPDATE polyswap_orders
-      SET order_uid = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE order_hash = $2
-      RETURNING order_hash
-    `;
-    try {
-      const result = await query(sql, [orderUid, orderHash]);
-      return result.rows.length > 0;
-    } catch (error) {
-      console.error(`❌ Error updating order UID for ${orderHash}:`, error);
-      return false;
-    }
-  }
-
-  /**
-   * Get polyswap order by order UID
-   */
-  static async getPolyswapOrderByUid(orderUid: string): Promise<DatabasePolyswapOrder | null> {
-    const sql = `
-      SELECT * FROM polyswap_orders
-      WHERE order_uid = $1
-    `;
-    try {
-      const result = await query(sql, [orderUid]);
-      return result.rows.length > 0 ? result.rows[0] : null;
-    } catch (error) {
-      console.error(`❌ Error fetching order by UID ${orderUid}:`, error);
-      return null;
-    }
-  }
-
-  /**
-   * Get all live orders without order UID (need calculation)
-   */
-  static async getLiveOrdersWithoutUid(): Promise<DatabasePolyswapOrder[]> {
-    const sql = `
-      SELECT * FROM polyswap_orders
-      WHERE status = 'live' AND (order_uid IS NULL OR order_uid = '')
-      ORDER BY created_at ASC
-    `;
-    try {
-      const result = await query(sql);
-      return result.rows;
-    } catch (error) {
-      console.error("❌ Error fetching live orders without UID:", error);
-      return [];
-    }
-  }
-
-  /**
-   * Get all live orders
-   */
-  static async getLiveOrders(): Promise<DatabasePolyswapOrder[]> {
-    const sql = `
-      SELECT * FROM polyswap_orders
-      WHERE status = 'live'
-      ORDER BY created_at ASC
-    `;
-    try {
-      const result = await query(sql);
-      return result.rows;
-    } catch (error) {
-      console.error("❌ Error fetching live orders:", error);
-      return [];
-    }
-  }
-
-  /**
-   * Get all polyswap orders (all statuses)
-   */
-  static async getAllPolyswapOrders(): Promise<DatabasePolyswapOrder[]> {
-    const sql = `
-      SELECT * FROM polyswap_orders
-      ORDER BY created_at ASC
-    `;
-    try {
-      const result = await query(sql);
-      return result.rows;
-    } catch (error) {
-      console.error("❌ Error fetching all orders:", error);
-      return [];
-    }
-  }
-
-  // ============================================
-  // Sold Positions Tracking (Position Seller)
-  // ============================================
-
-  /**
-   * Record a sold position in the database
-   */
-  static async recordSoldPosition(input: SoldPositionInput): Promise<number> {
-    const sql = `
-      INSERT INTO sold_positions (
-        asset_id, condition_id, size, sell_price, current_price,
-        order_id, market_title, outcome
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING id
-    `;
-    const values = [
-      input.assetId,
-      input.conditionId,
-      input.size,
-      input.sellPrice,
-      input.currentPrice,
-      input.orderId,
-      input.marketTitle,
-      input.outcome,
-    ];
-
-    try {
-      const result = await query(sql, values);
-      return result.rows[0].id;
-    } catch (error) {
-      console.error("❌ Error recording sold position:", error);
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return false;
+      }
       throw error;
     }
   }
 
-  /**
-   * Get recently sold positions within the last N hours
-   */
+  static async updateOrderUid(orderHash: string, orderUid: string): Promise<boolean> {
+    const result = await prisma.polyswapOrder.updateMany({
+      where: { orderHash },
+      data: { orderUid, updatedAt: new Date() },
+    });
+    return result.count > 0;
+  }
+
+  static async getPolyswapOrderByUid(orderUid: string): Promise<DatabasePolyswapOrder | null> {
+    const row = await prisma.polyswapOrder.findFirst({ where: { orderUid } });
+    return row ? toPolyswapOrderRow(row) : null;
+  }
+
+  static async getLiveOrdersWithoutUid(): Promise<DatabasePolyswapOrder[]> {
+    const rows = await prisma.polyswapOrder.findMany({
+      where: {
+        status: "live",
+        OR: [{ orderUid: null }, { orderUid: "" }],
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toPolyswapOrderRow);
+  }
+
+  static async getLiveOrders(): Promise<DatabasePolyswapOrder[]> {
+    const rows = await prisma.polyswapOrder.findMany({
+      where: { status: "live" },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toPolyswapOrderRow);
+  }
+
+  static async getAllPolyswapOrders(): Promise<DatabasePolyswapOrder[]> {
+    const rows = await prisma.polyswapOrder.findMany({ orderBy: { createdAt: "asc" } });
+    return rows.map(toPolyswapOrderRow);
+  }
+
+  // ============================================================
+  // Sold Positions
+  // ============================================================
+
+  static async recordSoldPosition(input: SoldPositionInput): Promise<number> {
+    const created = await prisma.soldPosition.create({
+      data: {
+        assetId: input.assetId,
+        conditionId: input.conditionId,
+        size: new Prisma.Decimal(input.size),
+        sellPrice: new Prisma.Decimal(input.sellPrice),
+        currentPrice: new Prisma.Decimal(input.currentPrice),
+        orderId: input.orderId,
+        marketTitle: input.marketTitle,
+        outcome: input.outcome,
+      },
+      select: { id: true },
+    });
+    return created.id;
+  }
+
   static async getRecentlySoldPositions(hoursAgo: number = 24): Promise<SoldPosition[]> {
-    const sql = `
-      SELECT * FROM sold_positions
-      WHERE sold_at > NOW() - INTERVAL '${hoursAgo} hours'
-      ORDER BY sold_at DESC
-    `;
-    try {
-      const result = await query(sql);
-      return result.rows;
-    } catch (error) {
-      console.error("❌ Error fetching recently sold positions:", error);
-      return [];
-    }
+    const since = new Date(Date.now() - hoursAgo * 60 * 60 * 1000);
+    const rows = await prisma.soldPosition.findMany({
+      where: { soldAt: { gt: since } },
+      orderBy: { soldAt: "desc" },
+    });
+    return rows.map(toSoldPositionRow);
   }
 
-  /**
-   * Get a sold position by asset ID (most recent)
-   */
   static async getSoldPositionByAsset(assetId: string): Promise<SoldPosition | null> {
-    const sql = `
-      SELECT * FROM sold_positions
-      WHERE asset_id = $1
-      ORDER BY sold_at DESC
-      LIMIT 1
-    `;
-    try {
-      const result = await query(sql, [assetId]);
-      return result.rows[0] || null;
-    } catch (error) {
-      console.error("❌ Error fetching sold position by asset:", error);
-      return null;
-    }
+    const row = await prisma.soldPosition.findFirst({
+      where: { assetId },
+      orderBy: { soldAt: "desc" },
+    });
+    return row ? toSoldPositionRow(row) : null;
   }
 
-  /**
-   * Get all sold positions with pagination
-   */
   static async getAllSoldPositions(
     limit: number = 100,
     offset: number = 0
   ): Promise<SoldPosition[]> {
-    const sql = `
-      SELECT * FROM sold_positions
-      ORDER BY sold_at DESC
-      LIMIT $1 OFFSET $2
-    `;
-    try {
-      const result = await query(sql, [limit, offset]);
-      return result.rows;
-    } catch (error) {
-      console.error("❌ Error fetching all sold positions:", error);
-      return [];
-    }
+    const rows = await prisma.soldPosition.findMany({
+      orderBy: { soldAt: "desc" },
+      take: limit,
+      skip: offset,
+    });
+    return rows.map(toSoldPositionRow);
   }
 
-  /**
-   * Get sold positions statistics
-   */
   static async getSoldPositionsStats(): Promise<{
     totalSold: number;
     totalValue: number;
     last24Hours: number;
   }> {
-    const sql = `
-      SELECT
-        COUNT(*) as total_sold,
-        COALESCE(SUM(size * sell_price), 0) as total_value,
-        COUNT(CASE WHEN sold_at > NOW() - INTERVAL '24 hours' THEN 1 END) as last_24_hours
-      FROM sold_positions
-    `;
-    try {
-      const result = await query(sql);
-      const row = result.rows[0];
-      return {
-        totalSold: parseInt(row.total_sold),
-        totalValue: parseFloat(row.total_value),
-        last24Hours: parseInt(row.last_24_hours),
-      };
-    } catch (error) {
-      console.error("❌ Error fetching sold positions stats:", error);
-      return { totalSold: 0, totalValue: 0, last24Hours: 0 };
-    }
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [totalSold, last24Hours, rows] = await Promise.all([
+      prisma.soldPosition.count(),
+      prisma.soldPosition.count({ where: { soldAt: { gt: since24h } } }),
+      prisma.soldPosition.findMany({ select: { size: true, sellPrice: true } }),
+    ]);
+    const totalValue = rows.reduce(
+      (sum, r) => sum + decimalToNumber(r.size) * decimalToNumber(r.sellPrice),
+      0
+    );
+    return { totalSold, totalValue, last24Hours };
   }
 
-  /**
-   * Clean up old sold position records (older than N days)
-   */
   static async cleanupOldSoldPositions(daysOld: number = 30): Promise<number> {
-    const sql = `
-      DELETE FROM sold_positions
-      WHERE sold_at < NOW() - INTERVAL '${daysOld} days'
-    `;
-    try {
-      const result = await query(sql);
-      return result.rowCount || 0;
-    } catch (error) {
-      console.error("❌ Error cleaning up old sold positions:", error);
-      return 0;
-    }
+    const cutoff = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
+    const { count } = await prisma.soldPosition.deleteMany({
+      where: { soldAt: { lt: cutoff } },
+    });
+    return count;
   }
 
-  /**
-   * Delete sold positions by order ID (for cleaning up failed orders)
-   */
   static async deleteSoldPositionByOrderId(orderId: string): Promise<boolean> {
-    const sql = `DELETE FROM sold_positions WHERE order_id = $1`;
-    try {
-      const result = await query(sql, [orderId]);
-      return (result.rowCount || 0) > 0;
-    } catch (error) {
-      console.error("❌ Error deleting sold position by order ID:", error);
-      return false;
-    }
+    const { count } = await prisma.soldPosition.deleteMany({ where: { orderId } });
+    return count > 0;
   }
 
-  /**
-   * Delete sold positions by asset ID
-   */
   static async deleteSoldPositionByAssetId(assetId: string): Promise<number> {
-    const sql = `DELETE FROM sold_positions WHERE asset_id = $1`;
-    try {
-      const result = await query(sql, [assetId]);
-      return result.rowCount || 0;
-    } catch (error) {
-      console.error("❌ Error deleting sold position by asset ID:", error);
-      return 0;
+    const { count } = await prisma.soldPosition.deleteMany({ where: { assetId } });
+    return count;
+  }
+
+  static async cleanupFailedSoldPositions(): Promise<number> {
+    const { count } = await prisma.soldPosition.deleteMany({
+      where: { OR: [{ orderId: "unknown" }, { orderId: "" }] },
+    });
+    if (count > 0) log.info(`cleaned up ${count} failed sold-position record(s)`);
+    return count;
+  }
+
+  // ============================================================
+  // Internal helpers for the search query
+  // ============================================================
+
+  private static buildSearchWhere(opts: SearchMarketsOptions): Prisma.Sql {
+    const { q, category, categories, volumeMin = 0, liquidityMin = 0 } = opts;
+
+    const fragments: Prisma.Sql[] = [
+      Prisma.sql`active = TRUE`,
+      Prisma.sql`volume >= ${volumeMin}`,
+      Prisma.sql`liquidity >= ${liquidityMin}`,
+    ];
+
+    if (category) fragments.push(Prisma.sql`category = ${category}`);
+    if (categories && categories.length > 0) {
+      fragments.push(Prisma.sql`category = ANY(${categories}::text[])`);
     }
+
+    if (q) {
+      const tsq = buildPrefixTsQuery(q);
+      if (tsq !== null) {
+        fragments.push(Prisma.sql`search_vec @@ to_tsquery('simple', ${tsq})`);
+      }
+    }
+
+    return Prisma.join(fragments, " AND ");
   }
 
   /**
-   * Delete all sold positions with order_id = 'unknown' (failed orders)
+   * Interest score = log-blended volume + liquidity, decayed by time-to-resolve,
+   * with optional category boosts. Beats raw volume for "what's hot".
    */
-  static async cleanupFailedSoldPositions(): Promise<number> {
-    const sql = `DELETE FROM sold_positions WHERE order_id = 'unknown' OR order_id IS NULL`;
-    try {
-      const result = await query(sql);
-      const count = result.rowCount || 0;
-      if (count > 0) {
-        console.log(`🧹 Cleaned up ${count} failed sold position record(s)`);
-      }
-      return count;
-    } catch (error) {
-      console.error("❌ Error cleaning up failed sold positions:", error);
-      return 0;
-    }
+  private static buildOrderBy(
+    sort: NonNullable<SearchMarketsOptions["sort"]>,
+    hasCategoryFilter: boolean
+  ): Prisma.Sql {
+    if (sort === "liquidity") return Prisma.sql`liquidity DESC`;
+    if (sort === "end_date") return Prisma.sql`end_date ASC`;
+    if (sort !== "interest") return Prisma.sql`volume DESC`;
+
+    // View-count nudge: a small log-scaled bonus added to the volume/liquidity
+    // blend. Coefficient 0.1 keeps this *slight* — at 10 views the bonus is
+    // ~0.23, at 100 ~0.46, at 1k ~0.69 — vs. typical volume contributions in
+    // the 5-15 range. Enough to break ties and lift recently-popular markets
+    // a notch, never enough to overrule fundamentals.
+    const interestExpr = Prisma.sql`(
+      LN(GREATEST(volume, 0) + 1) * 0.6 +
+      LN(GREATEST(liquidity, 0) + 1) * 0.4 +
+      LN(GREATEST(view_count, 0) + 1) * 0.1
+    ) / (1 + GREATEST(EXTRACT(EPOCH FROM (end_date - NOW())) / 86400.0, 1) / 30.0)`;
+
+    if (hasCategoryFilter) return Prisma.sql`${interestExpr} DESC`;
+
+    // Cast both the WHEN-arms and ELSE to numeric — without the cast, pg infers
+    // the CASE arms as integer (matching `ELSE 1`) and rejects the bound float
+    // multipliers (1.1, 1.05, ...) with `invalid input syntax for type integer`.
+    const boostCases = Object.entries(INTEREST_CATEGORY_BOOSTS).map(
+      ([cat, mult]) => Prisma.sql`WHEN ${cat} THEN ${mult}::numeric`
+    );
+    return Prisma.sql`(${interestExpr}) * (CASE category ${Prisma.join(boostCases, " ")} ELSE 1::numeric END) DESC`;
   }
 }

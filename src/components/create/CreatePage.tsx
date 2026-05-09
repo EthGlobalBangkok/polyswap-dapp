@@ -177,10 +177,17 @@ export function CreatePage({ marketId }: Props) {
 
       // If the vault relayer is already approved for at least the sell amount,
       // skip the approve step and submit only the createWithContext call.
-      const callsList: SafeCall[] =
+      const baseCalls: SafeCall[] =
         allowance >= BigInt(order.sellAmount)
           ? [toSafeCall(order.tx)]
           : order.batchTx.map(toSafeCall);
+
+      // Fresh Safes ship with the default CompatibilityFallbackHandler — CoW
+      // needs ExtensibleFallbackHandler to read EIP-1271 sigs. The backend
+      // returns this self-call only when the swap-out is required.
+      const callsList: SafeCall[] = order.fallbackSetupTx
+        ? [toSafeCall(order.fallbackSetupTx), ...baseCalls]
+        : baseCalls;
 
       setCalls(callsList);
       setSignOpen(true);

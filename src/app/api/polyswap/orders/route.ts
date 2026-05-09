@@ -10,6 +10,7 @@ import {
 } from "viem";
 import { DatabaseService } from "../../../../backend/services/databaseService";
 import { TransactionEncodingService } from "../../../../backend/services/transactionEncodingService";
+import { buildFallbackHandlerSetupTx } from "../../../../backend/services/safeFallbackHandlerService";
 import { getPolymarketOrderService } from "../../../../backend/services/polymarketOrderService";
 import { type PolyswapOrderData } from "../../../../backend/interfaces/PolyswapOrder";
 import { getPostHogClient } from "../../../../lib/posthog-server";
@@ -500,6 +501,12 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // --- Detect fresh Safes that haven't installed CoW's ExtensibleFallbackHandler
+    // yet. The setup self-call is returned alongside the order bundle so the
+    // frontend can prepend it to whichever path it submits (single create vs.
+    // approve+create). Failures here are non-fatal — we just skip the prepend.
+    const fallbackSetupTx = await buildFallbackHandlerSetupTx(owner as Address);
+
     // --- Return bundle ---
     return NextResponse.json({
       success: true,
@@ -512,6 +519,7 @@ export async function POST(request: NextRequest) {
           { to: sellToken, data: approveCalldata, value: "0" },
           { to: COMPOSABLE_COW, data: createCalldata, value: "0" },
         ],
+        fallbackSetupTx,
         sellToken,
         sellAmount,
         vaultRelayer: VAULT_RELAYER,

@@ -24,10 +24,13 @@ interface Props {
 export function SwapDetailPage({ orderId }: Props) {
   const { order, isLoading, isError, walletConnected } = useOrder(orderId);
   const { address } = useAccount();
-  // Real Polymarket YES-side history. Falls back to synthetic spark on the
-  // chart when unavailable (no marketId yet, fetch in flight, or non-binary).
+  // Real Polymarket history for the side the user picked (YES or NO).
+  // Falls back to synthetic spark on the chart when unavailable (no marketId
+  // yet, fetch in flight, or non-binary).
   const { data: market } = useMarket(order?.marketId ?? "");
-  const { data: priceHistory = [] } = useMarketPriceHistory(market?.yesTokenId, 60);
+  const sideTokenId =
+    order?.side === "NO" ? (market?.noTokenId ?? null) : (market?.yesTokenId ?? null);
+  const { data: priceHistory = [] } = useMarketPriceHistory(sideTokenId, 60);
   const router = useRouter();
   const queryClient = useQueryClient();
   const { deleteDraft, buildRemoveLiveCalls, pending, error } = useRemoveOrder();
@@ -169,7 +172,7 @@ export function SwapDetailPage({ orderId }: Props) {
               <Status kind={order.status} />
             </div>
             <p className="mt-2 text-xs text-ink-3 sm:text-sm">
-              Fires when YES reaches {Math.round(order.threshold * 100)}% · expires{" "}
+              Fires when {order.side} reaches {Math.round(order.threshold * 100)}% · expires{" "}
               {fmtDate(order.endTime)}
             </p>
             {order.phase === "errored" && order.lastErrorReason && (
@@ -212,7 +215,7 @@ export function SwapDetailPage({ orderId }: Props) {
               <Dial
                 current={currentOdds}
                 threshold={order.threshold}
-                side="YES"
+                side={order.side}
                 size={88}
                 animate
               />
@@ -246,7 +249,7 @@ export function SwapDetailPage({ orderId }: Props) {
                   timestamps={chartTimestamps}
                   executedAt={executedAtSec}
                   threshold={order.threshold}
-                  side="YES"
+                  side={order.side}
                   width={760}
                   height={200}
                   className="w-full"
@@ -308,7 +311,7 @@ export function SwapDetailPage({ orderId }: Props) {
                 </p>
               )}
               <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-t border-rule-soft pt-3 text-xs">
-                <Row k="Trigger" v={`YES ≥ ${Math.round(order.threshold * 100)}%`} />
+                <Row k="Trigger" v={`${order.side} ≃ ${Math.round(order.threshold * 100)}%`} />
                 <Row k="Created" v={fmtDate(order.startTime)} />
                 <Row k="Expires" v={fmtDate(order.endTime)} />
               </dl>

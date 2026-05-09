@@ -31,6 +31,13 @@ export interface CreatePolyswapOrderResponse {
   orderHash: string;
   tx: PolyswapTxCall;
   batchTx: PolyswapTxCall[];
+  /**
+   * Self-call that installs CoW's ExtensibleFallbackHandler on a fresh Safe.
+   * Null when the Safe already has the right handler (or when the owner is
+   * an EOA / detection failed). When present, prepend to whichever calls are
+   * submitted so the very first order leaves the Safe fully provisioned.
+   */
+  fallbackSetupTx: PolyswapTxCall | null;
   sellToken: Address;
   sellAmount: string;
   vaultRelayer: Address;
@@ -68,6 +75,7 @@ function isCreateOrderSuccess(
     isPolyswapTxCall(d.tx) &&
     Array.isArray(d.batchTx) &&
     d.batchTx.every(isPolyswapTxCall) &&
+    (d.fallbackSetupTx === null || isPolyswapTxCall(d.fallbackSetupTx)) &&
     typeof d.sellToken === "string" &&
     typeof d.sellAmount === "string" &&
     typeof d.vaultRelayer === "string"

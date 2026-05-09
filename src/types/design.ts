@@ -54,6 +54,8 @@ export interface MarketViewModel {
   eventSlug: string | null;
   /** CLOB token id for the YES side, used to fetch real price history. */
   yesTokenId: string | null;
+  /** CLOB token id for the NO side. Needed when the user picked NO, to chart the right curve. */
+  noTokenId: string | null;
   category: MarketCategory;
   question: string;
   yesProbability: number;

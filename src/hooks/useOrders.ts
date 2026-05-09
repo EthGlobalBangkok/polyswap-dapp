@@ -14,6 +14,8 @@ export interface OrderViewModel {
   status: SwapStatus;
   nickname: string;
   marketId: string | null;
+  /** YES/NO side the user picked when creating the order. */
+  side: "YES" | "NO";
   sellSymbol: string;
   buySymbol: string;
   sellLogoURI?: string;
@@ -83,7 +85,7 @@ function mapStatus(status: DatabasePolyswapOrder["status"]): SwapStatus {
 function shortNickname(buy: string, outcome: string | null, betPercentage: number | null): string {
   const side = outcome ? outcome.toUpperCase() : "YES";
   const pct = betPercentage !== null ? Math.round(betPercentage) : 0;
-  return `Buy ${buy} if ${side} ≥ ${pct}%`;
+  return `Buy ${buy} if ${side} ≃ ${pct}%`;
 }
 
 function syntheticSpark(seed: string): number[] {
@@ -121,6 +123,7 @@ export function toOrderView(
     status: mapStatus(o.status),
     nickname: shortNickname(buySym, o.outcome_selected, o.bet_percentage),
     marketId: o.market_id ? String(o.market_id) : null,
+    side: o.outcome_selected?.toLowerCase() === "no" ? "NO" : "YES",
     sellSymbol: sellSym,
     buySymbol: buySym,
     sellLogoURI: sellMeta?.logoURI,

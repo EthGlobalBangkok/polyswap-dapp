@@ -12,10 +12,12 @@ interface Props {
 }
 
 export function SwapRow({ order }: Props) {
-  // Real Polymarket YES-side history. React Query dedups across rows that
-  // share the same market, so the per-row fetch is cheap.
+  // Real Polymarket history for the side this order picked. React Query dedups
+  // across rows that share the same market+token, so the per-row fetch is cheap.
   const { data: market } = useMarket(order.marketId ?? "");
-  const { data: priceHistory = [] } = useMarketPriceHistory(market?.yesTokenId, 60);
+  const sideTokenId =
+    order.side === "NO" ? (market?.noTokenId ?? null) : (market?.yesTokenId ?? null);
+  const { data: priceHistory = [] } = useMarketPriceHistory(sideTokenId, 60);
   const useRealHistory = priceHistory.length >= 2;
   const sparkData = useRealHistory ? priceHistory.map((p) => p.p) : order.spark;
   const sparkTimestamps = useRealHistory ? priceHistory.map((p) => p.t) : undefined;
@@ -27,14 +29,14 @@ export function SwapRow({ order }: Props) {
     >
       {/* Desktop: dense row */}
       <div className="hidden items-center gap-4 px-6 py-4 lg:grid lg:grid-cols-[60px_1fr_180px_220px_28px]">
-        <Dial current={currentOdds} threshold={order.threshold} side="YES" size={48} />
+        <Dial current={currentOdds} threshold={order.threshold} side={order.side} size={48} />
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             <p className="truncate font-serif text-lg leading-tight">{order.nickname}</p>
             <Status kind={order.status} />
           </div>
           <p className="mt-1 truncate text-xs text-ink-3">
-            Fires when YES reaches {Math.round(order.threshold * 100)}%
+            Fires when {order.side} reaches {Math.round(order.threshold * 100)}%
             {order.status === "waiting" && ` · ${fmtPointsAway(currentOdds, order.threshold)} away`}
           </p>
         </div>
@@ -51,7 +53,7 @@ export function SwapRow({ order }: Props) {
             data={sparkData}
             timestamps={sparkTimestamps}
             threshold={order.threshold}
-            side="YES"
+            side={order.side}
             width={200}
             height={42}
             className="w-full"
@@ -78,7 +80,7 @@ export function SwapRow({ order }: Props) {
           <Dial
             current={currentOdds}
             threshold={order.threshold}
-            side="YES"
+            side={order.side}
             size={44}
             className="shrink-0"
           />
@@ -107,7 +109,7 @@ export function SwapRow({ order }: Props) {
             data={sparkData}
             timestamps={sparkTimestamps}
             threshold={order.threshold}
-            side="YES"
+            side={order.side}
             width={300}
             height={36}
             className="w-full"

@@ -25,6 +25,20 @@ const VALUE_FACTORY_ADDRESS: Address = getAddress(
   process.env.VALUE_FACTORY ?? "0x52eD56Da04309Aca4c3FECC595298d80C2f16BAc"
 );
 
+// Minimal Safe FallbackManager ABI — only the function the dApp needs to encode.
+// `setFallbackHandler` carries the `authorized` modifier on Safe so it can only
+// be invoked via a self-call through `execTransaction`. The dApp encodes the
+// inner call; Safe Wallet wraps it into the multisig tx.
+const SAFE_SET_FALLBACK_HANDLER_ABI = [
+  {
+    type: "function",
+    name: "setFallbackHandler",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "handler", type: "address" }],
+    outputs: [],
+  },
+] as const;
+
 const CHAIN_ID = parseInt(process.env.CHAIN_ID ?? "137");
 
 function getPolyswapHandlerAddress(): Address {
@@ -147,6 +161,14 @@ export class TransactionEncodingService {
       value: "0",
       chainId: CHAIN_ID,
     };
+  }
+
+  static encodeSetFallbackHandlerCalldata(handler: Address): Hex {
+    return encodeFunctionData({
+      abi: SAFE_SET_FALLBACK_HANDLER_ABI,
+      functionName: "setFallbackHandler",
+      args: [getAddress(handler)],
+    });
   }
 
   static calculateOrderHash(params: ConditionalOrderParams): string {

@@ -33,6 +33,8 @@ export interface ApiMarket {
   noOdds?: number;
   /** Token id mapped to the displayed YES probability (for fetching history). */
   yesTokenId?: string;
+  /** Token id for the NO side — paired with `yesTokenId` for binary markets. */
+  noTokenId?: string;
   options?: MarketOption[];
   conditionId?: string;
   slug: string;
@@ -122,6 +124,7 @@ function mergeMarket(lean: SearchMarket, prices: ClobPricesResponse): ApiMarket 
       yesOdds: midpointPercent(prices, clobTokenIds[yesIdx]),
       noOdds: midpointPercent(prices, clobTokenIds[noIdx]),
       yesTokenId: clobTokenIds[yesIdx],
+      noTokenId: clobTokenIds[noIdx],
       slug: lean.slug,
       eventSlug: lean.event_slug ?? undefined,
       clobTokenIds,
@@ -140,6 +143,7 @@ function mergeMarket(lean: SearchMarket, prices: ClobPricesResponse): ApiMarket 
       yesOdds: midpointPercent(prices, clobTokenIds[0]),
       noOdds: midpointPercent(prices, clobTokenIds[1]),
       yesTokenId: clobTokenIds[0],
+      noTokenId: clobTokenIds[1],
       slug: lean.slug,
       eventSlug: lean.event_slug ?? undefined,
       clobTokenIds,
@@ -178,6 +182,7 @@ export function toViewModel(api: ApiMarket): MarketViewModel | null {
     slug: api.slug,
     eventSlug: api.eventSlug ?? null,
     yesTokenId: api.yesTokenId ?? null,
+    noTokenId: api.noTokenId ?? null,
     category,
     question: api.title,
     yesProbability,

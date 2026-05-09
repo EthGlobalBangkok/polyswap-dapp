@@ -12,5 +12,6 @@ export interface DatabaseMarket {
   end_date: Date | null;
   clob_token_ids: string[];
   active: boolean;
+  neg_risk: boolean;
   updated_at?: Date;
 }

@@ -81,6 +81,7 @@ function toMarketRow(m: PrismaMarket): DatabaseMarket {
     end_date: m.endDate,
     clob_token_ids: m.clobTokenIds,
     active: m.active ?? true,
+    neg_risk: m.negRisk,
     updated_at: m.updatedAt ?? undefined,
   };
 }
@@ -152,6 +153,7 @@ export class DatabaseService {
       endDate: market.endDate ?? null,
       clobTokenIds: market.clobTokenIds,
       active: market.active,
+      negRisk: market.negRisk,
       updatedAt: new Date(),
     } satisfies Prisma.MarketUpdateInput;
 
@@ -286,7 +288,8 @@ export class DatabaseService {
     const rows = await prisma.$queryRaw<PrismaMarket[]>`
       SELECT id, slug, event_slug AS "eventSlug", question, description, category,
              tags, outcomes, volume, liquidity, end_date AS "endDate",
-             clob_token_ids AS "clobTokenIds", active, updated_at AS "updatedAt"
+             clob_token_ids AS "clobTokenIds", active, neg_risk AS "negRisk",
+             updated_at AS "updatedAt"
       FROM markets
       WHERE ${where}
       ORDER BY ${orderBy}

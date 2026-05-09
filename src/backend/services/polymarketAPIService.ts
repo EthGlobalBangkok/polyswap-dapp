@@ -17,6 +17,7 @@ interface GammaApiMarket {
   endDate?: string;
   clobTokenIds?: string;
   active?: boolean;
+  negRisk?: boolean;
 }
 
 interface GammaApiTag {
@@ -181,6 +182,7 @@ export class PolymarketAPIService {
       endDate: raw.endDate ? new Date(raw.endDate) : null,
       clobTokenIds,
       active: raw.active ?? true,
+      negRisk: raw.negRisk ?? false,
     };
   }
 }

@@ -13,4 +13,5 @@ export interface Market {
   endDate: Date | null;
   clobTokenIds: string[];
   active: boolean;
+  negRisk: boolean;
 }

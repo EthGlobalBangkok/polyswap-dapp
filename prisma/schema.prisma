@@ -37,6 +37,10 @@ model Market {
   // Lifetime user-visits count, incremented every time the market detail page
   // is opened. Feeds the "interest" sort as a slight popularity boost.
   viewCount    Int        @default(0) @map("view_count")
+  // NegRisk markets settle through `0xe2222d…` (NegRiskCtfExchange) instead of
+  // the standard `0xE111180000…`. The on-chain Polyswap handler must point at
+  // the matching exchange or `verify()` will never observe the fill.
+  negRisk      Boolean    @default(false) @map("neg_risk")
   updatedAt    DateTime?  @default(now()) @map("updated_at") @db.Timestamptz
   /// Generated tsvector — defined in migration SQL, not synthesised by Prisma.
   searchVec    Unsupported("tsvector")? @map("search_vec")

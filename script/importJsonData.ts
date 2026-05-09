@@ -25,6 +25,7 @@ interface SerializedMarket {
   endDate?: string | null;
   clobTokenIds?: string[];
   active?: boolean;
+  negRisk?: boolean;
 }
 
 function reviveMarket(raw: SerializedMarket): Market | null {
@@ -44,6 +45,7 @@ function reviveMarket(raw: SerializedMarket): Market | null {
     endDate: raw.endDate ? new Date(raw.endDate) : null,
     clobTokenIds: Array.isArray(raw.clobTokenIds) ? raw.clobTokenIds : [],
     active: raw.active ?? true,
+    negRisk: raw.negRisk ?? false,
   };
 }
 

@@ -41,11 +41,12 @@ const SAFE_SET_FALLBACK_HANDLER_ABI = [
 
 const CHAIN_ID = parseInt(process.env.CHAIN_ID ?? "137");
 
-function getPolyswapHandlerAddress(): Address {
-  const addr = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER;
+function getPolyswapHandlerAddress(negRisk: boolean): Address {
+  const envName = negRisk ? "NEXT_PUBLIC_POLYSWAP_HANDLER_NEGRISK" : "NEXT_PUBLIC_POLYSWAP_HANDLER";
+  const addr = process.env[envName];
   if (!addr) {
     throw new Error(
-      "NEXT_PUBLIC_POLYSWAP_HANDLER env var is required but not set. " +
+      `${envName} env var is required but not set. ` +
         "An empty handler address would produce silently broken calldata."
     );
   }
@@ -118,10 +119,10 @@ export class TransactionEncodingService {
 
   static createConditionalOrderParams(
     orderData: PolyswapOrderData,
-    salt?: string
+    options: { negRisk: boolean; salt?: string }
   ): ConditionalOrderParams {
     const orderSalt =
-      salt ??
+      options.salt ??
       keccak256(
         encodeAbiParameters(
           [{ type: "string" }, { type: "uint256" }],
@@ -132,7 +133,7 @@ export class TransactionEncodingService {
     const staticInput = this.encodePolyswapOrderData(orderData);
 
     return {
-      handler: getPolyswapHandlerAddress(),
+      handler: getPolyswapHandlerAddress(options.negRisk),
       salt: orderSalt,
       staticInput,
     };
@@ -151,8 +152,11 @@ export class TransactionEncodingService {
     });
   }
 
-  static createTransaction(orderData: PolyswapOrderData, salt?: string): TransactionData {
-    const params = this.createConditionalOrderParams(orderData, salt);
+  static createTransaction(
+    orderData: PolyswapOrderData,
+    options: { negRisk: boolean; salt?: string }
+  ): TransactionData {
+    const params = this.createConditionalOrderParams(orderData, options);
     const callData = this.encodeCreateWithContextCallData(params);
 
     return {

@@ -32,6 +32,7 @@ export interface PolymarketOrderConfig {
   size: number;
   feeRateBps?: number;
   expiration?: number;
+  negRisk?: boolean;
 }
 
 export interface PolymarketMarketOrderConfig {
@@ -263,7 +264,7 @@ export class PolymarketOrderService {
           side: config.side === "BUY" ? Side.BUY : Side.SELL,
           size: sizeToUse,
         },
-        { tickSize: "0.01" },
+        { tickSize: "0.01", negRisk: config.negRisk },
         OrderType.GTC
       );
       log.info(`GTC response: ${JSON.stringify(response)}`);
@@ -323,7 +324,7 @@ export class PolymarketOrderService {
           size: sizeToUse,
           expiration,
         },
-        { tickSize: "0.01" },
+        { tickSize: "0.01", negRisk: config.negRisk },
         OrderType.GTD
       );
       log.info(`GTD response: ${JSON.stringify(response)}`);

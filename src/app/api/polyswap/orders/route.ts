@@ -409,7 +409,7 @@ export async function POST(request: NextRequest) {
       const expiration = Math.floor(deadline.getTime() / 1000);
       log.info(
         `placing GTD order: market=${marketId} outcome=${selectedOutcome} ` +
-          `tokenID=${tokenID} price=${price} expiration=${expiration}`
+          `tokenID=${tokenID} price=${price} expiration=${expiration} negRisk=${market.neg_risk}`
       );
       const result = await polymarket.postGTDOrder({
         tokenID,
@@ -417,6 +417,7 @@ export async function POST(request: NextRequest) {
         side: "BUY",
         size: 5,
         expiration,
+        negRisk: market.neg_risk,
       });
       polymarketOrderHash = result.response.orderID;
       log.info(`GTD order accepted: orderID=${polymarketOrderHash}`);
@@ -440,7 +441,9 @@ export async function POST(request: NextRequest) {
       appData: APP_DATA_DEFAULT,
     };
 
-    const params = TransactionEncodingService.createConditionalOrderParams(orderData);
+    const params = TransactionEncodingService.createConditionalOrderParams(orderData, {
+      negRisk: market.neg_risk,
+    });
     const createCalldata = TransactionEncodingService.encodeCreateWithContextCallData(params);
     const orderHash = TransactionEncodingService.calculateOrderHash(params);
     const approveCalldata = encodeFunctionData({

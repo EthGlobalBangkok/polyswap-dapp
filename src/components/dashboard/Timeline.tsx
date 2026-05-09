@@ -44,7 +44,9 @@ function buildSteps(order: OrderViewModel): Step[] {
     steps.push({
       Icon: Icon.zap,
       label: isFilled ? "Trigger hit" : "Trigger not hit yet",
-      caption: isFilled ? "swap fired" : `at ${Math.round(order.threshold * 100)}% ${order.side}`,
+      caption: isFilled
+        ? "swap fired"
+        : `when ${order.side} drops to ${Math.round(order.threshold * 100)}%`,
       state: isFilled ? "past" : "future",
     });
     steps.push({

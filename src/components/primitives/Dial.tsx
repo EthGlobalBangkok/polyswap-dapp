@@ -8,6 +8,14 @@ interface DialProps {
   className?: string;
   /** Animate the ring stroke from 0 → progress on mount (~600ms, SMIL). */
   animate?: boolean;
+  /**
+   * Direction the trigger fires. Polyswap places a BUY limit on Polymarket,
+   * which only fills when the side's price *drops to* the threshold (the ask
+   * has to fall to your bid). Pass "drop" on swap pages so the dial fills as
+   * the price descends toward the line and turns accent at-or-below.
+   * Pure-progress callers (market detail, summary cards) leave it as "rise".
+   */
+  triggerOn?: "rise" | "drop";
 }
 
 /**
@@ -21,17 +29,22 @@ export function Dial({
   size = 56,
   className,
   animate = false,
+  triggerOn = "rise",
 }: DialProps) {
   const r = size / 2 - 3;
   const cx = size / 2;
   const cy = size / 2;
   const c = Math.max(0, Math.min(1, current));
   const t = Math.max(0, Math.min(1, threshold));
-  const triggered = side === "YES" ? c >= t : c <= t;
+  const triggered = triggerOn === "drop" ? c <= t : side === "YES" ? c >= t : c <= t;
   const progress =
-    side === "YES"
-      ? Math.min(c / Math.max(t, 0.0001), 1)
-      : Math.min((1 - c) / Math.max(1 - t, 0.0001), 1);
+    triggerOn === "drop"
+      ? c <= t
+        ? 1
+        : Math.min((1 - c) / Math.max(1 - t, 0.0001), 1)
+      : side === "YES"
+        ? Math.min(c / Math.max(t, 0.0001), 1)
+        : Math.min((1 - c) / Math.max(1 - t, 0.0001), 1);
   const strokeColor = triggered
     ? "var(--color-accent)"
     : side === "YES"

@@ -129,7 +129,7 @@ export function PortfolioStrip({ orders }: Props) {
           key={m.label}
           className={`relative p-4 sm:p-5 ${
             i < metrics.length - 1
-              ? "border-b border-ink sm:[&:nth-child(odd)]:border-r sm:[&:nth-child(2)]:border-b-0 lg:!border-b-0 lg:[&:not(:last-child)]:border-r"
+              ? "border-b border-ink sm:[&:nth-child(odd)]:border-r sm:[&:nth-last-child(-n+2)]:border-b-0 lg:!border-b-0 lg:[&:not(:last-child)]:border-r"
               : ""
           }`}
         >

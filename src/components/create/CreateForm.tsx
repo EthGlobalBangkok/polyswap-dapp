@@ -10,6 +10,7 @@ import { AdvancedOptions } from "./AdvancedOptions";
 import type { CreateFormDerived, CreateFormState } from "@/hooks/useCreateOrder";
 import { useMarketPriceHistory } from "@/hooks/useMarketsData";
 import { useTokens } from "@/hooks/useTokens";
+import { cn } from "@/lib/cn";
 import type { SwapEstimates } from "@/hooks/useSwapEstimates";
 import type { MarketViewModel, TokenViewModel } from "@/types/design";
 
@@ -66,8 +67,11 @@ export function CreateForm({ market, state, derived, estimates, set }: Props) {
   const sparkData = state.side === "YES" ? yesSparkData : yesSparkData.map((p) => 1 - p);
   const currentOutcomePrice =
     state.side === "YES" ? market.yesProbability : 1 - market.yesProbability;
-  const distancePts = (state.threshold - currentOutcomePrice) * 100;
-  const wouldFireNow = state.threshold < currentOutcomePrice;
+  // Distance the price still has to *fall* before the BUY limit is hit.
+  // Negative when the user picked a threshold at or above the current price —
+  // in that case the limit fills immediately on placement.
+  const distancePts = (currentOutcomePrice - state.threshold) * 100;
+  const wouldFireNow = state.threshold >= currentOutcomePrice;
 
   return (
     <div className="flex flex-col gap-5 lg:gap-6">
@@ -86,10 +90,12 @@ export function CreateForm({ market, state, derived, estimates, set }: Props) {
               height={80}
               className="w-full"
             />
-            <p className="mt-2 text-xs text-ink-3">
+            <p className={cn("mt-2 text-xs", wouldFireNow ? "text-no" : "text-ink-3")}>
               {wouldFireNow
-                ? "It would already be triggered now."
-                : `It's ${Math.abs(distancePts).toFixed(1)} points away. We'll wait for it.`}
+                ? `It would fire immediately — pick a threshold below ${Math.round(
+                    currentOutcomePrice * 100
+                  )}% so the order can wait.`
+                : `It's ${Math.abs(distancePts).toFixed(1)} points away. We'll wait for ${state.side} to drop to ${Math.round(state.threshold * 100)}%.`}
             </p>
           </div>
         </div>

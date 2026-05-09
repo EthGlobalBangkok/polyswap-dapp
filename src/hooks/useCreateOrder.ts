@@ -79,12 +79,11 @@ export function useCreateOrder(): UseCreateOrderReturn {
 }
 
 /**
- * `currentSideProbability` is the live probability (0..1) of the *selected* side
- * — i.e. `market.yesProbability` when `state.side === "YES"`, and
- * `1 - market.yesProbability` when `state.side === "NO"`. The verb is chosen
- * from the threshold's relation to that current value, not from the side: if
- * the threshold is above current, it has to *reach* it; if below, it has to
- * *drop to* it. Falls back to "reaches" when the current value isn't known.
+ * Polyswap places a Polymarket BUY limit at the threshold price. That BUY
+ * only fills when the side's price *falls* to the threshold — so the only
+ * valid configuration is `threshold < currentSideProbability`. When the
+ * threshold is at or above current, the order would fill immediately on
+ * placement; we surface that explicitly so the user can adjust.
  */
 export function describeSentence(
   state: CreateFormState,
@@ -92,12 +91,13 @@ export function describeSentence(
   currentSideProbability?: number
 ): string {
   const pct = Math.round(state.threshold * 100);
-  const verb =
-    currentSideProbability !== undefined && state.threshold < currentSideProbability
-      ? "drops to"
-      : "reaches";
+  const fireImmediately =
+    currentSideProbability !== undefined && state.threshold >= currentSideProbability;
   const amount = state.amountIn || "0";
   const fromSymbol = state.fromToken?.symbol ?? "—";
   const toSymbol = state.toToken?.symbol ?? "—";
-  return `If "${marketTitle}" ${verb} ${pct}%, swap ${amount} ${fromSymbol} for ${toSymbol}.`;
+  if (fireImmediately) {
+    return `Threshold ${pct}% is at or above the current price — the swap of ${amount} ${fromSymbol} for ${toSymbol} would fire immediately.`;
+  }
+  return `If "${marketTitle}" drops to ${pct}%, swap ${amount} ${fromSymbol} for ${toSymbol}.`;
 }

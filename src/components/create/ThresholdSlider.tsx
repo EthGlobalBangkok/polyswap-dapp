@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/cn";
+import { InfoTip } from "@/components/primitives/InfoTip";
 
 interface Props {
   /** Threshold in 0..1. */
@@ -18,7 +19,14 @@ export function ThresholdSlider({ value, onChange, picks = DEFAULT_PICKS }: Prop
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
-        <span className="eyebrow">Trigger threshold</span>
+        <span className="eyebrow inline-flex items-center gap-1.5">
+          Trigger threshold
+          <InfoTip
+            label="How the trigger works"
+            width="md"
+            body="Polyswap places a BUY limit order on Polymarket at this percentage. The order only stays pending if you set the threshold BELOW the current price — the swap then fires the first time the price drops to your line. If you set it at or above the current price, the order fills immediately and the swap fires right away."
+          />
+        </span>
         <span className="num text-3xl font-semibold lg:text-4xl">{pct}%</span>
       </div>
 

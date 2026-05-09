@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useAccount } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, DetailSkeleton, Dial, Status, Tape, TokenLogo } from "@/components/primitives";
+import {
+  Button,
+  DetailSkeleton,
+  Dial,
+  Shimmer,
+  Status,
+  Tape,
+  TokenLogo,
+} from "@/components/primitives";
 import { Icon, PolymarketIcon } from "@/components/icons";
 import { fmtDate, fmtNum, fmtPointsAway } from "@/lib/format";
 import { apiService } from "@/services/api";
@@ -27,10 +35,12 @@ export function SwapDetailPage({ orderId }: Props) {
   // Real Polymarket history for the side the user picked (YES or NO).
   // Falls back to synthetic spark on the chart when unavailable (no marketId
   // yet, fetch in flight, or non-binary).
-  const { data: market } = useMarket(order?.marketId ?? "");
+  const marketQ = useMarket(order?.marketId ?? "");
+  const market = marketQ.data;
   const sideTokenId =
     order?.side === "NO" ? (market?.noTokenId ?? null) : (market?.yesTokenId ?? null);
-  const { data: priceHistory = [] } = useMarketPriceHistory(sideTokenId, 60);
+  const historyQ = useMarketPriceHistory(sideTokenId, 60);
+  const priceHistory = historyQ.data ?? [];
   const router = useRouter();
   const queryClient = useQueryClient();
   const { deleteDraft, buildRemoveLiveCalls, pending, error } = useRemoveOrder();
@@ -131,13 +141,30 @@ export function SwapDetailPage({ orderId }: Props) {
     );
   }
 
+  // While the per-market queries are still in flight for an order with a
+  // marketId, painting `order.spark` (a synthetic placeholder curve) plus a
+  // 0% odds badge would visibly swap to real data a moment later. Hold the
+  // tracker in a skeleton state until both queries resolve.
+  const expectingRealData = order.marketId !== null;
+  const trackerPending =
+    expectingRealData &&
+    (marketQ.isPending ||
+      historyQ.isPending ||
+      (market !== undefined &&
+        sideTokenId !== null &&
+        historyQ.isFetching &&
+        priceHistory.length === 0));
+
   // Prefer real CLOB history; fall back to the synthetic spark when none yet.
   const useRealHistory = priceHistory.length >= 2;
   const chartData = useRealHistory ? priceHistory.map((p) => p.p) : order.spark;
   const chartTimestamps = useRealHistory ? priceHistory.map((p) => p.t) : undefined;
   const currentOdds = chartData[chartData.length - 1] ?? 0;
   const isFilled = order.phase === "filled";
-  const thresholdMet = currentOdds >= order.threshold;
+  // Polyswap places a BUY limit at `threshold` on Polymarket, which fills only
+  // when the side's price falls to that level. So the threshold is "met" when
+  // the live odds drop to or below the line — the inverse of the old logic.
+  const thresholdMet = currentOdds <= order.threshold;
   // Right-of-dial label, in priority order: filled fill → trigger fired
   // (gate opened on-chain) → threshold met (market past the line, gate not
   // yet observed) → live distance to threshold.
@@ -172,7 +199,7 @@ export function SwapDetailPage({ orderId }: Props) {
               <Status kind={order.status} />
             </div>
             <p className="mt-2 text-xs text-ink-3 sm:text-sm">
-              Fires when {order.side} reaches {Math.round(order.threshold * 100)}% · expires{" "}
+              Fires when {order.side} drops to {Math.round(order.threshold * 100)}% · expires{" "}
               {fmtDate(order.endTime)}
             </p>
             {order.phase === "errored" && order.lastErrorReason && (
@@ -211,62 +238,69 @@ export function SwapDetailPage({ orderId }: Props) {
         <div className="space-y-8 lg:col-span-8">
           {/* Tracker */}
           <section aria-label="Tracker" className="border border-ink bg-paper p-4 sm:p-6">
-            <div className="flex flex-wrap items-center gap-5">
-              <Dial
-                current={currentOdds}
-                threshold={order.threshold}
-                side={order.side}
-                size={88}
-                animate
-              />
-              <div className="min-w-0 flex-1">
-                <p className="num text-3xl font-semibold lg:text-4xl">
-                  {Math.round(currentOdds * 100)}%
-                </p>
-                <p className="text-sm text-ink-3">
-                  Today · trigger at {Math.round(order.threshold * 100)}%
-                </p>
-              </div>
-              <p className="num shrink-0 border border-ink bg-paper-2 px-3 py-2 text-sm">
-                {distanceLabel}
-              </p>
-            </div>
+            {trackerPending ? (
+              <TrackerSkeleton threshold={order.threshold} />
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-5">
+                  <Dial
+                    current={currentOdds}
+                    threshold={order.threshold}
+                    side={order.side}
+                    triggerOn="drop"
+                    size={88}
+                    animate
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="num text-3xl font-semibold lg:text-4xl">
+                      {Math.round(currentOdds * 100)}%
+                    </p>
+                    <p className="text-sm text-ink-3">
+                      Today · trigger at {Math.round(order.threshold * 100)}%
+                    </p>
+                  </div>
+                  <p className="num shrink-0 border border-ink bg-paper-2 px-3 py-2 text-sm">
+                    {distanceLabel}
+                  </p>
+                </div>
 
-            {/* Vertical padding on top is generous so the execution-marker
-                icon (which floats above the chart top) isn't clipped by the
-                outer card. We deliberately don't use overflow-hidden here. */}
-            <div className="mt-5 flex gap-3 border border-rule-soft bg-paper-2 px-3 pb-3 pt-7">
-              <div className="num flex shrink-0 flex-col justify-between py-1 text-[11px] text-ink-3">
-                <span>100%</span>
-                <span>75%</span>
-                <span>50%</span>
-                <span>25%</span>
-                <span>0%</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <Tape
-                  data={chartData}
-                  timestamps={chartTimestamps}
-                  executedAt={executedAtSec}
-                  threshold={order.threshold}
-                  side={order.side}
-                  width={760}
-                  height={200}
-                  className="w-full"
-                  animate
-                  interactive
-                />
-              </div>
-            </div>
+                {/* Vertical padding on top is generous so the execution-marker
+                    icon (which floats above the chart top) isn't clipped by the
+                    outer card. We deliberately don't use overflow-hidden here. */}
+                <div className="mt-5 flex gap-3 border border-rule-soft bg-paper-2 px-3 pb-3 pt-7">
+                  <div className="num flex shrink-0 flex-col justify-between py-1 text-[11px] text-ink-3">
+                    <span>100%</span>
+                    <span>75%</span>
+                    <span>50%</span>
+                    <span>25%</span>
+                    <span>0%</span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <Tape
+                      data={chartData}
+                      timestamps={chartTimestamps}
+                      executedAt={executedAtSec}
+                      threshold={order.threshold}
+                      side={order.side}
+                      width={760}
+                      height={200}
+                      className="w-full"
+                      animate
+                      interactive
+                    />
+                  </div>
+                </div>
 
-            <div className="mt-5 grid grid-cols-3 border border-ink">
-              <Stat label="High" value={`${Math.round(high * 100)}%`} />
-              <Stat label="Low" value={`${Math.round(low * 100)}%`} />
-              <Stat
-                label="Time waiting"
-                value={`${Math.max(0, Math.floor((Date.now() - order.startTime.getTime()) / 86_400_000))}d`}
-              />
-            </div>
+                <div className="mt-5 grid grid-cols-3 border border-ink">
+                  <Stat label="High" value={`${Math.round(high * 100)}%`} />
+                  <Stat label="Low" value={`${Math.round(low * 100)}%`} />
+                  <Stat
+                    label="Time waiting"
+                    value={`${Math.max(0, Math.floor((Date.now() - order.startTime.getTime()) / 86_400_000))}d`}
+                  />
+                </div>
+              </>
+            )}
           </section>
 
           {/* Timeline */}
@@ -421,6 +455,49 @@ function Row({ k, v }: { k: string; v: string }) {
     <>
       <dt className="text-ink-3">{k}</dt>
       <dd className="text-right font-mono tabular-nums">{v}</dd>
+    </>
+  );
+}
+
+/**
+ * Sized to the real Tracker so the swap-in causes no layout shift. The
+ * trigger threshold caption is preserved (it's known from the order itself);
+ * the data-dependent bits — current odds, distance label, chart, high/low —
+ * shimmer until the per-market queries resolve.
+ */
+function TrackerSkeleton({ threshold }: { threshold: number }) {
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-5">
+        <Shimmer className="h-[88px] w-[88px] rounded-full" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <Shimmer className="h-9 w-24" />
+          <p className="text-sm text-ink-3">Today · trigger at {Math.round(threshold * 100)}%</p>
+        </div>
+        <Shimmer className="h-9 w-32 shrink-0" />
+      </div>
+
+      <div className="mt-5 flex gap-3 border border-rule-soft bg-paper-2 px-3 pb-3 pt-7">
+        <div className="num flex shrink-0 flex-col justify-between py-1 text-[11px] text-ink-3">
+          <span>100%</span>
+          <span>75%</span>
+          <span>50%</span>
+          <span>25%</span>
+          <span>0%</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <Shimmer className="h-[200px] w-full" />
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-3 border border-ink">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="border-r border-ink p-3 text-center last:border-r-0 sm:p-4">
+            <Shimmer className="mx-auto h-3 w-12" />
+            <Shimmer className="mx-auto mt-2 h-5 w-10" />
+          </div>
+        ))}
+      </div>
     </>
   );
 }

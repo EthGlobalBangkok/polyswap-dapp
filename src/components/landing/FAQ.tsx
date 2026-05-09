@@ -13,15 +13,15 @@ interface QA {
 const FAQS: QA[] = [
   {
     q: 'What is a "trigger"?',
-    a: 'A condition you define — for example, "YES reaches 70% on the question: Will the Fed raise interest rates by 0.5% in May?". Polyswap watches the Polymarket on-chain order book and fires your swap the first time it crosses your line.',
+    a: 'A condition you define — for example, "YES drops to 30% on the question: Will the Fed raise interest rates by 0.5% in May?". Polyswap places a BUY limit on Polymarket at your threshold; it stays pending while the price stays above your line and fires the first time the market falls to it.',
   },
   {
-    q: "What if the market never crosses my line?",
+    q: "What if the market never reaches my line?",
     a: "Nothing happens. No funds move. The swap expires when the underlying market resolves, and your tokens stay where they were.",
   },
   {
     q: "How does it actually execute?",
-    a: "Polyswap places a Polymarket limit order at the chosen percentage. When that limit order is matched on-chain, the swap — which is conditional on the match — executes automatically.",
+    a: "Polyswap places a BUY limit order on Polymarket at your chosen percentage. The order only fills when the market's ask price drops to that level — meaning the threshold has to be set below the current price. When the limit order matches on-chain, the conditional swap executes automatically through CoW Protocol.",
   },
   {
     q: "Where does the swap price come from?",

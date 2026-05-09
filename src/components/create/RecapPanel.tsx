@@ -24,7 +24,12 @@ export function RecapPanel({ market, state, estimates }: Props) {
 
   const fromSymbol = state.fromToken?.symbol ?? "—";
   const toSymbol = state.toToken?.symbol ?? "—";
-  const triggerVerb = state.threshold < currentSideProbability ? "drops to" : "reaches";
+  // The Polymarket BUY limit fires when the price *falls* to the threshold.
+  // If the user picked a threshold at or above the current price, the order
+  // would fill immediately — flag that explicitly instead of pretending it'll
+  // wait for the price to "rise" to the line (it won't; it'll fire on placement).
+  const fireImmediately = state.threshold >= currentSideProbability;
+  const triggerVerb = fireImmediately ? "fires immediately at" : "drops to";
 
   return (
     <div className="space-y-4">

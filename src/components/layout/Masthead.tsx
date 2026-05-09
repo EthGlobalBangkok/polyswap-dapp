@@ -44,7 +44,7 @@ export function Masthead({ onConnectWallet }: Props) {
           className="flex items-center gap-3 hover:no-underline"
           aria-label="Polyswap home"
         >
-          <Logo size={28} />
+          <Logo size={38} />
           <span className="font-serif text-2xl tracking-tight text-ink lg:text-[26px]">
             Polyswap
           </span>

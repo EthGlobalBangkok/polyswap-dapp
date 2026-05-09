@@ -13,7 +13,7 @@ export default function NotFound() {
       <header className="border-b border-ink">
         <div className="mx-auto flex h-16 max-w-[1280px] items-center justify-between px-6 sm:px-8 lg:px-12">
           <Link href="/" className="flex items-center gap-3">
-            <Logo size={26} />
+            <Logo size={36} />
             <span className="font-serif text-2xl">Polyswap</span>
           </Link>
           <Link href="/markets" className="text-sm underline underline-offset-4">

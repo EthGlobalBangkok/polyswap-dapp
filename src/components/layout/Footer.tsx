@@ -34,7 +34,7 @@ export function Footer() {
         <div className="grid gap-10 lg:grid-cols-12">
           <div className="lg:col-span-4">
             <div className="flex items-center gap-3">
-              <Logo size={28} />
+              <Logo size={38} />
               <span className="font-serif text-2xl">Polyswap</span>
             </div>
             <p className="mt-4 max-w-md font-serif text-lg leading-snug text-ink-2">

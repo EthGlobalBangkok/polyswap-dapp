@@ -49,10 +49,10 @@ export function Hero() {
           <Image
             src="/landing/hero.png"
             alt="A pressure gauge wired to a swap lever firing tokens when the odds rise on a Polymarket question"
-            width={600}
-            height={400}
+            width={750}
+            height={500}
             priority
-            className="h-auto w-full max-w-[560px]"
+            className="h-auto w-full max-w-[750px]"
           />
         </Reveal>
       </div>

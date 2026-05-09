@@ -50,43 +50,40 @@ PolySwap consists of integrated frontend and backend components:
 
 ### Prerequisites
 
-- Node.js 18+ and pnpm (preferred package manager)
-- Docker and Docker Compose (for the database)
+- Node.js 20+ and pnpm
+- A PostgreSQL database (the project uses [Nile](https://www.thenile.dev/) — `prisma.config.ts` builds the URL from `DB_HOST/DB_USER/DB_PASSWORD/DB_NAME`, or set `DATABASE_URL` directly)
 
 ### Installation
 
 ```bash
-# Install dependencies
+# Install dependencies (also runs `prisma generate` via postinstall)
 pnpm install
 
 # Set up environment variables
 cp .env.sample .env
-# Edit .env with your configuration
+# Edit .env with your DB credentials, RPC URL, Polymarket creds, etc.
+
+# Apply schema migrations
+pnpm db:migrate
 ```
 
 ### Running the Application
 
-1. **Start the database**:
+1. **Start the backend services** (blockchain listener + market updater + position seller):
 
    ```bash
-   pnpm db:up
-   ```
-
-2. **Start the backend services**:
-
-   ```bash
-   # Start blockchain listener + market updater
    pnpm start:listener
    ```
 
-3. **Start the frontend**:
+2. **Start the frontend** (in another terminal):
 
    ```bash
    pnpm dev
    ```
 
-4. **Access the application**:
+3. **Access the application**:
    - Frontend: `http://localhost:3000`
+   - API docs (Swagger UI): `http://localhost:3000/api-docs`
 
 ## 🔧 Available Scripts
 
@@ -118,17 +115,30 @@ pnpm db:import     # Import markets from data.json to database
 ### Database Management
 
 ```bash
-pnpm db:up         # Start PostgreSQL container
-pnpm db:down       # Stop PostgreSQL container
-pnpm db:logs       # View database logs
+pnpm db:migrate   # Apply pending Prisma migrations (prisma migrate deploy)
+pnpm db:status    # Inspect migration state on the configured DB
+pnpm db:diff      # Diff the live DB against prisma/schema.prisma (script form)
+pnpm db:generate  # Regenerate the Prisma client (also runs on postinstall)
+pnpm db:studio    # Open Prisma Studio
+pnpm db:import    # Import markets from data.json into the DB
 ```
 
 ### Utility Scripts
 
 ```bash
-pnpm get-polymarket-creds         # Get Polymarket credentials
-pnpm cancel-polymarket-orders     # Cancel all Polymarket orders
-pnpm sell-polymarket-positions    # Sell all Polymarket positions
+pnpm get-polymarket-creds         # Generate Polymarket API credentials
+pnpm cancel-polymarket-orders     # Cancel all open Polymarket orders
+pnpm sell-polymarket-positions    # Sell all open Polymarket positions
+pnpm check-polymarket-orders      # Print orders, positions and on-chain CTF balances
+pnpm pusd                         # Wrap / unwrap pUSD (Polymarket's USDC bridge)
+```
+
+### Code Quality
+
+```bash
+pnpm format        # Run Prettier across the repo
+pnpm format:check  # Verify formatting without writing
+pnpm lint          # Run ESLint
 ```
 
 ## 🔄 Automatic Market Updates
@@ -162,43 +172,6 @@ Set the sell interval in your `.env` file:
 ```bash
 POSITION_SELL_INTERVAL_MINUTES=5  # Check and sell positions every 5 minutes (default)
 ```
-
-### Running Options
-
-The position seller runs automatically with the main listener:
-
-```bash
-pnpm start:listener  # Runs blockchain listener, market updater, AND position seller
-```
-
-### Running Options
-
-1. **Full Service** (Recommended for production):
-
-   ```bash
-   pnpm start:listener  # Runs both blockchain listener and market updater
-   ```
-
-2. **Market Updater Only**:
-
-   ```bash
-   pnpm start:market-updater  # Market updates via listener with --market-update-only flag
-   # OR
-   pnpm start:market-updater-standalone  # Standalone market updater script
-   ```
-
-3. **Blockchain Listener Only**:
-   ```bash
-   pnpm start:listener-only  # Only listens for on-chain events
-   ```
-
-### How It Works
-
-- Fetches active markets from Polymarket API every X minutes
-- Updates existing markets and adds new ones to the database
-- Uses optimized batching to avoid overwhelming the API/database
-- Automatically handles errors and retries
-- Provides detailed logging for monitoring
 
 ## ⚙️ Environment Configuration
 

@@ -21,6 +21,35 @@ function isNotifyBody(value: unknown): value is NotifyRemoveBody {
   return typeof v.signature === "string" && typeof v.timestamp === "number";
 }
 
+/**
+ * @swagger
+ * /api/polyswap/orders/id/{id}/notify-remove:
+ *   post:
+ *     tags: [Orders]
+ *     summary: Finalise an on-chain cancel
+ *     description: >
+ *       Server-side finalisation called after the user has confirmed
+ *       `ComposableCoW.remove(orderHash)` on-chain. Verifies an EIP-191
+ *       signature over `notify_remove:<orderId>` and flips the row to canceled.
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [signature, timestamp]
+ *             properties:
+ *               signature: { type: string, description: "EIP-191 signature (hex)" }
+ *               timestamp: { type: integer, description: "Unix seconds; rejected if too far from now" }
+ *     responses:
+ *       200: { description: Cancellation recorded }
+ *       400: { description: Invalid id, body, or order state }
+ *       401: { description: Bad signature }
+ *       404: { description: Order not found }
+ *       500: { description: Server error }
+ */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const orderId = Number(id);

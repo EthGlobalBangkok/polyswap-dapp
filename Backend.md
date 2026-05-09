@@ -20,7 +20,7 @@ The PolySwap backend provides:
 ### Core Components
 
 - **Next.js API Routes**: RESTful endpoints integrated with the frontend application
-- **Blockchain Listener**: Real-time event monitoring using ethers.js
+- **Blockchain Listener**: Real-time event monitoring using viem (HTTP + WebSocket)
 - **PostgreSQL Database**: Persistent storage with optimized indexing
 - **Data Services**: Market data fetching from Polymarket CLOB API
 - **Order UID Calculation**: Automatic order UID generation using PolySwap Handler contract
@@ -46,97 +46,84 @@ PolySwap automatically calculates and stores CoW Protocol order UIDs:
 
 ## 🧪 Stack
 
-- **Runtime**: [Node.js](https://nodejs.org/) with [TypeScript](https://www.typescriptlang.org/)
+- **Runtime**: [Node.js](https://nodejs.org/) 20+ with [TypeScript](https://www.typescriptlang.org/) 5
 - **Framework**: [Next.js 15](https://nextjs.org/) with App Router
-- **Blockchain**: [ethers.js v6](https://docs.ethers.org/v6/) for Polygon interaction
-- **Database**: [PostgreSQL 15](https://www.postgresql.org/) with Docker
-- **Package Manager**: [pnpm](https://pnpm.io/) for fast, efficient dependency management
+- **Blockchain**: [viem](https://viem.sh/) + [wagmi](https://wagmi.sh/) for Polygon
+- **Database**: [PostgreSQL](https://www.postgresql.org/) (managed — Nile) accessed via [Prisma 7](https://www.prisma.io/)
+- **Package Manager**: [pnpm](https://pnpm.io/)
 
 ## 📡 API Endpoints
 
+The full schema is generated from JSDoc `@swagger` blocks above each handler and served at `/api/swagger` (Swagger UI). The tables below are the canonical inventory.
+
 ### Market Endpoints
 
-| Method | Endpoint                          | Description                      |
-| ------ | --------------------------------- | -------------------------------- |
-| `GET`  | `/api/markets/top`                | Top markets by volume            |
-| `GET`  | `/api/markets/search?q=keywords`  | Search markets by keywords       |
-| `GET`  | `/api/markets/:id`                | Get market by ID or condition ID |
-| `GET`  | `/api/markets/category/:category` | Get markets by category          |
-| `GET`  | `/api/markets`                    | Get all markets with pagination  |
+| Method | Endpoint                                 | Description                                                     |
+| ------ | ---------------------------------------- | --------------------------------------------------------------- |
+| `GET`  | `/api/markets/search?q=...&category=...` | Search markets (sort: volume / liquidity / end_date / interest) |
+| `GET`  | `/api/markets/suggest?q=<prefix>`        | Tag autocomplete for the search bar                             |
+| `GET`  | `/api/markets/counts?categories=A,B,C`   | Per-category market counts for the filter chips                 |
+| `GET`  | `/api/markets/[slug]?track=1`            | Single market by slug or id; `?track=1` also bumps `view_count` |
 
 ### PolySwap Order Endpoints
 
-| Method | Endpoint                                        | Description                        |
-| ------ | ----------------------------------------------- | ---------------------------------- |
-| `POST` | `/api/polyswap/orders/create`                   | Create a new draft order           |
-| `GET`  | `/api/polyswap/orders/:owner`                   | Get orders by owner address        |
-| `GET`  | `/api/polyswap/orders/hash/:orderHash`          | Get order by hash                  |
-| `GET`  | `/api/polyswap/orders/id/:id`                   | Get order by ID                    |
-| `PUT`  | `/api/polyswap/orders/id/:id/transaction`       | Update order with transaction hash |
-| `GET`  | `/api/polyswap/orders/id/:id/batch-transaction` | Get batch transaction data         |
-| `GET`  | `/api/polyswap/orders`                          | Get all orders with pagination     |
-| `GET`  | `/api/polyswap/orders/polymarket/:hash`         | Get orders by Polymarket hash      |
-| `PUT`  | `/api/polyswap/orders/remove`                   | Cancel/remove orders               |
-
-### Token Endpoints
-
-| Method | Endpoint      | Description              |
-| ------ | ------------- | ------------------------ |
-| `GET`  | `/api/tokens` | Get supported token list |
+| Method   | Endpoint                                     | Description                                                                        |
+| -------- | -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `GET`    | `/api/polyswap/orders`                       | List orders (filter by owner / block range; pagination)                            |
+| `POST`   | `/api/polyswap/orders`                       | Create draft + place Polymarket GTD + return single-tx and approve+create batch    |
+| `GET`    | `/api/polyswap/orders/[owner]`               | Orders for a specific owner address                                                |
+| `GET`    | `/api/polyswap/orders/hash/[orderHash]`      | Lookup order by its on-chain `orderHash`                                           |
+| `GET`    | `/api/polyswap/orders/id/[id]`               | Lookup order by numeric DB id                                                      |
+| `DELETE` | `/api/polyswap/orders/id/[id]`               | Off-chain draft cancellation (signed `cancel_draft` EIP-191 message required)      |
+| `POST`   | `/api/polyswap/orders/id/[id]/notify-remove` | Server-side finalisation after on-chain `ComposableCoW.remove(orderHash)` confirms |
 
 ### Utility Endpoints
 
-| Method | Endpoint      | Description           |
-| ------ | ------------- | --------------------- |
-| `GET`  | `/api/health` | Health check endpoint |
+| Method | Endpoint       | Description                     |
+| ------ | -------------- | ------------------------------- |
+| `GET`  | `/api/health`  | Health check                    |
+| `GET`  | `/api/swagger` | Generated OpenAPI JSON (and UI) |
 
 ## 🔍 API Examples
 
-### Create a New Order
+### Create a new order
 
 ```bash
-curl -X POST "http://localhost:3000/api/polyswap/orders/create" \
+curl -X POST "http://localhost:3000/api/polyswap/orders" \
   -H "Content-Type: application/json" \
   -d '{
     "sellToken": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
-    "buyToken": "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6",
+    "buyToken":  "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6",
     "sellAmount": "1000000000",
-    "minBuyAmount": "500000000000000000",
-    "selectedOutcome": 0,
-    "betPercentage": "50",
+    "minBuyAmount": "1",
+    "selectedOutcome": "Yes",
+    "betPercentage": 30,
     "startDate": "now",
-    "deadline": "2024-12-31T23:59:59Z",
-    "marketId": "market_123",
+    "marketId": "0x...",
     "owner": "0x1234...5678"
   }'
 ```
 
-### Get Top Markets
+The response includes `tx` (single create call) and `batchTx` (approve + create), plus `fallbackSetupTx` — a self-call installing CoW's ExtensibleFallbackHandler when the Safe doesn't already have it.
+
+### Search markets
 
 ```bash
-curl "http://localhost:3000/api/markets/top"
+curl "http://localhost:3000/api/markets/search?q=fed,rates&sort=interest"
 ```
 
-### Search Markets
+### List orders for an owner
 
 ```bash
-curl "http://localhost:3000/api/markets/search?q=trump,election&type=all"
+curl "http://localhost:3000/api/polyswap/orders/0x1234...5678?limit=50"
 ```
 
-### Get Orders by Owner
+### Cancel a draft (off-chain)
 
 ```bash
-curl "http://localhost:3000/api/polyswap/orders/0x1234...5678"
-```
-
-### Update Order with Transaction Hash
-
-```bash
-curl -X PUT "http://localhost:3000/api/polyswap/orders/id/123/transaction" \
+curl -X DELETE "http://localhost:3000/api/polyswap/orders/id/123" \
   -H "Content-Type: application/json" \
-  -d '{
-    "transactionHash": "0xabcd...1234"
-  }'
+  -d '{ "signature": "0x...", "timestamp": 1715200000 }'
 ```
 
 ## 🎧 Blockchain Listener
@@ -240,27 +227,36 @@ The system provides comprehensive logging for:
 ```
 src/
 ├── app/
-│   └── api/                    # Next.js API routes
-│       ├── health/            # Health check endpoints
-│       ├── markets/           # Market data endpoints
-│       ├── polyswap/          # Order management endpoints
-│       └── tokens/            # Token information endpoints
+│   └── api/                              # Next.js API routes
+│       ├── health/                       # Health check
+│       ├── markets/                      # Market search / suggest / counts / [slug]
+│       ├── polyswap/orders/              # Order CRUD + per-id sub-routes
+│       └── swagger/                      # Generated OpenAPI JSON + UI
 ├── backend/
-│   ├── listener.ts            # Blockchain event listener
-│   ├── db/
-│   │   └── database.ts        # Database connection utilities
-│   ├── interfaces/
-│   │   ├── Market.ts          # Market data types
-│   │   ├── PolyswapOrder.ts   # Order data types
-│   │   └── Database.ts        # Database result types
-│   └── services/
-│       ├── databaseService.ts           # Database operations
-│       ├── polymarketAPIService.ts      # External API integration
-│       ├── orderUidCalculationService.ts # Order UID calculation
-│       ├── transactionEventService.ts   # Event processing
-│       └── transactionEncodingService.ts # Transaction encoding
-└── components/                 # Frontend components
-    └── ui/                    # UI components and order management
+│   ├── listener/
+│   │   ├── index.ts                      # Listener entry (also handles --listener-only / --market-update-only)
+│   │   ├── blockchainProvider.ts         # viem public/wallet/websocket clients
+│   │   ├── eventDecoder.ts               # ConditionalOrderCreated decoding
+│   │   ├── handlers/                     # Per-event handlers
+│   │   ├── startup/                      # Catch-up / backfill on boot
+│   │   └── cron/                         # Recurring jobs (orderHealthCheck, marketUpdater, draftJanitor, positionSeller)
+│   ├── db/                               # Prisma client + connection wiring
+│   ├── services/
+│   │   ├── databaseService.ts            # Prisma-backed data access
+│   │   ├── polymarketAPIService.ts       # Polymarket gamma/data APIs
+│   │   ├── polymarketOrderService.ts     # CLOB v2 order placement
+│   │   ├── polymarketPositionSellerService.ts
+│   │   ├── orderUidCalculationService.ts # CoW order UID calc
+│   │   ├── transactionEncodingService.ts # CoW createWithContext + setFallbackHandler
+│   │   ├── safeFallbackHandlerService.ts # Detects fresh Safes that need ExtensibleFallbackHandler
+│   │   └── marketUpdateService.ts        # Polymarket → DB sync
+│   ├── interfaces/                       # Shared TS types (Market, PolyswapOrder, Database)
+│   ├── utils/                            # Misc helpers
+│   └── logger.ts                         # createLogger() factory
+├── components/                           # Frontend (App Router client components)
+├── hooks/                                # React-query hooks + Safe sign flow
+├── lib/                                  # Frontend utilities (format, posthog, rpc)
+└── services/                             # Frontend service layer (apiService, safe types)
 ```
 
 ## 🧑‍💻 Authors

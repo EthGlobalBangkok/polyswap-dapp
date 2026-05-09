@@ -25,10 +25,6 @@ interface Props {
   marketId: string;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function toSafeCall(tx: { to: Address; data: Hex; value: string }): SafeCall {
   return {
     to: tx.to,
@@ -70,10 +66,6 @@ function computeMinBuyAmount(
   return scaled > 0n ? scaled.toString() : "1";
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export function CreatePage({ marketId }: Props) {
   const { data: market, isLoading, isError } = useMarket(marketId);
   const { data: rawMarket } = useRawMarket(marketId);
@@ -90,7 +82,6 @@ export function CreatePage({ marketId }: Props) {
   const queryClient = useQueryClient();
   const router = useRouter();
 
-  // --- signing state ---
   const [signOpen, setSignOpen] = useState(false);
   const [calls, setCalls] = useState<SafeCall[] | null>(null);
   const [signingError, setSigningError] = useState<string | null>(null);
@@ -100,10 +91,6 @@ export function CreatePage({ marketId }: Props) {
   const orderIdRef = useRef<number | null>(null);
 
   const isConnected = Boolean(safeAddress);
-
-  // ---------------------------------------------------------------------------
-  // Prepare and open the sign modal
-  // ---------------------------------------------------------------------------
 
   const handleReview = async () => {
     if (!isConnected || !walletReady || !safeAddress) {
@@ -198,10 +185,6 @@ export function CreatePage({ marketId }: Props) {
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // After the Safe tx is confirmed on-chain
-  // ---------------------------------------------------------------------------
-
   const onConfirmed = (_onChainHash: Hash, _safeTxHash: Hash) => {
     // The draft row already exists; the listener flips it to live once the
     // ConditionalOrderCreated event is observed. Invalidate the orders query
@@ -216,10 +199,6 @@ export function CreatePage({ marketId }: Props) {
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // Summary shown inside SafeSignModal
-  // ---------------------------------------------------------------------------
-
   const modalSummary = useMemo(() => {
     if (!market) return undefined;
     const currentSideProbability =
@@ -230,10 +209,6 @@ export function CreatePage({ marketId }: Props) {
       </span>
     );
   }, [market, state]);
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
 
   if (isLoading) {
     return <DetailSkeleton />;

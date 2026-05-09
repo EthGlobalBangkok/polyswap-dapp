@@ -101,21 +101,14 @@ export function SafeSignModal({
     void send(calls);
   };
 
-  const isPending =
-    prePhase === "running" ||
-    state.phase === "wallet" ||
-    state.phase === "proposed" ||
-    state.phase === "awaitingSignatures" ||
-    state.phase === "awaitingExecution";
-
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="Confirm transaction"
       size="md"
-      hideClose={isPending}
-      staticDismiss={isPending}
+      hideClose
+      staticDismiss
     >
       <div className="p-5 sm:p-6">
         {/* idle — review screen (suppressed while a pre-tx step is running or failed) */}
@@ -259,9 +252,7 @@ export function SafeSignModal({
   );
 }
 
-// ---------------------------------------------------------------------------
 // Sub-components
-// ---------------------------------------------------------------------------
 
 function PendingScreen({ heading, body }: { heading: string; body: string }) {
   return (

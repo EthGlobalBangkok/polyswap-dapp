@@ -225,7 +225,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as CreateOrderRequestBody;
 
-    // --- Validate required fields ---
     const requiredFields = [
       "sellToken",
       "buyToken",
@@ -316,7 +315,6 @@ export async function POST(request: NextRequest) {
     }
     const marketId: string = body.marketId;
 
-    // --- Optional date field type guards ---
     if (body.startDate !== undefined && typeof body.startDate !== "string") {
       return NextResponse.json(
         { success: false, error: "Invalid startDate", message: "startDate must be a string" },
@@ -330,7 +328,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // --- Date handling ---
     const now = new Date();
     let startDate: Date;
     if (!body.startDate || body.startDate === "now") {
@@ -361,7 +358,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // --- Resolve market ---
     const market = await DatabaseService.getMarketById(marketId);
     if (!market) {
       return NextResponse.json(
@@ -404,7 +400,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // --- Place Polymarket GTD order ---
     let polymarketOrderHash: string;
     try {
       const polymarket = getPolymarketOrderService();
@@ -433,7 +428,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // --- Build PolyswapOrderData ---
     const orderData: PolyswapOrderData = {
       sellToken,
       buyToken,
@@ -446,7 +440,6 @@ export async function POST(request: NextRequest) {
       appData: APP_DATA_DEFAULT,
     };
 
-    // --- Build calldata ---
     const params = TransactionEncodingService.createConditionalOrderParams(orderData);
     const createCalldata = TransactionEncodingService.encodeCreateWithContextCallData(params);
     const orderHash = TransactionEncodingService.calculateOrderHash(params);
@@ -456,7 +449,6 @@ export async function POST(request: NextRequest) {
       args: [VAULT_RELAYER, maxUint256],
     });
 
-    // --- Insert draft DB row ---
     let orderId: number;
     try {
       orderId = await DatabaseService.insertPolyswapOrderFromForm({
@@ -485,7 +477,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // --- PostHog analytics (same event as legacy /orders/create) ---
     const posthog = getPostHogClient();
     posthog.capture({
       distinctId: owner,
@@ -507,7 +498,6 @@ export async function POST(request: NextRequest) {
     // approve+create). Failures here are non-fatal — we just skip the prepend.
     const fallbackSetupTx = await buildFallbackHandlerSetupTx(owner as Address);
 
-    // --- Return bundle ---
     return NextResponse.json({
       success: true,
       data: {

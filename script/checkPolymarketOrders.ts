@@ -66,7 +66,7 @@ interface PolymarketPosition {
 }
 
 async function checkOrders() {
-  log.info("Checking Polymarket Orders, Positions & On-Chain Balances...\n");
+  log.info("Checking Polymarket Orders, Positions & On-Chain Balances...");
 
   const pk = process.env.PK;
   if (!pk) {
@@ -76,7 +76,7 @@ async function checkOrders() {
   const account = privateKeyToAccount(privateKey);
   const walletAddress: Address = account.address;
 
-  log.info(`Wallet Address: ${walletAddress}\n`);
+  log.info(`Wallet Address: ${walletAddress}`);
 
   try {
     const polymarketService = getPolymarketOrderService();
@@ -86,22 +86,17 @@ async function checkOrders() {
       throw new Error("Polymarket service is not ready");
     }
 
-    log.info("Service initialized\n");
+    log.info("Service initialized");
 
     const client = polymarketService.getClient();
     if (!client) {
       throw new Error("CLOB client not available");
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 1: Open Orders (from CLOB API)
-    // ═══════════════════════════════════════════════════════════════════════
-    log.info("═".repeat(80));
     log.info("OPEN ORDERS (from CLOB API)");
-    log.info("═".repeat(80));
 
     const orders: OpenOrder[] = await client.getOpenOrders({});
-    log.info(`Total Active Orders: ${orders.length}\n`);
+    log.info(`Total Active Orders: ${orders.length}`);
 
     const buyOrders = orders.filter((o) => o.side === "BUY");
     const sellOrders = orders.filter((o) => o.side === "SELL");
@@ -122,17 +117,12 @@ async function checkOrders() {
       );
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 2: Positions (from Polymarket Data API)
-    // ═══════════════════════════════════════════════════════════════════════
-    log.info("\n" + "═".repeat(80));
     log.info("POSITIONS (from Polymarket Data API)");
-    log.info("═".repeat(80));
 
     const positionsResponse = await fetch(`${POSITIONS_API_URL}?user=${walletAddress}`);
     const positions: PolymarketPosition[] = await positionsResponse.json();
 
-    log.info(`Total Positions: ${positions.length}\n`);
+    log.info(`Total Positions: ${positions.length}`);
 
     for (const pos of positions) {
       const title = pos.title ? pos.title.slice(0, 40) : "Unknown";
@@ -143,12 +133,7 @@ async function checkOrders() {
       log.info(`Token ID: ${tokenId}...`);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 3: On-Chain CTF Balances (scanning recent transfers)
-    // ═══════════════════════════════════════════════════════════════════════
-    log.info("\n" + "═".repeat(80));
     log.info("ON-CHAIN CTF BALANCES (scanning recent transfers)");
-    log.info("═".repeat(80));
 
     const rpcUrl = process.env.RPC_URL || "https://polygon-rpc.com";
     const publicClient = createPublicClient({
@@ -160,7 +145,7 @@ async function checkOrders() {
     const currentBlock = await publicClient.getBlockNumber();
     const fromBlock = currentBlock - 2000n;
 
-    log.info(`Scanning blocks ${fromBlock} to ${currentBlock}...\n`);
+    log.info(`Scanning blocks ${fromBlock} to ${currentBlock}...`);
 
     const logs = await publicClient.getLogs({
       address: CTF_ADDRESS,
@@ -172,7 +157,7 @@ async function checkOrders() {
       toBlock: currentBlock,
     });
 
-    log.info(`Found ${logs.length} transfer events to your wallet\n`);
+    log.info(`Found ${logs.length} transfer events to your wallet`);
 
     // Get unique token IDs and check balances
     const tokenIds = new Set<string>();
@@ -208,12 +193,7 @@ async function checkOrders() {
       }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 4: Summary
-    // ═══════════════════════════════════════════════════════════════════════
-    log.info("\n" + "═".repeat(80));
     log.info("SUMMARY");
-    log.info("═".repeat(80));
     log.info(`Open BUY orders:  ${buyOrders.length}`);
     log.info(`Open SELL orders: ${sellOrders.length}`);
     log.info(`Positions in API: ${positions.length}`);
@@ -227,7 +207,7 @@ async function checkOrders() {
 // Run the script
 checkOrders()
   .then(() => {
-    log.info("\nDone!");
+    log.info("Done.");
     process.exit(0);
   })
   .catch((error) => {

@@ -2,21 +2,27 @@ import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/backend/services/databaseService";
 
 /**
- * GET /api/markets/search
- *
- * Unified market search endpoint. Replaces the old /markets, /markets/top,
- * /markets/search, /markets/[identifier] and /markets/category/[cat] routes.
- *
- * Query parameters:
- *   q            – Full-text search query (Postgres tsvector / plainto_tsquery)
- *   category     – Exact category filter
- *   volumeMin    – Minimum volume (default 0)
- *   liquidityMin – Minimum liquidity (default 0)
- *   sort         – "volume" | "liquidity" | "end_date" (default "volume")
- *   limit        – Max results, capped at 100 (default 50)
- *   offset       – Pagination offset (default 0)
- *
- * Response: { success: true, data: { markets: DatabaseMarket[], count: number } }
+ * @swagger
+ * /api/markets/search:
+ *   get:
+ *     tags: [Markets]
+ *     summary: Search markets
+ *     description: >
+ *       Unified market search. The "interest" sort blends log-scaled volume +
+ *       liquidity + view count with a time-to-resolve decay.
+ *     parameters:
+ *       - { name: q,            in: query, schema: { type: string },  description: "Full-text query (tsvector)" }
+ *       - { name: category,     in: query, schema: { type: string },  description: "Exact category filter" }
+ *       - { name: categories,   in: query, schema: { type: string },  description: "Comma-separated category list" }
+ *       - { name: volumeMin,    in: query, schema: { type: number, default: 0 } }
+ *       - { name: liquidityMin, in: query, schema: { type: number, default: 0 } }
+ *       - { name: sort,         in: query, schema: { type: string, enum: [volume, liquidity, end_date, interest], default: volume } }
+ *       - { name: limit,        in: query, schema: { type: integer, default: 50, maximum: 100 } }
+ *       - { name: offset,       in: query, schema: { type: integer, default: 0 } }
+ *     responses:
+ *       200: { description: List of markets with total count }
+ *       400: { description: Invalid query parameter }
+ *       500: { description: Server error }
  */
 
 /**

@@ -1,6 +1,22 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/backend/services/databaseService";
 
+/**
+ * @swagger
+ * /api/markets/{slug}:
+ *   get:
+ *     tags: [Markets]
+ *     summary: Get a single market by slug or numeric id
+ *     description: Resolves numeric strings as ids first, otherwise as slugs (with fallback the other way).
+ *     parameters:
+ *       - { name: slug,  in: path,  required: true, schema: { type: string } }
+ *       - { name: track, in: query, schema: { type: string, enum: ["1"] }, description: "When `1`, increments view_count (fire-and-forget)" }
+ *     responses:
+ *       200: { description: Market record }
+ *       400: { description: Invalid identifier }
+ *       404: { description: Market not found }
+ *       500: { description: Server error }
+ */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug: identifier } = await params;
   if (!identifier || identifier.length > 255) {

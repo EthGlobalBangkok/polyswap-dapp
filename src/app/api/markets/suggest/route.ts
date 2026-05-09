@@ -5,6 +5,20 @@ const MAX_LIMIT = 20;
 const DEFAULT_LIMIT = 8;
 const MAX_PREFIX_LEN = 80;
 
+/**
+ * @swagger
+ * /api/markets/suggest:
+ *   get:
+ *     tags: [Markets]
+ *     summary: Tag autocomplete
+ *     description: Returns up to `limit` tag suggestions matching the prefix `q`.
+ *     parameters:
+ *       - { name: q,     in: query, required: true, schema: { type: string }, description: "Prefix (≤ 80 chars, alphanum + spaces)" }
+ *       - { name: limit, in: query, schema: { type: integer, default: 8, maximum: 20 } }
+ *     responses:
+ *       200: { description: Suggestion list }
+ *       500: { description: Server error }
+ */
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const raw = (sp.get("q") ?? "").trim();

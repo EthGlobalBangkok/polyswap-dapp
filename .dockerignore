@@ -13,11 +13,7 @@ out
 .husky/_
 
 # Local env / secrets
-.env
-.env.local
-.env.development
-.env.test
-.env.production
+.en
 *.log
 npm-debug.log*
 pnpm-debug.log*

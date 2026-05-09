@@ -1,0 +1,40 @@
+# Build artefacts and local state — never ship to Docker
+node_modules
+.next
+out
+.turbo
+
+# VCS / IDE
+.git
+.gitignore
+.vscode
+.idea
+.cursor
+.husky/_
+
+# Local env / secrets
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Claude / agent state
+.claude
+docs/superpowers/plans
+
+# Markdown / docs (not needed at runtime)
+*.md
+!Backend.md
+!README.md
+
+# Tests / fixtures
+coverage
+data.json
+
+# OS detritus
+.DS_Store
+Thumbs.db

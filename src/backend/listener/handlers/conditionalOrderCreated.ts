@@ -36,17 +36,22 @@ function decodeLog(log: Log): DecodedConditionalOrderCreated | null {
 }
 
 export async function handleConditionalOrderCreated(eventLog: Log): Promise<void> {
-  const handlerEnv = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER;
-  if (!handlerEnv) {
-    log.error("NEXT_PUBLIC_POLYSWAP_HANDLER not set; skipping event");
+  const standardHandler = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER;
+  const negRiskHandler = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER_NEGRISK;
+  if (!standardHandler && !negRiskHandler) {
+    log.error("no Polyswap handler configured; skipping event");
     return;
   }
+  const ownHandlers = new Set(
+    [standardHandler, negRiskHandler]
+      .filter((h): h is string => Boolean(h))
+      .map((h) => h.toLowerCase())
+  );
 
   const decoded = decodeLog(eventLog);
   if (!decoded) return;
 
-  // Filter: only process orders for OUR handler.
-  if (decoded.params.handler.toLowerCase() !== handlerEnv.toLowerCase()) {
+  if (!ownHandlers.has(decoded.params.handler.toLowerCase())) {
     log.debug(`skipping event for foreign handler ${decoded.params.handler}`);
     return;
   }

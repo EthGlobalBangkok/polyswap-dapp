@@ -28,7 +28,8 @@ export async function backfillOrderUids(): Promise<void> {
       const data = OrderUidCalculationService.createPolyswapOrderDataFromDbOrder(order);
       const uid = await OrderUidCalculationService.calculateCompleteOrderUidOnChain(
         data,
-        order.owner as Address
+        order.owner as Address,
+        order.handler as Address
       );
       await DatabaseService.updateOrderUid(order.order_hash, uid);
       filled += 1;

@@ -34,14 +34,6 @@ const orderHashAbi = [
   },
 ] as const;
 
-function getPolyswapHandlerAddress(): Address {
-  const addr = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER;
-  if (!addr) {
-    throw new Error("NEXT_PUBLIC_POLYSWAP_HANDLER environment variable not set");
-  }
-  return getAddress(addr);
-}
-
 /**
  * Service for calculating CoW Protocol order UIDs.
  *
@@ -62,12 +54,15 @@ export class OrderUidCalculationService {
   /**
    * Calculate the order hash by calling `getOrderHash` on the PolySwap handler.
    */
-  static async calculateOrderHashOnChain(polyswapOrderData: PolyswapOrderData): Promise<Hex> {
+  static async calculateOrderHashOnChain(
+    polyswapOrderData: PolyswapOrderData,
+    handler: Address
+  ): Promise<Hex> {
     if (!this.publicClient) {
       throw new Error("OrderUidCalculationService not initialized with publicClient");
     }
 
-    const handlerAddress = getPolyswapHandlerAddress();
+    const handlerAddress = getAddress(handler);
 
     try {
       const result = await this.publicClient.readContract({
@@ -120,10 +115,11 @@ export class OrderUidCalculationService {
    */
   static async calculateCompleteOrderUidOnChain(
     polyswapOrderData: PolyswapOrderData,
-    owner: Address
+    owner: Address,
+    handler: Address
   ): Promise<Hex> {
     try {
-      const orderHash = await this.calculateOrderHashOnChain(polyswapOrderData);
+      const orderHash = await this.calculateOrderHashOnChain(polyswapOrderData, handler);
       const validTo = parseInt(polyswapOrderData.t);
       return this.calculateOrderUid(orderHash, owner, validTo);
     } catch (error) {

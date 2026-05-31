@@ -17,6 +17,7 @@ function buildSteps(order: OrderViewModel): Step[] {
   const isWaiting = order.status === "waiting" || order.status === "ready";
   const isFilled = order.status === "done";
   const isCancelled = order.status === "cancelled";
+  const isExpired = order.status === "expired";
 
   const steps: Step[] = [
     {
@@ -33,7 +34,14 @@ function buildSteps(order: OrderViewModel): Step[] {
     },
   ];
 
-  if (isCancelled) {
+  if (isExpired) {
+    steps.push({
+      Icon: Icon.timer,
+      label: "Swap expired",
+      caption: "the trigger didn't fire in time — your tokens are still in your wallet",
+      state: "past",
+    });
+  } else if (isCancelled) {
     steps.push({
       Icon: Icon.x,
       label: "You cancelled the swap",

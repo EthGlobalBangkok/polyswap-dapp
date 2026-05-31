@@ -82,6 +82,7 @@ model PolyswapOrder {
   status              String    @default("draft") @db.VarChar(20)
   orderUid            String?   @map("order_uid") @db.VarChar(114)
   salt                String?   @db.VarChar(66)
+  explicitDeadline    Boolean   @default(false) @map("explicit_deadline")
   lastErrorName       String?   @map("last_error_name") @db.VarChar(64)
   lastErrorReason     String?   @map("last_error_reason")
   lastErrorRetryAt    BigInt?   @map("last_error_retry_at")

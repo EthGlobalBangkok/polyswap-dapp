@@ -12,6 +12,7 @@ import { DatabaseService } from "../../../../backend/services/databaseService";
 import { TransactionEncodingService } from "../../../../backend/services/transactionEncodingService";
 import { buildFallbackHandlerSetupTx } from "../../../../backend/services/safeFallbackHandlerService";
 import { getPolymarketOrderService } from "../../../../backend/services/polymarketOrderService";
+import { getClobAvailability } from "../../../../backend/services/polymarketStatusService";
 import { type PolyswapOrderData } from "../../../../backend/interfaces/PolyswapOrder";
 import { getPostHogClient } from "../../../../lib/posthog-server";
 import { createLogger } from "../../../../backend/logger";
@@ -26,6 +27,10 @@ const COMPOSABLE_COW: Address = getAddress(
 );
 
 const APP_DATA_DEFAULT: Hex = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_DEADLINE_DAYS = 30;
+const MAX_DEADLINE_DAYS = 365;
 
 interface CreateOrderRequestBody {
   sellToken: unknown;
@@ -218,6 +223,8 @@ export async function GET(request: NextRequest) {
  *         description: Market not found
  *       502:
  *         description: Polymarket placement failed
+ *       503:
+ *         description: Polymarket CLOB API is down or in maintenance
  *       500:
  *         description: Server error
  */
@@ -343,26 +350,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const market = await DatabaseService.getMarketById(marketId);
+    if (!market) {
+      return NextResponse.json(
+        { success: false, error: "Market not found", message: `No market with id: ${marketId}` },
+        { status: 404 }
+      );
+    }
+
+    const explicitDeadline = typeof body.deadline === "string" && body.deadline !== "";
     let deadline: Date;
-    if (!body.deadline) {
-      deadline = new Date(startDate);
-      deadline.setDate(deadline.getDate() + 14);
+    if (explicitDeadline) {
+      deadline = new Date(body.deadline as string);
     } else {
-      deadline = new Date(body.deadline);
+      const marketEnd = market.end_date ? new Date(market.end_date) : null;
+      deadline =
+        marketEnd && marketEnd.getTime() > startDate.getTime()
+          ? marketEnd
+          : new Date(startDate.getTime() + DEFAULT_DEADLINE_DAYS * DAY_MS);
+      const maxDeadline = new Date(startDate.getTime() + MAX_DEADLINE_DAYS * DAY_MS);
+      if (deadline.getTime() > maxDeadline.getTime()) deadline = maxDeadline;
     }
 
     if (deadline <= startDate) {
       return NextResponse.json(
         { success: false, error: "deadline must be after startDate" },
         { status: 400 }
-      );
-    }
-
-    const market = await DatabaseService.getMarketById(marketId);
-    if (!market) {
-      return NextResponse.json(
-        { success: false, error: "Market not found", message: `No market with id: ${marketId}` },
-        { status: 404 }
       );
     }
 
@@ -423,6 +436,13 @@ export async function POST(request: NextRequest) {
       log.info(`GTD order accepted: orderID=${polymarketOrderHash}`);
     } catch (polymarketError) {
       log.error("GTD order placement failed:", polymarketError);
+      const clob = await getClobAvailability();
+      if (!clob.available) {
+        return NextResponse.json(
+          { success: false, error: "Polymarket unavailable", message: clob.reason },
+          { status: 503 }
+        );
+      }
       return NextResponse.json(
         { success: false, error: "Polymarket order placement error" },
         { status: 502 }
@@ -467,6 +487,7 @@ export async function POST(request: NextRequest) {
         betPercentageValue: betPercentage,
         polymarketOrderHash,
         salt: params.salt,
+        explicitDeadline,
       });
     } catch (dbError) {
       log.error("failed to insert order into database:", dbError);

@@ -64,9 +64,10 @@ export interface DatabasePolyswapOrder {
   market_id: string | null;
   outcome_selected: string | null; // Selected outcome index
   bet_percentage: number | null; // Bet percentage (0-100)
-  status: "draft" | "live" | "filled" | "canceled" | "errored";
+  status: "draft" | "live" | "filled" | "canceled" | "errored" | "expired";
   order_uid: string | null; // CoW Protocol order UID
   salt: string | null;
+  explicit_deadline: boolean;
   last_error_name: string | null;
   last_error_reason: string | null;
   last_error_retry_at: string | null; // BIGINT — pg returns string

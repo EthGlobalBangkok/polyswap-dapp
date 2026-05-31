@@ -13,6 +13,7 @@ const TABS: { id: DashboardTab; label: string }[] = [
   { id: "ready", label: "Ready" },
   { id: "done", label: "Done" },
   { id: "cancelled", label: "Cancelled" },
+  { id: "expired", label: "Expired" },
 ];
 
 interface Props {

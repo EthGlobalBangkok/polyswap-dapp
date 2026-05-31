@@ -23,6 +23,7 @@ export function DashboardPage() {
       ready: 0,
       done: 0,
       cancelled: 0,
+      expired: 0,
     };
     for (const o of orders) out[o.status]++;
     return out;

@@ -556,7 +556,6 @@ export class PolymarketPositionSellerService {
 
           log.info(`Sell order created: ${orderId}`);
 
-          // Record in database for audit purposes only (not used for deduplication)
           try {
             await DatabaseService.recordSoldPosition({
               assetId: position.asset,
@@ -568,9 +567,10 @@ export class PolymarketPositionSellerService {
               marketTitle: position.title || "Unknown",
               outcome: position.outcome || "Unknown",
             });
-          } catch {
-            // Audit-only write; sale already happened on-chain.
-            log.warn(`Warning: Failed to record sale in DB (audit only)`);
+          } catch (err) {
+            log.warn(
+              `Failed to record sale in DB (audit only): ${err instanceof Error ? err.message : String(err)}`
+            );
           }
 
           soldCount++;

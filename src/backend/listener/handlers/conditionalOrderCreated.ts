@@ -1,6 +1,8 @@
 import { decodeEventLog, type Log, type Hex, type Address } from "viem";
 import composableCowAbi from "@/abi/composableCoW.json";
 import { DatabaseService } from "@/backend/services/databaseService";
+import { OrderUidCalculationService } from "@/backend/services/orderUidCalculationService";
+import { getPublicClient } from "../blockchainProvider";
 import { calculateOrderHash, decodeStaticInput } from "../eventDecoder";
 import type { ConditionalOrderParams } from "@/backend/interfaces/PolyswapOrder";
 import { createLogger } from "@/backend/logger";
@@ -81,6 +83,24 @@ export async function handleConditionalOrderCreated(eventLog: Log): Promise<void
       logIndex: Number(eventLog.logIndex),
     });
     log.info(`upserted live order ${orderHash} (owner ${decoded.owner})`);
+
+    // Persist the CoW UID now — both fill-detection paths look orders up by it.
+    try {
+      OrderUidCalculationService.initialize(getPublicClient());
+      const orderUid = await OrderUidCalculationService.calculateCompleteOrderUidOnChain(
+        data,
+        decoded.owner,
+        decoded.params.handler as Address
+      );
+      await DatabaseService.updateOrderUid(orderHash, orderUid);
+      log.debug(`stored order_uid ${orderUid} for ${orderHash}`);
+    } catch (uidErr) {
+      log.warn(
+        `order_uid computation failed for ${orderHash}; will retry on backfill: ${
+          uidErr instanceof Error ? uidErr.message : String(uidErr)
+        }`
+      );
+    }
   } catch (err) {
     log.error("upsertLiveOrderFromEvent failed:", err);
   }

@@ -43,7 +43,7 @@ export const CRYPTO_RELEVANT_CATEGORIES: ReadonlyArray<MarketCategory> = [
   "AI",
 ];
 
-export type SwapStatus = "waiting" | "ready" | "done" | "cancelled";
+export type SwapStatus = "waiting" | "ready" | "done" | "cancelled" | "expired";
 
 export type Side = "YES" | "NO";
 

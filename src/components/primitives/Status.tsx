@@ -11,6 +11,7 @@ const status = cva(
         ready: "bg-accent text-paper",
         done: "bg-yes text-paper",
         cancelled: "bg-paper-3 text-ink-3",
+        expired: "bg-paper-3 text-ink-3",
       },
     },
     defaultVariants: { kind: "waiting" },
@@ -22,6 +23,7 @@ const dotColor: Record<SwapStatus, string | null> = {
   ready: "bg-paper",
   done: null,
   cancelled: null,
+  expired: null,
 };
 
 const label: Record<SwapStatus, string> = {
@@ -29,6 +31,7 @@ const label: Record<SwapStatus, string> = {
   ready: "READY",
   done: "FILLED",
   cancelled: "CANCELLED",
+  expired: "EXPIRED",
 };
 
 interface Props extends VariantProps<typeof status> {

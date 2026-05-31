@@ -141,6 +141,15 @@ export function CreatePage({ marketId }: Props) {
         state.toToken.decimals
       );
 
+      // 7d/30d send an explicit deadline; "until-resolution" sends none.
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const deadline =
+        state.expiry === "7d"
+          ? new Date(Date.now() + 7 * DAY_MS).toISOString()
+          : state.expiry === "30d"
+            ? new Date(Date.now() + 30 * DAY_MS).toISOString()
+            : undefined;
+
       const order = await apiService.createPolyswapOrder({
         sellToken,
         buyToken,
@@ -149,6 +158,7 @@ export function CreatePage({ marketId }: Props) {
         selectedOutcome: state.side === "YES" ? "Yes" : "No",
         betPercentage: Math.round(state.threshold * 100),
         startDate: "now",
+        deadline,
         marketId: rawMarket.id,
         owner: safeAddress,
       });
@@ -256,7 +266,19 @@ export function CreatePage({ marketId }: Props) {
           />
 
           {signingError && (
-            <p className="border border-no bg-no/10 px-3 py-2 text-xs text-no">{signingError}</p>
+            <div className="border border-no bg-no/10 px-3 py-2 text-xs text-no">
+              <p>{signingError}</p>
+              {signingError.toLowerCase().includes("polymarket") && (
+                <a
+                  href="https://status.polymarket.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 inline-block underline underline-offset-2"
+                >
+                  Check Polymarket status ↗
+                </a>
+              )}
+            </div>
           )}
 
           {/* Desktop CTA */}

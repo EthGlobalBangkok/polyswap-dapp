@@ -47,7 +47,7 @@ const INTEREST_NOISE_REGEX = [
   "posts? \\d+\\+? tweets",
 ].join("|");
 
-type OrderStatus = "draft" | "live" | "filled" | "canceled" | "errored";
+type OrderStatus = "draft" | "live" | "filled" | "canceled" | "errored" | "expired";
 
 type CowOrderStatus = NonNullable<DatabasePolyswapOrder["cow_order_status"]>;
 
@@ -109,6 +109,7 @@ function toPolyswapOrderRow(o: PrismaPolyswapOrder): DatabasePolyswapOrder {
     status: o.status as OrderStatus,
     order_uid: o.orderUid,
     salt: o.salt,
+    explicit_deadline: o.explicitDeadline,
     last_error_name: o.lastErrorName,
     last_error_reason: o.lastErrorReason,
     last_error_retry_at: o.lastErrorRetryAt === null ? null : o.lastErrorRetryAt.toString(),
@@ -339,6 +340,7 @@ export class DatabaseService {
     betPercentageValue: number;
     polymarketOrderHash: string;
     salt: string;
+    explicitDeadline: boolean;
   }): Promise<number> {
     const created = await prisma.polyswapOrder.create({
       data: {
@@ -354,6 +356,7 @@ export class DatabaseService {
         betPercentage: new Prisma.Decimal(orderData.betPercentageValue),
         polymarketOrderHash: orderData.polymarketOrderHash,
         salt: orderData.salt,
+        explicitDeadline: orderData.explicitDeadline,
         status: "draft",
       },
       select: { id: true },

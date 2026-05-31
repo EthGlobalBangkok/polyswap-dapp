@@ -364,7 +364,9 @@ export class PolymarketOrderService {
       throw new Error("Price must be greater than 0");
     }
 
-    const minSizeForOneDollar = Math.ceil((1 / config.price) * 1_000_000) / 1_000_000;
+    // The SDK rounds BUY size DOWN to 2 dp and the CLOB rejects marketable BUYs worth < $1; size up
+    // to the smallest 2-dp size clearing $1 (+1c cushion so exact-dollar prices survive the rounding).
+    const minSizeForOneDollar = Math.ceil((1.01 / config.price) * 100) / 100;
     const sizeToUse = config.size < minSizeForOneDollar ? minSizeForOneDollar : config.size;
 
     const decimals = await this.getTokenDecimals(this.PUSD);

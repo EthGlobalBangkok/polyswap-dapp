@@ -110,6 +110,8 @@ function toPolyswapOrderRow(o: PrismaPolyswapOrder): DatabasePolyswapOrder {
     order_uid: o.orderUid,
     salt: o.salt,
     explicit_deadline: o.explicitDeadline,
+    polymarket_maker_amount:
+      o.polymarketMakerAmount === null ? null : o.polymarketMakerAmount.toString(),
     last_error_name: o.lastErrorName,
     last_error_reason: o.lastErrorReason,
     last_error_retry_at: o.lastErrorRetryAt === null ? null : o.lastErrorRetryAt.toString(),
@@ -341,6 +343,7 @@ export class DatabaseService {
     polymarketOrderHash: string;
     salt: string;
     explicitDeadline: boolean;
+    polymarketMakerAmount: string;
   }): Promise<number> {
     const created = await prisma.polyswapOrder.create({
       data: {
@@ -357,6 +360,7 @@ export class DatabaseService {
         polymarketOrderHash: orderData.polymarketOrderHash,
         salt: orderData.salt,
         explicitDeadline: orderData.explicitDeadline,
+        polymarketMakerAmount: new Prisma.Decimal(orderData.polymarketMakerAmount),
         status: "draft",
       },
       select: { id: true },
@@ -387,6 +391,9 @@ export class DatabaseService {
       transactionHash: order.transactionHash,
       logIndex,
       salt: order.salt ?? null,
+      polymarketMakerAmount: order.polymarketMakerAmount
+        ? new Prisma.Decimal(order.polymarketMakerAmount)
+        : null,
       status: "live",
     };
 
@@ -408,6 +415,7 @@ export class DatabaseService {
         transactionHash: data.transactionHash,
         logIndex: data.logIndex,
         salt: data.salt,
+        polymarketMakerAmount: data.polymarketMakerAmount,
         status: data.status,
         updatedAt: new Date(),
       },
@@ -451,6 +459,10 @@ export class DatabaseService {
           logIndex: input.logIndex,
           appData: input.data.appData,
           salt: input.salt,
+          // V2 staticInput carries makerAmount; keep the row consistent with what was committed on-chain.
+          ...(input.data.polymarketMakerAmount
+            ? { polymarketMakerAmount: new Prisma.Decimal(input.data.polymarketMakerAmount) }
+            : {}),
           updatedAt: new Date(),
         },
       });
@@ -474,6 +486,7 @@ export class DatabaseService {
       logIndex: input.logIndex,
       createdAt: new Date(),
       salt: input.salt,
+      polymarketMakerAmount: input.data.polymarketMakerAmount || null,
     });
   }
 

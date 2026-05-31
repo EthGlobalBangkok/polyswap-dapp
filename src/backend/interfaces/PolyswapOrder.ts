@@ -8,6 +8,7 @@ export interface PolyswapOrderData {
   t: string; // uint256 timestamp as string
   polymarketOrderHash: string; // bytes32 hex string
   appData: string; // bytes32 hex string
+  polymarketMakerAmount: string; // uint256 as string; "" for legacy V1 orders
 }
 
 export interface ConditionalOrderParams {
@@ -42,6 +43,7 @@ export interface PolyswapOrderRecord {
   logIndex: number;
   createdAt: Date;
   salt?: string;
+  polymarketMakerAmount?: string | null;
 }
 
 // Database interface for the polyswap_orders table
@@ -68,6 +70,7 @@ export interface DatabasePolyswapOrder {
   order_uid: string | null; // CoW Protocol order UID
   salt: string | null;
   explicit_deadline: boolean;
+  polymarket_maker_amount: string | null;
   last_error_name: string | null;
   last_error_reason: string | null;
   last_error_retry_at: string | null; // BIGINT — pg returns string

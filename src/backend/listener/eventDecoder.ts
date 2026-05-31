@@ -22,6 +22,14 @@ const ORDER_DATA_TUPLE = [
   { type: "bytes32", name: "appData" },
 ] as const;
 
+const ORDER_DATA_TUPLE_V2 = [
+  ...ORDER_DATA_TUPLE,
+  { type: "uint256", name: "polymarketMakerAmount" },
+] as const;
+
+// All fields are static (32 bytes); V1 staticInput = 288 bytes, V2 = 320 (adds polymarketMakerAmount).
+const V2_BYTE_LENGTH = ORDER_DATA_TUPLE_V2.length * 32;
+
 /**
  * keccak256(abi.encode((handler, salt, staticInput))) — matches ComposableCoW.hash().
  * The result is the singleOrderHash key used for remove() and on-chain singleOrders[] reads.
@@ -54,17 +62,34 @@ export function calculateOrderHash(params: ConditionalOrderParams): Hex {
  * PolyswapOrderData. Field order MUST match the handler's struct layout.
  */
 export function decodeStaticInput(staticInput: Hex): PolyswapOrderData {
-  const decoded = decodeAbiParameters(ORDER_DATA_TUPLE, staticInput);
+  const byteLength = (staticInput.length - 2) / 2;
+  if (byteLength >= V2_BYTE_LENGTH) {
+    const d = decodeAbiParameters(ORDER_DATA_TUPLE_V2, staticInput);
+    return {
+      sellToken: d[0],
+      buyToken: d[1],
+      receiver: d[2],
+      sellAmount: d[3].toString(),
+      minBuyAmount: d[4].toString(),
+      t0: d[5].toString(),
+      t: d[6].toString(),
+      polymarketOrderHash: d[7],
+      appData: d[8],
+      polymarketMakerAmount: d[9].toString(),
+    };
+  }
+  const d = decodeAbiParameters(ORDER_DATA_TUPLE, staticInput);
   return {
-    sellToken: decoded[0],
-    buyToken: decoded[1],
-    receiver: decoded[2],
-    sellAmount: decoded[3].toString(),
-    minBuyAmount: decoded[4].toString(),
-    t0: decoded[5].toString(),
-    t: decoded[6].toString(),
-    polymarketOrderHash: decoded[7],
-    appData: decoded[8],
+    sellToken: d[0],
+    buyToken: d[1],
+    receiver: d[2],
+    sellAmount: d[3].toString(),
+    minBuyAmount: d[4].toString(),
+    t0: d[5].toString(),
+    t: d[6].toString(),
+    polymarketOrderHash: d[7],
+    appData: d[8],
+    polymarketMakerAmount: "",
   };
 }
 

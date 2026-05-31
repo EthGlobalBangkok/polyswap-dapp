@@ -6,10 +6,13 @@ import {
   AssetType,
   SignatureTypeV2,
   type OpenOrder,
+  type SignedOrder,
+  isV2Order,
 } from "@polymarket/clob-client-v2";
 import {
   createPublicClient,
   createWalletClient,
+  hashTypedData,
   isAddress,
   erc20Abi,
   formatUnits,
@@ -46,10 +49,78 @@ export interface PolymarketMarketOrderConfig {
 // V2 collateral is pUSD (a 1:1 wrapper around USDC.e), not USDC.e directly.
 const PUSD_DEFAULT: Address = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB";
 const CTF_EXCHANGE_V2_DEFAULT: Address = "0xE111180000d2663C0091e4f400237545B87B996B";
+const NEG_RISK_CTF_EXCHANGE_V2_DEFAULT: Address = "0xe2222d279d744050d28e00520010520000310F59";
 
 // V2 GTD orders require a safety buffer between `now` and the requested expiration,
 // otherwise the CLOB rejects them as "already expired".
 const GTD_SAFETY_BUFFER_SECONDS = 60;
+
+const POLYGON_CHAIN_ID = 137;
+// How many times to regenerate the order (fresh salt) if its hash already has on-chain status.
+const MAX_SALT_ATTEMPTS = 3;
+
+// EIP-712 Order struct of the V2 CTF Exchange; the plain digest over it is the orderID getOrderStatus keys on.
+const ORDER_STRUCT_V2 = [
+  { name: "salt", type: "uint256" },
+  { name: "maker", type: "address" },
+  { name: "signer", type: "address" },
+  { name: "tokenId", type: "uint256" },
+  { name: "makerAmount", type: "uint256" },
+  { name: "takerAmount", type: "uint256" },
+  { name: "side", type: "uint8" },
+  { name: "signatureType", type: "uint8" },
+  { name: "timestamp", type: "uint256" },
+  { name: "metadata", type: "bytes32" },
+  { name: "builder", type: "bytes32" },
+] as const;
+
+const ORDER_STATUS_ABI = [
+  {
+    type: "function",
+    name: "getOrderStatus",
+    stateMutability: "view",
+    inputs: [{ type: "bytes32", name: "orderHash" }],
+    outputs: [
+      {
+        type: "tuple",
+        components: [
+          { name: "isFilledOrCancelled", type: "bool" },
+          { name: "remaining", type: "uint256" },
+        ],
+      },
+    ],
+  },
+] as const;
+
+// Compute a V2 order's hash off-chain (== the CLOB orderID) so we can check getOrderStatus before posting.
+export function computeV2OrderHash(order: SignedOrder, exchange: Address): Hex {
+  if (!isV2Order(order)) {
+    throw new Error("expected a V2 signed order");
+  }
+  return hashTypedData({
+    domain: {
+      name: "Polymarket CTF Exchange",
+      version: "2",
+      chainId: POLYGON_CHAIN_ID,
+      verifyingContract: exchange,
+    },
+    types: { Order: ORDER_STRUCT_V2 },
+    primaryType: "Order",
+    message: {
+      salt: BigInt(order.salt),
+      maker: order.maker as Address,
+      signer: order.signer as Address,
+      tokenId: BigInt(order.tokenId),
+      makerAmount: BigInt(order.makerAmount),
+      takerAmount: BigInt(order.takerAmount),
+      side: order.side === Side.BUY ? 0 : 1,
+      signatureType: Number(order.signatureType),
+      timestamp: BigInt(order.timestamp),
+      metadata: order.metadata as Hex,
+      builder: order.builder as Hex,
+    },
+  });
+}
 
 interface ReadyClients {
   clobClient: ClobClient;
@@ -67,6 +138,8 @@ export class PolymarketOrderService {
   private readonly PUSD: Address = (process.env.PUSD_ADDRESS as Address) ?? PUSD_DEFAULT;
   private readonly CTF_EXCHANGE: Address =
     (process.env.CTF_EXCHANGE_V2_ADDRESS as Address) ?? CTF_EXCHANGE_V2_DEFAULT;
+  private readonly NEG_RISK_CTF_EXCHANGE: Address =
+    (process.env.NEG_RISK_CTF_EXCHANGE_V2_ADDRESS as Address) ?? NEG_RISK_CTF_EXCHANGE_V2_DEFAULT;
 
   private constructor() {
     /* singleton — see getInstance() */
@@ -285,7 +358,7 @@ export class PolymarketOrderService {
    * the caller-supplied expiration up to that floor when needed, never down.
    */
   async postGTDOrder(config: PolymarketOrderConfig & { expiration: number }) {
-    const { clobClient } = this.getReady();
+    const { clobClient, publicClient } = this.getReady();
 
     if (!(config.price > 0)) {
       throw new Error("Price must be greater than 0");
@@ -315,21 +388,64 @@ export class PolymarketOrderService {
     const minExpiration = nowSeconds + GTD_SAFETY_BUFFER_SECONDS;
     const expiration = Math.max(config.expiration, minExpiration);
 
+    const exchange = config.negRisk ? this.NEG_RISK_CTF_EXCHANGE : this.CTF_EXCHANGE;
+
     try {
-      const response = await clobClient.createAndPostOrder(
-        {
-          tokenID: config.tokenID,
-          price: config.price,
-          side: config.side === "BUY" ? Side.BUY : Side.SELL,
-          size: sizeToUse,
-          expiration,
-        },
-        { tickSize: "0.01", negRisk: config.negRisk },
-        OrderType.GTD
-      );
+      // Confirm the hash is clean on-chain before posting; a reused hash carries stale getOrderStatus
+      // that would poison the fill gate. Each createOrder yields a fresh salt, so retry on collision.
+      let signedOrder: SignedOrder | null = null;
+      let orderHash: Hex | null = null;
+      for (let attempt = 0; attempt < MAX_SALT_ATTEMPTS; attempt++) {
+        const candidate = await clobClient.createOrder(
+          {
+            tokenID: config.tokenID,
+            price: config.price,
+            side: config.side === "BUY" ? Side.BUY : Side.SELL,
+            size: sizeToUse,
+            expiration,
+          },
+          { tickSize: "0.01", negRisk: config.negRisk }
+        );
+        const hash = computeV2OrderHash(candidate, exchange);
+        const status = await publicClient.readContract({
+          address: exchange,
+          abi: ORDER_STATUS_ABI,
+          functionName: "getOrderStatus",
+          args: [hash],
+        });
+        if (status.remaining === 0n && status.isFilledOrCancelled === false) {
+          signedOrder = candidate;
+          orderHash = hash;
+          break;
+        }
+        log.warn(
+          `Polymarket order hash ${hash} already has on-chain status (filled=${status.isFilledOrCancelled}, remaining=${status.remaining}); regenerating salt (${attempt + 1}/${MAX_SALT_ATTEMPTS})`
+        );
+      }
+
+      if (!signedOrder || !orderHash) {
+        throw new Error(
+          `Could not obtain a clean Polymarket order hash after ${MAX_SALT_ATTEMPTS} attempts`
+        );
+      }
+
+      const makerAmount = isV2Order(signedOrder) ? signedOrder.makerAmount : null;
+      if (!makerAmount) {
+        throw new Error("signed order is missing makerAmount");
+      }
+
+      const response = await clobClient.postOrder(signedOrder, OrderType.GTD);
       log.info(`GTD response: ${JSON.stringify(response)}`);
       assertCLOBOrderAccepted(response, "GTD");
-      return { response };
+
+      // Self-verify the off-chain hash replication against the CLOB's authoritative orderID.
+      if (response.orderID && response.orderID.toLowerCase() !== orderHash.toLowerCase()) {
+        log.error(
+          `computed order hash ${orderHash} != response.orderID ${response.orderID} — hashing replication drift`
+        );
+      }
+
+      return { response, makerAmount, polymarketOrderHash: response.orderID ?? orderHash };
     } catch (error) {
       const { message, details } = describeOrderError(error);
       log.error("failed to create GTD order:", error);

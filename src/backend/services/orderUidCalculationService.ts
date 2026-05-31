@@ -9,30 +9,35 @@ const log = createLogger("order-uid");
 
 const ZERO_BYTES32: Hex = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
-const orderHashAbi = [
-  {
-    type: "function",
-    name: "getOrderHash",
-    stateMutability: "view",
-    inputs: [
-      {
-        type: "tuple",
-        components: [
-          { name: "sellToken", type: "address" },
-          { name: "buyToken", type: "address" },
-          { name: "receiver", type: "address" },
-          { name: "sellAmount", type: "uint256" },
-          { name: "minBuyAmount", type: "uint256" },
-          { name: "t0", type: "uint256" },
-          { name: "t", type: "uint256" },
-          { name: "polymarketOrderHash", type: "bytes32" },
-          { name: "appData", type: "bytes32" },
-        ],
-      },
-    ],
-    outputs: [{ type: "bytes32" }],
-  },
+const ORDER_COMPONENTS_V1 = [
+  { name: "sellToken", type: "address" },
+  { name: "buyToken", type: "address" },
+  { name: "receiver", type: "address" },
+  { name: "sellAmount", type: "uint256" },
+  { name: "minBuyAmount", type: "uint256" },
+  { name: "t0", type: "uint256" },
+  { name: "t", type: "uint256" },
+  { name: "polymarketOrderHash", type: "bytes32" },
+  { name: "appData", type: "bytes32" },
 ] as const;
+
+const getOrderHashAbi = (components: readonly { name: string; type: string }[]) =>
+  [
+    {
+      type: "function",
+      name: "getOrderHash",
+      stateMutability: "view",
+      inputs: [{ type: "tuple", components }],
+      outputs: [{ type: "bytes32" }],
+    },
+  ] as const;
+
+// Legacy 9-field handler and the current 10-field handler (adds polymarketMakerAmount).
+const orderHashAbi = getOrderHashAbi(ORDER_COMPONENTS_V1);
+const orderHashAbiV2 = getOrderHashAbi([
+  ...ORDER_COMPONENTS_V1,
+  { name: "polymarketMakerAmount", type: "uint256" },
+]);
 
 /**
  * Service for calculating CoW Protocol order UIDs.
@@ -64,25 +69,39 @@ export class OrderUidCalculationService {
 
     const handlerAddress = getAddress(handler);
 
+    // The ABI must match the deployed handler's getOrderHash signature: V2 orders carry makerAmount
+    // (10-field handler), legacy don't. The field doesn't change the hash (orderFor ignores it).
+    const makerAmount = polyswapOrderData.polymarketMakerAmount;
+    const isV2 = makerAmount !== undefined && makerAmount !== "" && makerAmount !== "0";
+
+    const order = {
+      sellToken: polyswapOrderData.sellToken as Address,
+      buyToken: polyswapOrderData.buyToken as Address,
+      receiver: polyswapOrderData.receiver as Address,
+      sellAmount: BigInt(polyswapOrderData.sellAmount),
+      minBuyAmount: BigInt(polyswapOrderData.minBuyAmount),
+      t0: BigInt(polyswapOrderData.t0),
+      t: BigInt(polyswapOrderData.t),
+      polymarketOrderHash: polyswapOrderData.polymarketOrderHash as Hex,
+      appData: polyswapOrderData.appData as Hex,
+    };
+
     try {
-      const result = await this.publicClient.readContract({
-        address: handlerAddress,
-        abi: orderHashAbi,
-        functionName: "getOrderHash",
-        args: [
-          {
-            sellToken: polyswapOrderData.sellToken as Address,
-            buyToken: polyswapOrderData.buyToken as Address,
-            receiver: polyswapOrderData.receiver as Address,
-            sellAmount: BigInt(polyswapOrderData.sellAmount),
-            minBuyAmount: BigInt(polyswapOrderData.minBuyAmount),
-            t0: BigInt(polyswapOrderData.t0),
-            t: BigInt(polyswapOrderData.t),
-            polymarketOrderHash: polyswapOrderData.polymarketOrderHash as Hex,
-            appData: polyswapOrderData.appData as Hex,
-          },
-        ],
-      });
+      const result = await this.publicClient.readContract(
+        isV2
+          ? {
+              address: handlerAddress,
+              abi: orderHashAbiV2,
+              functionName: "getOrderHash",
+              args: [{ ...order, polymarketMakerAmount: BigInt(makerAmount) }],
+            }
+          : {
+              address: handlerAddress,
+              abi: orderHashAbi,
+              functionName: "getOrderHash",
+              args: [order],
+            }
+      );
 
       return result;
     } catch (error) {
@@ -146,6 +165,7 @@ export class OrderUidCalculationService {
       t: Math.floor(new Date(dbOrder.end_time).getTime() / 1000).toString(),
       polymarketOrderHash: dbOrder.polymarket_order_hash || ZERO_BYTES32,
       appData: dbOrder.app_data || ZERO_BYTES32,
+      polymarketMakerAmount: dbOrder.polymarket_maker_amount ?? "",
     };
   }
 }

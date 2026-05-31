@@ -105,12 +105,14 @@ const ORDER_DATA_TUPLE = [
   { type: "bytes32" },
 ] as const;
 
+const ORDER_DATA_TUPLE_V2 = [...ORDER_DATA_TUPLE, { type: "uint256" }] as const;
+
 /**
- * Reconstruct the conditional-order staticInput from a DB row. The handler
- * struct layout matches PolyswapOrderData's 9-field tuple.
+ * Reconstruct staticInput from a DB row, byte-identical to the on-chain commit (else H(params)
+ * mismatches → SingleOrderNotAuthed). Pre-makerAmount orders have a null column → legacy 9-field layout.
  */
 function reconstructStaticInput(order: DatabasePolyswapOrder): Hex {
-  return encodeAbiParameters(ORDER_DATA_TUPLE, [
+  const base = [
     order.sell_token as Address,
     order.buy_token as Address,
     order.owner as Address,
@@ -120,7 +122,12 @@ function reconstructStaticInput(order: DatabasePolyswapOrder): Hex {
     BigInt(Math.floor(new Date(order.end_time).getTime() / 1000)),
     (order.polymarket_order_hash ?? ZERO_BYTES32) as Hex,
     (order.app_data ?? ZERO_BYTES32) as Hex,
-  ]);
+  ] as const;
+
+  if (order.polymarket_maker_amount == null) {
+    return encodeAbiParameters(ORDER_DATA_TUPLE, base);
+  }
+  return encodeAbiParameters(ORDER_DATA_TUPLE_V2, [...base, BigInt(order.polymarket_maker_amount)]);
 }
 
 // Explicit deadline → end_time; otherwise expired only once the market is resolved.

@@ -82,6 +82,9 @@ export class TransactionEncodingService {
         "Missing required order data fields: sellToken, buyToken, or polymarketOrderHash"
       );
     }
+    if (!orderData.polymarketMakerAmount) {
+      throw new Error("Missing required order data field: polymarketMakerAmount");
+    }
 
     const sellToken = orderData.sellToken as Address;
     const buyToken = orderData.buyToken as Address;
@@ -100,6 +103,7 @@ export class TransactionEncodingService {
         { type: "uint256" }, // t
         { type: "bytes32" }, // polymarketOrderHash
         { type: "bytes32" }, // appData
+        { type: "uint256" }, // polymarketMakerAmount
       ],
       [
         sellToken,
@@ -113,6 +117,7 @@ export class TransactionEncodingService {
         formatBytes32(
           orderData.appData || "0x0000000000000000000000000000000000000000000000000000000000000000"
         ),
+        toBigInt(orderData.polymarketMakerAmount, "polymarketMakerAmount"),
       ]
     );
   }

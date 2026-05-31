@@ -414,6 +414,7 @@ export async function POST(request: NextRequest) {
     }
 
     let polymarketOrderHash: string;
+    let polymarketMakerAmount: string;
     try {
       const polymarket = getPolymarketOrderService();
       await polymarket.initialize();
@@ -432,8 +433,11 @@ export async function POST(request: NextRequest) {
         expiration,
         negRisk: market.neg_risk,
       });
-      polymarketOrderHash = result.response.orderID;
-      log.info(`GTD order accepted: orderID=${polymarketOrderHash}`);
+      polymarketOrderHash = result.polymarketOrderHash;
+      polymarketMakerAmount = result.makerAmount;
+      log.info(
+        `GTD order accepted: orderID=${polymarketOrderHash} makerAmount=${polymarketMakerAmount}`
+      );
     } catch (polymarketError) {
       log.error("GTD order placement failed:", polymarketError);
       const clob = await getClobAvailability();
@@ -459,6 +463,7 @@ export async function POST(request: NextRequest) {
       t: Math.floor(deadline.getTime() / 1000).toString(),
       polymarketOrderHash,
       appData: APP_DATA_DEFAULT,
+      polymarketMakerAmount,
     };
 
     const params = TransactionEncodingService.createConditionalOrderParams(orderData, {
@@ -488,6 +493,7 @@ export async function POST(request: NextRequest) {
         polymarketOrderHash,
         salt: params.salt,
         explicitDeadline,
+        polymarketMakerAmount,
       });
     } catch (dbError) {
       log.error("failed to insert order into database:", dbError);

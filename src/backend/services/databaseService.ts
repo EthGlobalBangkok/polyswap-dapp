@@ -243,8 +243,20 @@ export class DatabaseService {
   }
 
   static async removeEndedMarkets(): Promise<number> {
+    const now = new Date();
+    // Ended markets still referenced by an order are kept (the detail page
+    // needs their title + event slug, and the FK is onDelete:SetNull so a
+    // delete would null the order's marketId). Flag them inactive so they drop
+    // out of search; getMarketById still resolves them by id.
+    const deactivated = await prisma.market.updateMany({
+      where: { endDate: { lt: now }, active: true, orders: { some: {} } },
+      data: { active: false },
+    });
+    if (deactivated.count > 0) {
+      log.info(`deactivated ${deactivated.count} ended markets still linked to orders`);
+    }
     const { count } = await prisma.market.deleteMany({
-      where: { endDate: { lt: new Date() } },
+      where: { endDate: { lt: now }, orders: { none: {} } },
     });
     return count;
   }

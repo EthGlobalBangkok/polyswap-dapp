@@ -374,7 +374,7 @@ export function SwapDetailPage({ orderId }: Props) {
 
             <section aria-label="Tracking" className="border border-ink bg-paper p-5">
               <p className="eyebrow mb-3">CoW order</p>
-              {order.orderUid ? (
+              {isFilled && order.orderUid ? (
                 <a
                   href={`https://explorer.cow.fi/pol/orders/${order.orderUid}`}
                   target="_blank"
@@ -395,7 +395,7 @@ export function SwapDetailPage({ orderId }: Props) {
                   rel="noopener noreferrer"
                   className="group inline-flex items-center gap-2 text-sm hover:underline"
                 >
-                  See pending orders for this wallet
+                  See this wallet&apos;s orders on CoW Explorer
                   <Icon.arrowUpRight
                     size={12}
                     className="text-ink-3 transition-colors group-hover:text-ink"

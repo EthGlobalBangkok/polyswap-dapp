@@ -14,6 +14,7 @@ import { PolymarketAPIService } from "@/backend/services/polymarketAPIService";
 import composableCowAbi from "@/abi/composableCoW.json";
 import type { DatabasePolyswapOrder } from "@/backend/interfaces/PolyswapOrder";
 import { createLogger } from "@/backend/logger";
+import { activateSentinel } from "@/backend/services/polymarketSentinelService";
 
 const log = createLogger("order-health");
 
@@ -157,6 +158,15 @@ async function checkOne(order: DatabasePolyswapOrder): Promise<void> {
 
   if (await expireIfNeeded(order)) return;
 
+  if (order.sentinel_id !== null && order.transaction_hash) {
+    try {
+      await activateSentinel(order.sentinel_id, order.transaction_hash);
+    } catch (error) {
+      log.warn(`sentinel activation retry failed for order ${order.id}`, error);
+      return;
+    }
+  }
+
   const client = getPublicClient();
   const params = {
     handler: order.handler as Address,
@@ -178,6 +188,7 @@ async function checkOne(order: DatabasePolyswapOrder): Promise<void> {
     await DatabaseService.clearOrderError(order.id);
     if (!order.gate_opened_at) {
       await DatabaseService.markGateOpened(order.id);
+      await DatabaseService.markSentinelFilledForOrder(order.id);
     }
   } catch (err) {
     const data = extractRevertData(err);

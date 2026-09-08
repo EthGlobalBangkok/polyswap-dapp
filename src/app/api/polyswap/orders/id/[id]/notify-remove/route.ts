@@ -3,7 +3,6 @@ import { getAddress, type Address, type Hex } from "viem";
 import composableCowAbi from "@/abi/composableCoW.json";
 import { DatabaseService } from "@/backend/services/databaseService";
 import { verifySignature } from "@/backend/utils/signatureVerification";
-import { getPolymarketOrderService } from "@/backend/services/polymarketOrderService";
 import { getPublicClient } from "@/backend/listener/blockchainProvider";
 
 const COMPOSABLE_COW: Address = getAddress(
@@ -119,16 +118,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       { success: false, error: "Unexpected on-chain state for order" },
       { status: 502 }
     );
-  }
-
-  if (order.polymarket_order_hash) {
-    try {
-      const pm = getPolymarketOrderService();
-      await pm.initialize();
-      await pm.cancelOrder(order.polymarket_order_hash);
-    } catch (err) {
-      console.warn("Polymarket cancel failed during notify-remove (idempotent):", err);
-    }
   }
 
   await DatabaseService.updateOrderStatusById(orderId, "canceled");

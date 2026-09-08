@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "../../../../../../backend/services/databaseService";
 import { verifySignature } from "@/backend/utils/signatureVerification";
-import { getPolymarketOrderService } from "@/backend/services/polymarketOrderService";
 import { getPublicClient } from "@/backend/listener/blockchainProvider";
 
 interface DeleteDraftBody {
@@ -139,16 +138,6 @@ export async function DELETE(
       { success: false, error: verification.error ?? "Unauthorized" },
       { status: 401 }
     );
-  }
-
-  if (order.polymarket_order_hash) {
-    try {
-      const pm = getPolymarketOrderService();
-      await pm.initialize();
-      await pm.cancelOrder(order.polymarket_order_hash);
-    } catch (err) {
-      console.warn("Polymarket cancel failed during draft delete (idempotent):", err);
-    }
   }
 
   await DatabaseService.deletePolyswapOrderById(orderId);

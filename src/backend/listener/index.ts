@@ -96,8 +96,8 @@ interface Subscriptions {
   unsubscribeAll: () => void;
 }
 
-async function startListener(): Promise<Subscriptions> {
-  await catchupHistoricalEvents();
+async function startListener(options: { allowTrading: boolean }): Promise<Subscriptions> {
+  await catchupHistoricalEvents(options);
   await backfillOrderUids();
 
   const ws = getWebSocketClient();
@@ -109,7 +109,7 @@ async function startListener(): Promise<Subscriptions> {
     event: CONDITIONAL_ORDER_CREATED_EVENT,
     onLogs: (logs) => {
       for (const log of logs) {
-        void handleConditionalOrderCreated(log as Log);
+        void handleConditionalOrderCreated(log as Log, options);
       }
     },
   });
@@ -166,7 +166,7 @@ async function main(): Promise<void> {
 
   if (!flags.marketUpdateOnly) {
     log.info("starting (catch-up + WebSocket subscriptions)");
-    subs = await startListener();
+    subs = await startListener({ allowTrading: !flags.listenerOnly });
   }
 
   if (!flags.listenerOnly && !flags.marketUpdateOnly) {

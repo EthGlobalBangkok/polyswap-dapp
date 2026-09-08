@@ -9,7 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button, DetailSkeleton } from "@/components/primitives";
 import { Icon } from "@/components/icons";
 import { useMarket, useRawMarket } from "@/hooks/useMarketsData";
-import { useCreateOrder, describeSentence } from "@/hooks/useCreateOrder";
+import { useCreateOrder, describeSentence, type Slippage } from "@/hooks/useCreateOrder";
 import { useSwapEstimates } from "@/hooks/useSwapEstimates";
 import { useSafeAccount } from "@/hooks/safe/useSafeAccount";
 import { SafeSignModal } from "@/components/modals/SafeSignModal";
@@ -20,6 +20,7 @@ import { CreateForm } from "./CreateForm";
 import { RecapPanel } from "./RecapPanel";
 import { useWalletModal } from "@/components/modals/WalletModalProvider";
 import { fmtUSD } from "@/lib/format";
+import { useRuntimeConfig } from "@/components/providers/RuntimeConfigProvider";
 
 interface Props {
   marketId: string;
@@ -50,7 +51,7 @@ function toWei(amount: string, decimals: number): string {
  * current estimated buy amount.
  */
 function computeMinBuyAmount(
-  slippage: import("@/hooks/useCreateOrder").Slippage,
+  slippage: Slippage,
   amountOutEstimate: number,
   buyDecimals: number
 ): string {
@@ -81,6 +82,7 @@ export function CreatePage({ marketId }: Props) {
   const publicClient = usePublicClient();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const { orderCreationDisabled } = useRuntimeConfig();
 
   const [signOpen, setSignOpen] = useState(false);
   const [calls, setCalls] = useState<SafeCall[] | null>(null);
@@ -91,8 +93,21 @@ export function CreatePage({ marketId }: Props) {
   const orderIdRef = useRef<number | null>(null);
 
   const isConnected = Boolean(safeAddress);
+  const creationPausedMessage =
+    "Order creation is temporarily blocked by the administrator. Existing orders are unaffected.";
+  const reviewDisabled =
+    orderCreationDisabled || !derived.isValid || isPreparingTx || estimates.isQuoteError;
+  const reviewLabel = orderCreationDisabled
+    ? "Order creation paused"
+    : isPreparingTx
+      ? "Preparing…"
+      : "Review and sign";
 
   const handleReview = async () => {
+    if (orderCreationDisabled) {
+      setSigningError(creationPausedMessage);
+      return;
+    }
     if (!isConnected || !walletReady || !safeAddress) {
       wallet.open();
       return;
@@ -265,10 +280,10 @@ export function CreatePage({ marketId }: Props) {
             set={set}
           />
 
-          {signingError && (
-            <div className="border border-no bg-no/10 px-3 py-2 text-xs text-no">
-              <p>{signingError}</p>
-              {signingError.toLowerCase().includes("polymarket") && (
+          {(orderCreationDisabled || signingError) && (
+            <div role="alert" className="border border-no bg-no/10 px-3 py-2 text-xs text-no">
+              <p>{orderCreationDisabled ? creationPausedMessage : signingError}</p>
+              {signingError?.toLowerCase().includes("polymarket") && (
                 <a
                   href="https://status.polymarket.com"
                   target="_blank"
@@ -286,10 +301,10 @@ export function CreatePage({ marketId }: Props) {
             <Button
               variant="accent"
               size="lg"
-              disabled={!derived.isValid || isPreparingTx || estimates.isQuoteError}
+              disabled={reviewDisabled}
               onClick={() => void handleReview()}
             >
-              {isPreparingTx ? "Preparing…" : "Review and sign"}
+              {reviewLabel}
               <Icon.arrowRight size={14} aria-hidden />
             </Button>
           </div>
@@ -314,11 +329,11 @@ export function CreatePage({ marketId }: Props) {
           <Button
             variant="accent"
             size="md"
-            disabled={!derived.isValid || isPreparingTx || estimates.isQuoteError}
+            disabled={reviewDisabled}
             onClick={() => void handleReview()}
             className="shrink-0"
           >
-            {isPreparingTx ? "Preparing…" : "Review & sign"}
+            {reviewLabel}
             <Icon.arrowRight size={14} aria-hidden />
           </Button>
         </div>

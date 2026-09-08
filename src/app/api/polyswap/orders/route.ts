@@ -11,11 +11,13 @@ import {
 import { DatabaseService } from "../../../../backend/services/databaseService";
 import { TransactionEncodingService } from "../../../../backend/services/transactionEncodingService";
 import { buildFallbackHandlerSetupTx } from "../../../../backend/services/safeFallbackHandlerService";
-import { getPolymarketOrderService } from "../../../../backend/services/polymarketOrderService";
 import { getClobAvailability } from "../../../../backend/services/polymarketStatusService";
+import { getOrCreateSentinel } from "../../../../backend/services/polymarketSentinelService";
 import { type PolyswapOrderData } from "../../../../backend/interfaces/PolyswapOrder";
 import { getPostHogClient } from "../../../../lib/posthog-server";
 import { createLogger } from "../../../../backend/logger";
+import { isOrderCreationDisabled } from "@/lib/runtimeFlags";
+import type { DatabasePolymarketSentinel } from "@/backend/interfaces/PolyswapOrder";
 
 const log = createLogger("api-orders");
 
@@ -197,9 +199,10 @@ export async function GET(request: NextRequest) {
  *       - Orders
  *     summary: Create a new order (consolidated)
  *     description: >
- *       Creates a draft DB row, places the Polymarket GTD order, builds
+ *       Creates a draft DB row, prepares a shared Polymarket sentinel, builds
  *       ComposableCoW calldata, and returns both a single-tx and an
- *       approve+create batch — all in one round-trip.
+ *       approve+create batch. The sentinel is posted only after confirmed
+ *       Safe authorization.
  *     requestBody:
  *       required: true
  *       content:
@@ -229,6 +232,18 @@ export async function GET(request: NextRequest) {
  *         description: Server error
  */
 export async function POST(request: NextRequest) {
+  if (isOrderCreationDisabled()) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Order creation paused",
+        message: "Order creation is temporarily blocked by the administrator.",
+        code: "ORDER_CREATION_DISABLED",
+      },
+      { status: 503 }
+    );
+  }
+
   try {
     const body = (await request.json()) as CreateOrderRequestBody;
 
@@ -281,7 +296,11 @@ export async function POST(request: NextRequest) {
     const buyToken: Address = buyTokenRaw;
     const owner: Address = ownerRaw;
 
-    if (typeof body.sellAmount !== "string" || parseFloat(body.sellAmount) <= 0) {
+    if (
+      typeof body.sellAmount !== "string" ||
+      !/^\d+$/.test(body.sellAmount) ||
+      BigInt(body.sellAmount) <= 0n
+    ) {
       return NextResponse.json(
         { success: false, error: "sellAmount must be a positive number string" },
         { status: 400 }
@@ -291,7 +310,7 @@ export async function POST(request: NextRequest) {
 
     const minBuyAmount: string =
       typeof body.minBuyAmount === "string" && body.minBuyAmount !== "" ? body.minBuyAmount : "1";
-    if (parseFloat(minBuyAmount) <= 0) {
+    if (!/^\d+$/.test(minBuyAmount) || BigInt(minBuyAmount) <= 0n) {
       return NextResponse.json(
         { success: false, error: "minBuyAmount must be positive" },
         { status: 400 }
@@ -307,9 +326,14 @@ export async function POST(request: NextRequest) {
     const selectedOutcome: string = body.selectedOutcome;
 
     const betPercentage = Number(body.betPercentage);
-    if (!isFinite(betPercentage) || betPercentage <= 0 || betPercentage > 100) {
+    if (
+      !Number.isFinite(betPercentage) ||
+      !Number.isInteger(betPercentage) ||
+      betPercentage <= 0 ||
+      betPercentage > 100
+    ) {
       return NextResponse.json(
-        { success: false, error: "betPercentage must be a finite number in (0, 100]" },
+        { success: false, error: "betPercentage must be an integer from 1 to 100" },
         { status: 400 }
       );
     }
@@ -413,33 +437,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let polymarketOrderHash: string;
-    let polymarketMakerAmount: string;
+    let sentinel: DatabasePolymarketSentinel;
     try {
-      const polymarket = getPolymarketOrderService();
-      await polymarket.initialize();
-      const tokenID = clobTokenIds[outcomeIndex]!;
-      const price = betPercentage / 100;
-      const expiration = Math.floor(deadline.getTime() / 1000);
+      const tokenID = clobTokenIds[outcomeIndex];
+      if (tokenID === undefined) {
+        throw new Error("Selected outcome has no Polymarket token ID");
+      }
       log.info(
-        `placing GTD order: market=${marketId} outcome=${selectedOutcome} ` +
-          `tokenID=${tokenID} price=${price} expiration=${expiration} negRisk=${market.neg_risk}`
+        `preparing sentinel: market=${marketId} outcome=${selectedOutcome} ` +
+          `tokenID=${tokenID} price=${betPercentage / 100} negRisk=${market.neg_risk}`
       );
-      const result = await polymarket.postGTDOrder({
-        tokenID,
-        price,
-        side: "BUY",
-        size: 5,
-        expiration,
+      sentinel = await getOrCreateSentinel({
+        marketId,
+        tokenId: tokenID,
+        outcomeSelected: selectedOutcome,
+        priceCents: betPercentage,
         negRisk: market.neg_risk,
+        expiration: deadline,
       });
-      polymarketOrderHash = result.polymarketOrderHash;
-      polymarketMakerAmount = result.makerAmount;
       log.info(
-        `GTD order accepted: orderID=${polymarketOrderHash} makerAmount=${polymarketMakerAmount}`
+        `using sentinel ${sentinel.polymarket_order_hash} epoch=${sentinel.epoch} status=${sentinel.status}`
       );
     } catch (polymarketError) {
-      log.error("GTD order placement failed:", polymarketError);
+      log.error("sentinel preparation failed:", polymarketError);
       const clob = await getClobAvailability();
       if (!clob.available) {
         return NextResponse.json(
@@ -448,7 +468,7 @@ export async function POST(request: NextRequest) {
         );
       }
       return NextResponse.json(
-        { success: false, error: "Polymarket order placement error" },
+        { success: false, error: "Polymarket sentinel preparation error" },
         { status: 502 }
       );
     }
@@ -461,9 +481,9 @@ export async function POST(request: NextRequest) {
       minBuyAmount,
       t0: Math.floor(startDate.getTime() / 1000).toString(),
       t: Math.floor(deadline.getTime() / 1000).toString(),
-      polymarketOrderHash,
+      polymarketOrderHash: sentinel.polymarket_order_hash,
       appData: APP_DATA_DEFAULT,
-      polymarketMakerAmount,
+      polymarketMakerAmount: sentinel.polymarket_maker_amount,
     };
 
     const params = TransactionEncodingService.createConditionalOrderParams(orderData, {
@@ -480,6 +500,8 @@ export async function POST(request: NextRequest) {
     let orderId: number;
     try {
       orderId = await DatabaseService.insertPolyswapOrderFromForm({
+        orderHash,
+        handler: params.handler,
         sellToken,
         buyToken,
         sellAmount,
@@ -490,10 +512,11 @@ export async function POST(request: NextRequest) {
         owner,
         outcomeSelected: selectedOutcome,
         betPercentageValue: betPercentage,
-        polymarketOrderHash,
+        polymarketOrderHash: sentinel.polymarket_order_hash,
         salt: params.salt,
         explicitDeadline,
-        polymarketMakerAmount,
+        polymarketMakerAmount: sentinel.polymarket_maker_amount,
+        sentinelId: sentinel.id,
       });
     } catch (dbError) {
       log.error("failed to insert order into database:", dbError);
@@ -532,7 +555,7 @@ export async function POST(request: NextRequest) {
       success: true,
       data: {
         orderId,
-        polymarketOrderHash,
+        polymarketOrderHash: sentinel.polymarket_order_hash,
         orderHash,
         tx: { to: COMPOSABLE_COW, data: createCalldata, value: "0" },
         batchTx: [

@@ -1,6 +1,7 @@
 import {
   Prisma,
   type Market as PrismaMarket,
+  type PolymarketSentinel as PrismaPolymarketSentinel,
   type PolyswapOrder as PrismaPolyswapOrder,
   type SoldPosition as PrismaSoldPosition,
 } from "@prisma/client";
@@ -14,6 +15,7 @@ import {
   type PolyswapOrderData,
   type PolyswapOrderRecord,
   type DatabasePolyswapOrder,
+  type DatabasePolymarketSentinel,
   type SoldPosition,
   type SoldPositionInput,
 } from "../interfaces/PolyswapOrder";
@@ -112,6 +114,7 @@ function toPolyswapOrderRow(o: PrismaPolyswapOrder): DatabasePolyswapOrder {
     explicit_deadline: o.explicitDeadline,
     polymarket_maker_amount:
       o.polymarketMakerAmount === null ? null : o.polymarketMakerAmount.toString(),
+    sentinel_id: o.sentinelId,
     last_error_name: o.lastErrorName,
     last_error_reason: o.lastErrorReason,
     last_error_retry_at: o.lastErrorRetryAt === null ? null : o.lastErrorRetryAt.toString(),
@@ -123,6 +126,29 @@ function toPolyswapOrderRow(o: PrismaPolyswapOrder): DatabasePolyswapOrder {
     actual_buy_amount: o.actualBuyAmount === null ? null : o.actualBuyAmount.toString(),
     created_at: o.createdAt,
     updated_at: o.updatedAt,
+  };
+}
+
+function toPolymarketSentinelRow(s: PrismaPolymarketSentinel): DatabasePolymarketSentinel {
+  return {
+    id: s.id,
+    market_id: s.marketId,
+    token_id: s.tokenId,
+    outcome_selected: s.outcomeSelected,
+    price_cents: s.priceCents,
+    neg_risk: s.negRisk,
+    epoch: s.epoch,
+    polymarket_order_hash: s.polymarketOrderHash,
+    polymarket_maker_amount: s.polymarketMakerAmount.toString(),
+    signed_order: s.signedOrder,
+    expiration: s.expiration,
+    status: s.status as DatabasePolymarketSentinel["status"],
+    activation_tx_hash: s.activationTxHash,
+    last_error: s.lastError,
+    activated_at: s.activatedAt,
+    filled_at: s.filledAt,
+    created_at: s.createdAt,
+    updated_at: s.updatedAt,
   };
 }
 
@@ -338,10 +364,147 @@ export class DatabaseService {
   }
 
   // ============================================================
+  // Shared Polymarket sentinels
+  // ============================================================
+
+  static async findReusableSentinel(input: {
+    marketId: string;
+    tokenId: string;
+    priceCents: number;
+    minimumExpiration: Date;
+  }): Promise<DatabasePolymarketSentinel | null> {
+    const row = await prisma.polymarketSentinel.findFirst({
+      where: {
+        marketId: input.marketId,
+        tokenId: input.tokenId,
+        priceCents: input.priceCents,
+        status: { in: ["prepared", "activating", "live"] },
+        expiration: { gte: input.minimumExpiration },
+      },
+      orderBy: { epoch: "desc" },
+    });
+    return row ? toPolymarketSentinelRow(row) : null;
+  }
+
+  static async getNextSentinelEpoch(input: {
+    marketId: string;
+    tokenId: string;
+    priceCents: number;
+  }): Promise<number> {
+    const latest = await prisma.polymarketSentinel.findFirst({
+      where: {
+        marketId: input.marketId,
+        tokenId: input.tokenId,
+        priceCents: input.priceCents,
+      },
+      orderBy: { epoch: "desc" },
+      select: { epoch: true },
+    });
+    return (latest?.epoch ?? 0) + 1;
+  }
+
+  static async createPreparedSentinel(input: {
+    marketId: string;
+    tokenId: string;
+    outcomeSelected: string;
+    priceCents: number;
+    negRisk: boolean;
+    epoch: number;
+    polymarketOrderHash: string;
+    polymarketMakerAmount: string;
+    signedOrder: unknown;
+    expiration: Date;
+  }): Promise<DatabasePolymarketSentinel> {
+    const row = await prisma.polymarketSentinel.create({
+      data: {
+        marketId: input.marketId,
+        tokenId: input.tokenId,
+        outcomeSelected: input.outcomeSelected,
+        priceCents: input.priceCents,
+        negRisk: input.negRisk,
+        epoch: input.epoch,
+        polymarketOrderHash: input.polymarketOrderHash,
+        polymarketMakerAmount: new Prisma.Decimal(input.polymarketMakerAmount),
+        signedOrder: input.signedOrder as Prisma.InputJsonValue,
+        expiration: input.expiration,
+        status: "prepared",
+      },
+    });
+    return toPolymarketSentinelRow(row);
+  }
+
+  static async getSentinelById(id: number): Promise<DatabasePolymarketSentinel | null> {
+    const row = await prisma.polymarketSentinel.findUnique({ where: { id } });
+    return row ? toPolymarketSentinelRow(row) : null;
+  }
+
+  /** Only one listener invocation may submit a shared sentinel. */
+  static async claimSentinelActivation(id: number, transactionHash: string): Promise<boolean> {
+    const staleActivation = new Date(Date.now() - 5 * 60 * 1000);
+    const result = await prisma.polymarketSentinel.updateMany({
+      where: {
+        id,
+        OR: [{ status: "prepared" }, { status: "activating", updatedAt: { lt: staleActivation } }],
+      },
+      data: {
+        status: "activating",
+        activationTxHash: transactionHash,
+        lastError: null,
+        updatedAt: new Date(),
+      },
+    });
+    return result.count === 1;
+  }
+
+  static async markSentinelLive(id: number): Promise<void> {
+    await prisma.polymarketSentinel.update({
+      where: { id },
+      data: {
+        status: "live",
+        activatedAt: new Date(),
+        lastError: null,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  static async releaseSentinelActivation(id: number, error: string): Promise<void> {
+    await prisma.polymarketSentinel.updateMany({
+      where: { id, status: "activating" },
+      data: { status: "prepared", lastError: error, updatedAt: new Date() },
+    });
+  }
+
+  static async markSentinelFailed(id: number, error: string): Promise<void> {
+    await prisma.polymarketSentinel.update({
+      where: { id },
+      data: { status: "failed", lastError: error, updatedAt: new Date() },
+    });
+  }
+
+  static async markSentinelFilledForOrder(orderId: number): Promise<void> {
+    const order = await prisma.polyswapOrder.findUnique({
+      where: { id: orderId },
+      select: { sentinelId: true },
+    });
+    if (!order?.sentinelId) return;
+    await this.markSentinelFilled(order.sentinelId);
+  }
+
+  static async markSentinelFilled(id: number): Promise<void> {
+    await prisma.polymarketSentinel.updateMany({
+      where: { id, status: { in: ["activating", "live"] } },
+      data: { status: "filled", filledAt: new Date(), updatedAt: new Date() },
+    });
+  }
+
+  // ============================================================
   // PolySwap Orders
   // ============================================================
 
   static async insertPolyswapOrderFromForm(orderData: {
+    orderHash: string;
+    handler: string;
     sellToken: string;
     buyToken: string;
     sellAmount: string;
@@ -356,10 +519,13 @@ export class DatabaseService {
     salt: string;
     explicitDeadline: boolean;
     polymarketMakerAmount: string;
+    sentinelId: number;
   }): Promise<number> {
     const created = await prisma.polyswapOrder.create({
       data: {
         owner: orderData.owner.toLowerCase(),
+        orderHash: orderData.orderHash,
+        handler: orderData.handler.toLowerCase(),
         sellToken: orderData.sellToken.toLowerCase(),
         buyToken: orderData.buyToken.toLowerCase(),
         sellAmount: new Prisma.Decimal(orderData.sellAmount),
@@ -373,6 +539,7 @@ export class DatabaseService {
         salt: orderData.salt,
         explicitDeadline: orderData.explicitDeadline,
         polymarketMakerAmount: new Prisma.Decimal(orderData.polymarketMakerAmount),
+        sentinelId: orderData.sentinelId,
         status: "draft",
       },
       select: { id: true },
@@ -380,7 +547,7 @@ export class DatabaseService {
     return created.id;
   }
 
-  static async insertPolyswapOrder(order: PolyswapOrderRecord): Promise<void> {
+  static async insertPolyswapOrder(order: PolyswapOrderRecord): Promise<number> {
     const blockNumber = Number(order.blockNumber);
     const logIndex = Number(order.logIndex);
     if (!Number.isFinite(blockNumber) || !Number.isFinite(logIndex)) {
@@ -409,7 +576,7 @@ export class DatabaseService {
       status: "live",
     };
 
-    await prisma.polyswapOrder.upsert({
+    const saved = await prisma.polyswapOrder.upsert({
       where: { orderHash: order.orderHash },
       create: data,
       update: {
@@ -431,7 +598,9 @@ export class DatabaseService {
         status: data.status,
         updatedAt: new Date(),
       },
+      select: { id: true },
     });
+    return saved.id;
   }
 
   /**
@@ -448,15 +617,15 @@ export class DatabaseService {
     blockNumber: number;
     transactionHash: string;
     logIndex: number;
-  }): Promise<void> {
+  }): Promise<{ orderId: number; sentinelId: number | null; serverCreated: boolean }> {
     const ownerLc = input.owner.toLowerCase();
     const draft = await prisma.polyswapOrder.findFirst({
       where: {
-        polymarketOrderHash: input.data.polymarketOrderHash,
+        orderHash: input.orderHash,
         owner: ownerLc,
         status: "draft",
       },
-      select: { id: true },
+      select: { id: true, sentinelId: true },
     });
 
     if (draft) {
@@ -478,10 +647,10 @@ export class DatabaseService {
           updatedAt: new Date(),
         },
       });
-      return;
+      return { orderId: draft.id, sentinelId: draft.sentinelId, serverCreated: true };
     }
 
-    await this.insertPolyswapOrder({
+    const orderId = await this.insertPolyswapOrder({
       orderHash: input.orderHash,
       owner: ownerLc,
       handler: input.handler.toLowerCase(),
@@ -500,6 +669,7 @@ export class DatabaseService {
       salt: input.salt,
       polymarketMakerAmount: input.data.polymarketMakerAmount || null,
     });
+    return { orderId, sentinelId: null, serverCreated: false };
   }
 
   static async getPolyswapOrdersByOwner(

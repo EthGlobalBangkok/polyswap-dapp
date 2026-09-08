@@ -45,7 +45,8 @@ model Market {
   /// Generated tsvector — defined in migration SQL, not synthesised by Prisma.
   searchVec    Unsupported("tsvector")? @map("search_vec")
 
-  orders PolyswapOrder[]
+  orders    PolyswapOrder[]
+  sentinels PolymarketSentinel[]
 
   @@index([category], map: "markets_category_idx")
   @@index([volume(sort: Desc)], map: "markets_volume_idx")
@@ -84,6 +85,7 @@ model PolyswapOrder {
   salt                  String?   @db.VarChar(66)
   explicitDeadline      Boolean   @default(false) @map("explicit_deadline")
   polymarketMakerAmount Decimal?  @map("polymarket_maker_amount") @db.Decimal(78, 0)
+  sentinelId            Int?      @map("sentinel_id")
   lastErrorName         String?   @map("last_error_name") @db.VarChar(64)
   lastErrorReason       String?   @map("last_error_reason")
   lastErrorRetryAt      BigInt?   @map("last_error_retry_at")
@@ -104,7 +106,8 @@ model PolyswapOrder {
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
-  market Market? @relation(fields: [marketId], references: [id], onDelete: SetNull, map: "fk_market")
+  market   Market?              @relation(fields: [marketId], references: [id], onDelete: SetNull, map: "fk_market")
+  sentinel PolymarketSentinel? @relation(fields: [sentinelId], references: [id], onDelete: SetNull, map: "fk_polyswap_order_sentinel")
 
   @@index([orderHash], map: "idx_polyswap_orders_order_hash")
   @@index([owner], map: "idx_polyswap_orders_owner")
@@ -118,7 +121,41 @@ model PolyswapOrder {
   @@index([marketId], map: "idx_polyswap_orders_market_id")
   @@index([status], map: "idx_polyswap_orders_status")
   @@index([orderUid], map: "idx_polyswap_orders_order_uid")
+  @@index([sentinelId], map: "idx_polyswap_orders_sentinel_id")
   @@map("polyswap_orders")
+}
+
+/// One protocol-funded Polymarket trigger can be shared by every PolySwap
+/// order that watches the same market outcome and threshold. The signed order
+/// is prepared before Safe authorization, but it is not posted to the CLOB
+/// until a matching server-created conditional order is confirmed on-chain.
+model PolymarketSentinel {
+  id                     Int       @id @default(autoincrement())
+  marketId               String    @map("market_id") @db.VarChar(80)
+  tokenId                String    @map("token_id") @db.VarChar(100)
+  outcomeSelected        String    @map("outcome_selected") @db.VarChar(256)
+  priceCents             Int       @map("price_cents")
+  negRisk                Boolean   @default(false) @map("neg_risk")
+  epoch                  Int       @default(1)
+  polymarketOrderHash    String    @unique @map("polymarket_order_hash") @db.VarChar(66)
+  polymarketMakerAmount  Decimal   @map("polymarket_maker_amount") @db.Decimal(78, 0)
+  signedOrder            Json      @map("signed_order")
+  expiration             DateTime  @db.Timestamptz
+  status                 String    @default("prepared") @db.VarChar(20)
+  activationTxHash       String?   @map("activation_tx_hash") @db.VarChar(66)
+  lastError              String?   @map("last_error")
+  activatedAt            DateTime? @map("activated_at") @db.Timestamptz
+  filledAt               DateTime? @map("filled_at") @db.Timestamptz
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  market Market          @relation(fields: [marketId], references: [id], onDelete: Cascade, map: "fk_sentinel_market")
+  orders PolyswapOrder[]
+
+  @@unique([marketId, tokenId, priceCents, epoch], map: "uq_sentinel_bucket_epoch")
+  @@index([marketId, tokenId, priceCents, status], map: "idx_sentinel_reuse")
+  @@index([status], map: "idx_sentinel_status")
+  @@map("polymarket_sentinels")
 }
 
 model SoldPosition {

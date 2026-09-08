@@ -6,8 +6,14 @@ import { getPublicClient } from "../blockchainProvider";
 import { calculateOrderHash, decodeStaticInput } from "../eventDecoder";
 import type { ConditionalOrderParams } from "@/backend/interfaces/PolyswapOrder";
 import { createLogger } from "@/backend/logger";
+import { activateSentinel } from "@/backend/services/polymarketSentinelService";
 
 const log = createLogger("conditional-order");
+
+function safeAuthConfirmations(): number {
+  const parsed = Number.parseInt(process.env.SAFE_AUTH_CONFIRMATIONS ?? "3", 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 3;
+}
 
 interface DecodedConditionalOrderCreated {
   owner: Address;
@@ -37,7 +43,10 @@ function decodeLog(log: Log): DecodedConditionalOrderCreated | null {
   };
 }
 
-export async function handleConditionalOrderCreated(eventLog: Log): Promise<void> {
+export async function handleConditionalOrderCreated(
+  eventLog: Log,
+  options: { allowTrading?: boolean } = {}
+): Promise<void> {
   const standardHandler = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER;
   const negRiskHandler = process.env.NEXT_PUBLIC_POLYSWAP_HANDLER_NEGRISK;
   if (!standardHandler && !negRiskHandler) {
@@ -71,8 +80,25 @@ export async function handleConditionalOrderCreated(eventLog: Log): Promise<void
   const data = decodeStaticInput(decoded.params.staticInput as Hex);
   log.debug(`accepted owner=${decoded.owner} orderHash=${orderHash} block=${eventLog.blockNumber}`);
 
+  const client = getPublicClient();
   try {
-    await DatabaseService.upsertLiveOrderFromEvent({
+    const receipt = await client.waitForTransactionReceipt({
+      hash: eventLog.transactionHash,
+      confirmations: safeAuthConfirmations(),
+      timeout: 5 * 60 * 1000,
+    });
+    if (receipt.status !== "success") {
+      log.warn(`Safe authorization tx ${eventLog.transactionHash} reverted; skipping`);
+      return;
+    }
+  } catch (error) {
+    log.error(`Safe authorization tx ${eventLog.transactionHash} was not confirmed:`, error);
+    return;
+  }
+
+  let persisted: { orderId: number; sentinelId: number | null; serverCreated: boolean } | undefined;
+  try {
+    persisted = await DatabaseService.upsertLiveOrderFromEvent({
       owner: decoded.owner,
       orderHash,
       handler: decoded.params.handler,
@@ -86,7 +112,7 @@ export async function handleConditionalOrderCreated(eventLog: Log): Promise<void
 
     // Persist the CoW UID now — both fill-detection paths look orders up by it.
     try {
-      OrderUidCalculationService.initialize(getPublicClient());
+      OrderUidCalculationService.initialize(client);
       const orderUid = await OrderUidCalculationService.calculateCompleteOrderUidOnChain(
         data,
         decoded.owner,
@@ -103,5 +129,21 @@ export async function handleConditionalOrderCreated(eventLog: Log): Promise<void
     }
   } catch (err) {
     log.error("upsertLiveOrderFromEvent failed:", err);
+    return;
+  }
+
+  if (persisted.serverCreated && persisted.sentinelId !== null && options.allowTrading === true) {
+    try {
+      await activateSentinel(persisted.sentinelId, eventLog.transactionHash);
+    } catch (err) {
+      // The sentinel remains prepared and can be retried by the health check.
+      log.error(`sentinel activation failed for order ${orderHash}:`, err);
+    }
+  } else if (!persisted.serverCreated || persisted.sentinelId === null) {
+    log.warn(
+      `order ${orderHash} has no matching server-created sentinel; privileged activation skipped`
+    );
+  } else {
+    log.debug(`sentinel activation disabled for order ${orderHash} in listener-only mode`);
   }
 }

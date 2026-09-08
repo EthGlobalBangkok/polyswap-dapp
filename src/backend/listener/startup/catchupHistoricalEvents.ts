@@ -25,7 +25,9 @@ function requireAddress(envName: string): Address {
  * Iterates in BATCH_SIZE windows so that an RPC log limit doesn't blow up the
  * whole catch-up. Honours STARTING_BLOCK as a floor.
  */
-export async function catchupHistoricalEvents(): Promise<void> {
+export async function catchupHistoricalEvents(
+  options: { allowTrading?: boolean } = {}
+): Promise<void> {
   const composableCow = requireAddress("COMPOSABLE_COW");
   const gpv2 = requireAddress("GPV2SETTLEMENT");
   const startingBlock = BigInt(process.env.STARTING_BLOCK ?? "0");
@@ -80,7 +82,9 @@ export async function catchupHistoricalEvents(): Promise<void> {
       );
     }
 
-    for (const entry of createdLogs) await handleConditionalOrderCreated(entry as Log);
+    for (const entry of createdLogs) {
+      await handleConditionalOrderCreated(entry as Log, options);
+    }
     for (const entry of tradeLogs) await handleTrade(entry as Log);
     for (const entry of invalidatedLogs) await handleOrderInvalidated(entry as Log);
 

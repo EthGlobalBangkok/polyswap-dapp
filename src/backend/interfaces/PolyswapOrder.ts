@@ -71,6 +71,7 @@ export interface DatabasePolyswapOrder {
   salt: string | null;
   explicit_deadline: boolean;
   polymarket_maker_amount: string | null;
+  sentinel_id: number | null;
   last_error_name: string | null;
   last_error_reason: string | null;
   last_error_retry_at: string | null; // BIGINT — pg returns string
@@ -80,6 +81,35 @@ export interface DatabasePolyswapOrder {
   gate_opened_at: Date | null;
   actual_sell_amount: string | null;
   actual_buy_amount: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export type PolymarketSentinelStatus =
+  | "prepared"
+  | "activating"
+  | "live"
+  | "filled"
+  | "canceled"
+  | "failed";
+
+export interface DatabasePolymarketSentinel {
+  id: number;
+  market_id: string;
+  token_id: string;
+  outcome_selected: string;
+  price_cents: number;
+  neg_risk: boolean;
+  epoch: number;
+  polymarket_order_hash: string;
+  polymarket_maker_amount: string;
+  signed_order: unknown;
+  expiration: Date;
+  status: PolymarketSentinelStatus;
+  activation_tx_hash: string | null;
+  last_error: string | null;
+  activated_at: Date | null;
+  filled_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }

@@ -5,8 +5,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: production-listener
@@ -64,61 +63,36 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     permissions:
-      contents: read
       packages: read
     env:
       DEPLOY_HOST: ${{ secrets.VPS_HOST }}
-      DEPLOY_USER: ${{ secrets.VPS_USER }}
+      DEPLOY_USER: polyswap-deploy
       DEPLOY_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
-      SSH_KEY_FILE: ${{ runner.temp }}/listener_deploy_key
-      KNOWN_HOSTS_FILE: ${{ runner.temp }}/listener_known_hosts
       LISTENER_IMAGE: ${{ needs.build.outputs.image }}
-      LISTENER_ENV_FILE: ${{ vars.LISTENER_ENV_FILE || '/opt/polyswap/listener.env' }}
-      REMOTE_DOCKER_CONFIG: /tmp/polyswap-ghcr-${{ github.run_id }}-${{ github.run_attempt }}
       GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
       SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
     steps:
-      - name: Check out deployment script
-        uses: actions/checkout@v6
-
       - name: Configure SSH
         shell: bash
         run: |
-          install -m 600 /dev/null "$SSH_KEY_FILE"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$SSH_KEY_FILE"
-          install -m 600 /dev/null "$KNOWN_HOSTS_FILE"
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$KNOWN_HOSTS_FILE"
-
-      - name: Authenticate VPS to GHCR
-        shell: bash
-        run: |
-          printf '%s' "$GHCR_TOKEN" | ssh \
-            -i "$SSH_KEY_FILE" \
-            -o UserKnownHostsFile="$KNOWN_HOSTS_FILE" \
-            -p "$DEPLOY_PORT" \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "install -d -m 700 '$REMOTE_DOCKER_CONFIG' && docker --config '$REMOTE_DOCKER_CONFIG' login ghcr.io --username '${{ github.actor }}' --password-stdin"
+          install -m 600 /dev/null "$RUNNER_TEMP/listener_deploy_key"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/listener_deploy_key"
+          install -m 600 /dev/null "$RUNNER_TEMP/listener_known_hosts"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/listener_known_hosts"
 
       - name: Deploy listener on VPS
         shell: bash
         run: |
-          ssh \
-            -i "$SSH_KEY_FILE" \
-            -o UserKnownHostsFile="$KNOWN_HOSTS_FILE" \
+          {
+            printf '%s\n' "$LISTENER_IMAGE"
+            printf '%s\n' "$GITHUB_ACTOR"
+            printf '%s' "$GHCR_TOKEN"
+          } | ssh -T \
+            -i "$RUNNER_TEMP/listener_deploy_key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/listener_known_hosts" \
             -p "$DEPLOY_PORT" \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            sh -s -- "$LISTENER_IMAGE" "$LISTENER_ENV_FILE" "$REMOTE_DOCKER_CONFIG" \
-            < .github/scripts/deploy-listener.sh
-
-      - name: Remove temporary GHCR credentials from VPS
-        if: always()
-        shell: bash
-        run: |
-          ssh \
-            -i "$SSH_KEY_FILE" \
-            -o UserKnownHostsFile="$KNOWN_HOSTS_FILE" \
-            -p "$DEPLOY_PORT" \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "docker --config '$REMOTE_DOCKER_CONFIG' logout ghcr.io >/dev/null 2>&1 || true; rm -f '$REMOTE_DOCKER_CONFIG/config.json'; rmdir '$REMOTE_DOCKER_CONFIG' >/dev/null 2>&1 || true" \
-            || true
+            "$DEPLOY_USER@$DEPLOY_HOST"

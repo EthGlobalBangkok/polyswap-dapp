@@ -12,7 +12,7 @@ import { DashboardSkeleton } from "./DashboardSkeleton";
 import { AnimatePresence, motion } from "motion/react";
 
 export function DashboardPage() {
-  const { orders, isLoading, isError, walletConnected } = useOrders();
+  const { orders, isLoading, isError, errorMessage, walletConnected } = useOrders();
   const wallet = useWalletModal();
   const [tab, setTab] = useState<DashboardTab>("all");
 
@@ -46,7 +46,7 @@ export function DashboardPage() {
 
       {!isLoading && isError && (
         <p className="border border-no bg-no/10 px-4 py-3 text-sm text-no">
-          Couldn&rsquo;t load your swaps. Try again in a moment.
+          Couldn&rsquo;t load your swaps. {errorMessage ?? "Try again in a moment."}
         </p>
       )}
 

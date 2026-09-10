@@ -85,6 +85,32 @@ export interface DatabasePolyswapOrder {
   updated_at: Date;
 }
 
+/**
+ * Public order shape returned by the API. It intentionally excludes backend
+ * execution details such as the sentinel id, Polymarket hash, handler, salt,
+ * appData, transaction metadata, and internal timestamps.
+ */
+export interface PublicPolyswapOrder {
+  id: number;
+  order_hash: string | null;
+  sell_token: string;
+  buy_token: string;
+  sell_amount: string;
+  start_time: string;
+  end_time: string;
+  market_id: string | null;
+  outcome_selected: string | null;
+  bet_percentage: number | null;
+  status: DatabasePolyswapOrder["status"];
+  order_uid: string | null;
+  last_error_reason: string | null;
+  last_error_retry_at: string | null;
+  filled_at: string | null;
+  gate_opened_at: string | null;
+  actual_sell_amount: string | null;
+  actual_buy_amount: string | null;
+}
+
 export type PolymarketSentinelStatus =
   | "prepared"
   | "activating"

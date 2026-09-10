@@ -21,6 +21,7 @@ import { RecapPanel } from "./RecapPanel";
 import { useWalletModal } from "@/components/modals/WalletModalProvider";
 import { fmtUSD } from "@/lib/format";
 import { useRuntimeConfig } from "@/components/providers/RuntimeConfigProvider";
+import { getErrorMessage } from "@/lib/errorMessage";
 
 interface Props {
   marketId: string;
@@ -68,7 +69,7 @@ function computeMinBuyAmount(
 }
 
 export function CreatePage({ marketId }: Props) {
-  const { data: market, isLoading, isError } = useMarket(marketId);
+  const { data: market, isLoading, isError, error: marketError } = useMarket(marketId);
   const { data: rawMarket } = useRawMarket(marketId);
   const { state, derived, set } = useCreateOrder();
   const { safeAddress, isReady: walletReady } = useSafeAccount();
@@ -242,7 +243,9 @@ export function CreatePage({ marketId }: Props) {
   if (isError || !market) {
     return (
       <div className="py-16 text-center text-sm text-ink-3">
-        We couldn&apos;t find that market.{" "}
+        {isError
+          ? `We couldn't load that market. ${getErrorMessage(marketError, "Try again in a moment.")}`
+          : "We couldn't find that market."}{" "}
         <Link href="/markets" className="underline">
           Back to markets
         </Link>

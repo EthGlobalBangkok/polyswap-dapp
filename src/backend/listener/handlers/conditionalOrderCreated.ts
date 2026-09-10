@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import * as Sentry from "@sentry/nextjs";
 import { decodeEventLog, type Log, type Hex, type Address } from "viem";
 import composableCowAbi from "@/abi/composableCoW.json";
 import { DatabaseService } from "@/backend/services/databaseService";
@@ -9,6 +11,58 @@ import { createLogger } from "@/backend/logger";
 import { activateSentinel } from "@/backend/services/polymarketSentinelService";
 
 const log = createLogger("conditional-order");
+
+function toReportableError(error: unknown): Error {
+  if (!(error instanceof Error)) return new Error(String(error).slice(0, 1_000));
+
+  const shortMessage = (error as Error & { shortMessage?: unknown }).shortMessage;
+  const message =
+    typeof shortMessage === "string"
+      ? shortMessage
+      : (error.message.split("\n", 1)[0] ?? error.name);
+  const reportable = new Error(message.slice(0, 1_000));
+  reportable.name = error.name;
+
+  // Viem decoding errors embed the complete invalid calldata in their message.
+  // Keep useful stack frames without forwarding an attacker-controlled blob.
+  const frames = error.stack?.split("\n").filter((line) => line.trimStart().startsWith("at "));
+  if (frames?.length) {
+    reportable.stack = `${reportable.name}: ${reportable.message}\n${frames.join("\n")}`;
+  }
+
+  return reportable;
+}
+
+function reportSkippedOrder(error: unknown, eventLog: Log): void {
+  const errorId = randomUUID();
+  const normalizedError = toReportableError(error);
+  const eventContext = {
+    errorId,
+    errorType: normalizedError.name,
+    transactionHash: eventLog.transactionHash ?? "unknown",
+    blockNumber: eventLog.blockNumber?.toString() ?? "unknown",
+    logIndex: eventLog.logIndex?.toString() ?? "unknown",
+  };
+
+  let sentryEventId: string | undefined;
+  try {
+    Sentry.withScope((scope) => {
+      scope.setLevel("error");
+      scope.setTag("error_id", errorId);
+      scope.setTag("listener", "conditional-order");
+      scope.setContext("conditional_order_event", eventContext);
+      sentryEventId = Sentry.captureException(normalizedError);
+    });
+  } catch (sentryError) {
+    log.error("Sentry capture failed", { errorId }, sentryError);
+  }
+
+  log.error(
+    `conditional order skipped after processing error (errorId=${errorId})`,
+    { ...eventContext, sentryEventId },
+    normalizedError
+  );
+}
 
 function safeAuthConfirmations(): number {
   const parsed = Number.parseInt(process.env.SAFE_AUTH_CONFIRMATIONS ?? "3", 10);
@@ -43,7 +97,7 @@ function decodeLog(log: Log): DecodedConditionalOrderCreated | null {
   };
 }
 
-export async function handleConditionalOrderCreated(
+async function processConditionalOrderCreated(
   eventLog: Log,
   options: { allowTrading?: boolean } = {}
 ): Promise<void> {
@@ -145,5 +199,21 @@ export async function handleConditionalOrderCreated(
     );
   } else {
     log.debug(`sentinel activation disabled for order ${orderHash} in listener-only mode`);
+  }
+}
+
+/**
+ * Treat each on-chain event as its own failure boundary. A malformed payload or
+ * any other unexpected per-order error is reported, then skipped without
+ * aborting historical catch-up or leaking an unhandled WebSocket rejection.
+ */
+export async function handleConditionalOrderCreated(
+  eventLog: Log,
+  options: { allowTrading?: boolean } = {}
+): Promise<void> {
+  try {
+    await processConditionalOrderCreated(eventLog, options);
+  } catch (error) {
+    reportSkippedOrder(error, eventLog);
   }
 }

@@ -1,5 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "../../../../../backend/services/databaseService";
+import { toPublicPolyswapOrder } from "@/backend/utils/publicPolyswapOrder";
+import { createApiErrorResponder } from "@/lib/apiError";
+
+const apiError = createApiErrorResponder("api-orders-owner");
 
 /**
  * @swagger
@@ -59,14 +63,11 @@ export async function GET(
 
     // Validate Ethereum address format
     if (!owner || !/^0x[a-fA-F0-9]{40}$/.test(owner)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid owner address",
-          message: "Please provide a valid Ethereum address (0x followed by 40 hex characters)",
-        },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid owner address",
+        message: "Please provide a valid Ethereum address (0x followed by 40 hex characters)",
+      });
     }
 
     const limitNum = Math.min(parseInt(limit) || 100, 500);
@@ -76,7 +77,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      data: orders,
+      data: orders.map(toPublicPolyswapOrder),
       count: orders.length,
       pagination: {
         limit: limitNum,
@@ -86,14 +87,6 @@ export async function GET(
       message: "Orders retrieved successfully",
     });
   } catch (error) {
-    console.error("Error fetching orders:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch orders",
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
+    return apiError({ status: 500, error: "Failed to fetch orders", cause: error });
   }
 }

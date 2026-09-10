@@ -1,5 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/backend/services/databaseService";
+import { createApiErrorResponder } from "@/lib/apiError";
+
+const apiError = createApiErrorResponder("api-market-counts");
 
 /**
  * @swagger
@@ -26,16 +29,18 @@ export async function GET(req: NextRequest) {
     : [];
 
   if (categories.length === 0) {
-    return NextResponse.json(
-      { success: false, error: "categories query param is required (comma-separated)" },
-      { status: 400 }
-    );
+    return apiError({
+      status: 400,
+      error: "Invalid categories",
+      message: "categories query param is required (comma-separated)",
+    });
   }
   if (categories.length > 50) {
-    return NextResponse.json(
-      { success: false, error: "too many categories (max 50)" },
-      { status: 400 }
-    );
+    return apiError({
+      status: 400,
+      error: "Invalid categories",
+      message: "too many categories (max 50)",
+    });
   }
 
   try {
@@ -45,10 +50,6 @@ export async function GET(req: NextRequest) {
     ]);
     return NextResponse.json({ success: true, data: { byCategory, total } });
   } catch (err) {
-    console.error("Market counts error:", err);
-    return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : "counts failed" },
-      { status: 500 }
-    );
+    return apiError({ status: 500, error: "Market counts failed", cause: err });
   }
 }

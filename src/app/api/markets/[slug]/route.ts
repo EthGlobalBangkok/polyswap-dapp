@@ -1,5 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/backend/services/databaseService";
+import { createApiErrorResponder } from "@/lib/apiError";
+
+const apiError = createApiErrorResponder("api-market-detail");
 
 /**
  * @swagger
@@ -20,7 +23,7 @@ import { DatabaseService } from "@/backend/services/databaseService";
 export async function GET(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug: identifier } = await params;
   if (!identifier || identifier.length > 255) {
-    return NextResponse.json({ success: false, error: "invalid identifier" }, { status: 400 });
+    return apiError({ status: 400, error: "Invalid identifier" });
   }
 
   // Opt-in view tracking: callers that represent an actual user landing on
@@ -37,7 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
         (await DatabaseService.getMarketById(identifier)));
 
     if (!market) {
-      return NextResponse.json({ success: false, error: "Market not found" }, { status: 404 });
+      return apiError({ status: 404, error: "Market not found" });
     }
 
     if (shouldTrack) {
@@ -50,10 +53,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
 
     return NextResponse.json({ success: true, data: market });
   } catch (err) {
-    console.error("Market lookup error:", err);
-    return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : "lookup failed" },
-      { status: 500 }
-    );
+    return apiError({ status: 500, error: "Market lookup failed", cause: err });
   }
 }

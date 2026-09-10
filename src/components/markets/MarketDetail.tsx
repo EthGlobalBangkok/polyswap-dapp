@@ -5,6 +5,7 @@ import { useMarket, useMarketPriceHistory } from "@/hooks/useMarketsData";
 import { Button, DetailSkeleton, Tag, Tape, Dial } from "@/components/primitives";
 import { CategoryIcon, Icon, PolymarketIcon } from "@/components/icons";
 import { fmtUSD, fmtDate } from "@/lib/format";
+import { getErrorMessage } from "@/lib/errorMessage";
 
 interface Props {
   identifier: string;
@@ -14,7 +15,7 @@ export function MarketDetail({ identifier }: Props) {
   // `track: true` opts this fetch into server-side view counting — handled
   // inside GET /api/markets/[slug] when `?track=1` is set. Keeps tracking
   // tied to the existing market lookup instead of a dedicated /view route.
-  const { data, isLoading, isError } = useMarket(identifier, { track: true });
+  const { data, isLoading, isError, error } = useMarket(identifier, { track: true });
   const { data: history = [] } = useMarketPriceHistory(data?.yesTokenId, 60);
 
   if (isLoading) {
@@ -23,7 +24,9 @@ export function MarketDetail({ identifier }: Props) {
   if (isError || !data) {
     return (
       <div className="py-16 text-center text-sm text-ink-3">
-        We couldn&apos;t find that market.{" "}
+        {isError
+          ? `We couldn't load that market. ${getErrorMessage(error, "Try again in a moment.")}`
+          : "We couldn't find that market."}{" "}
         <Link href="/markets" className="underline">
           Back to markets
         </Link>

@@ -149,6 +149,10 @@ async function startListener(options: { allowTrading: boolean }): Promise<Subscr
 }
 
 async function main(): Promise<void> {
+  // Next.js loads this automatically for server requests. The listener runs as
+  // a standalone tsx process, so it must initialize the same server client.
+  await import("../../../sentry.server.config");
+
   const flags = readArgs();
 
   if (!flags.marketUpdateOnly) {

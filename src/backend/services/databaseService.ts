@@ -721,11 +721,15 @@ export class DatabaseService {
 
   static async getPolyswapOrdersByBlockRange(
     fromBlock: number,
-    toBlock: number
+    toBlock: number,
+    limit: number = 100,
+    offset: number = 0
   ): Promise<DatabasePolyswapOrder[]> {
     const rows = await prisma.polyswapOrder.findMany({
       where: { blockNumber: { gte: BigInt(fromBlock), lte: BigInt(toBlock) } },
       orderBy: [{ blockNumber: "asc" }, { logIndex: "asc" }],
+      take: limit,
+      skip: offset,
     });
     return rows.map(toPolyswapOrderRow);
   }

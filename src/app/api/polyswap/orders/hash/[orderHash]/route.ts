@@ -1,5 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "../../../../../../backend/services/databaseService";
+import { toPublicPolyswapOrder } from "@/backend/utils/publicPolyswapOrder";
+import { createApiErrorResponder } from "@/lib/apiError";
+
+const apiError = createApiErrorResponder("api-order-hash");
 
 /**
  * @swagger
@@ -42,43 +46,29 @@ export async function GET(
 
     // Validate order hash format (should be 66 characters: 0x + 64 hex chars)
     if (!orderHash || !/^0x[a-fA-F0-9]{64}$/.test(orderHash)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid order hash",
-          message: "Please provide a valid order hash (0x followed by 64 hex characters)",
-        },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid order hash",
+        message: "Please provide a valid order hash (0x followed by 64 hex characters)",
+      });
     }
 
     const order = await DatabaseService.getPolyswapOrderByHash(orderHash);
 
     if (!order) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Order not found",
-          message: `No order found with hash: ${orderHash}`,
-        },
-        { status: 404 }
-      );
+      return apiError({
+        status: 404,
+        error: "Order not found",
+        message: `No order found with hash: ${orderHash}`,
+      });
     }
 
     return NextResponse.json({
       success: true,
-      data: order,
+      data: toPublicPolyswapOrder(order),
       message: "Order retrieved successfully",
     });
   } catch (error) {
-    console.error("Error fetching order:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch order",
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
+    return apiError({ status: 500, error: "Failed to fetch order", cause: error });
   }
 }

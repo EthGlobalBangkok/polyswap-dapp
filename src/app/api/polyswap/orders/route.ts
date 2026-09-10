@@ -18,8 +18,11 @@ import { getPostHogClient } from "../../../../lib/posthog-server";
 import { createLogger } from "../../../../backend/logger";
 import { isOrderCreationDisabled } from "@/lib/runtimeFlags";
 import type { DatabasePolymarketSentinel } from "@/backend/interfaces/PolyswapOrder";
+import { toPublicPolyswapOrder } from "@/backend/utils/publicPolyswapOrder";
+import { createApiErrorResponder } from "@/lib/apiError";
 
 const log = createLogger("api-orders");
+const apiError = createApiErrorResponder("api-orders");
 
 const VAULT_RELAYER: Address = getAddress(
   process.env.VAULT_RELAYER ?? "0xC92E8bdf79f0507f65a392b0ab4667716BFE0110"
@@ -114,17 +117,19 @@ export async function GET(request: NextRequest) {
 
     const limitNum = parseBoundedInt(searchParams.get("limit"), 100, 1, 500);
     if (limitNum === null) {
-      return NextResponse.json(
-        { success: false, error: "Invalid limit (must be an integer 1..500)" },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid limit",
+        message: "limit must be an integer from 1 to 500",
+      });
     }
     const offsetNum = parseBoundedInt(searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
     if (offsetNum === null) {
-      return NextResponse.json(
-        { success: false, error: "Invalid offset (must be a non-negative integer)" },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid offset",
+        message: "offset must be a non-negative integer",
+      });
     }
 
     const fromBlock = searchParams.get("fromBlock");
@@ -132,17 +137,18 @@ export async function GET(request: NextRequest) {
     const ownerRaw = searchParams.get("owner");
 
     if (ownerRaw !== null && !isAddress(ownerRaw)) {
-      return NextResponse.json({ success: false, error: "Invalid owner address" }, { status: 400 });
+      return apiError({ status: 400, error: "Invalid owner address" });
     }
 
     let orders;
 
     if (fromBlock !== null || toBlock !== null) {
       if (fromBlock === null || toBlock === null) {
-        return NextResponse.json(
-          { success: false, error: "fromBlock and toBlock must be provided together" },
-          { status: 400 }
-        );
+        return apiError({
+          status: 400,
+          error: "Invalid block range",
+          message: "fromBlock and toBlock must be provided together",
+        });
       }
       const fromBlockNum = Number(fromBlock);
       const toBlockNum = Number(toBlock);
@@ -154,17 +160,22 @@ export async function GET(request: NextRequest) {
         toBlockNum < 0 ||
         fromBlockNum > toBlockNum
       ) {
-        return NextResponse.json({ success: false, error: "Invalid block range" }, { status: 400 });
+        return apiError({ status: 400, error: "Invalid block range" });
       }
 
-      orders = await DatabaseService.getPolyswapOrdersByBlockRange(fromBlockNum, toBlockNum);
+      orders = await DatabaseService.getPolyswapOrdersByBlockRange(
+        fromBlockNum,
+        toBlockNum,
+        limitNum,
+        offsetNum
+      );
     } else {
       orders = await DatabaseService.getPolyswapOrdersByOwner(ownerRaw ?? "", limitNum, offsetNum);
     }
 
     return NextResponse.json({
       success: true,
-      data: orders,
+      data: orders.map(toPublicPolyswapOrder),
       count: orders.length,
       pagination: {
         limit: limitNum,
@@ -179,15 +190,7 @@ export async function GET(request: NextRequest) {
       message: "Orders retrieved successfully",
     });
   } catch (error) {
-    log.error("error fetching orders:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch orders",
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
+    return apiError({ status: 500, error: "Failed to fetch orders", cause: error });
   }
 }
 
@@ -233,19 +236,21 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   if (isOrderCreationDisabled()) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Order creation paused",
-        message: "Order creation is temporarily blocked by the administrator.",
-        code: "ORDER_CREATION_DISABLED",
-      },
-      { status: 503 }
-    );
+    return apiError({
+      status: 503,
+      error: "Order creation paused",
+      message: "Order creation is temporarily blocked by the administrator.",
+      code: "ORDER_CREATION_DISABLED",
+    });
   }
 
   try {
-    const body = (await request.json()) as CreateOrderRequestBody;
+    let body: CreateOrderRequestBody;
+    try {
+      body = (await request.json()) as CreateOrderRequestBody;
+    } catch (error) {
+      return apiError({ status: 400, error: "Invalid JSON body", cause: error });
+    }
 
     const requiredFields = [
       "sellToken",
@@ -261,13 +266,11 @@ export async function POST(request: NextRequest) {
       (f) => body[f] === undefined || body[f] === null || body[f] === ""
     );
     if (missing.length > 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Missing required field${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
-        },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Missing required fields",
+        message: `Missing required field${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
+      });
     }
 
     // Narrow typed fields
@@ -276,19 +279,13 @@ export async function POST(request: NextRequest) {
     const ownerRaw = body.owner;
 
     if (typeof sellTokenRaw !== "string" || !isAddress(sellTokenRaw)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid sellToken address" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "Invalid sellToken address" });
     }
     if (typeof buyTokenRaw !== "string" || !isAddress(buyTokenRaw)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid buyToken address" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "Invalid buyToken address" });
     }
     if (typeof ownerRaw !== "string" || !isAddress(ownerRaw)) {
-      return NextResponse.json({ success: false, error: "Invalid owner address" }, { status: 400 });
+      return apiError({ status: 400, error: "Invalid owner address" });
     }
 
     // isAddress is a type guard — these are now Address
@@ -301,27 +298,18 @@ export async function POST(request: NextRequest) {
       !/^\d+$/.test(body.sellAmount) ||
       BigInt(body.sellAmount) <= 0n
     ) {
-      return NextResponse.json(
-        { success: false, error: "sellAmount must be a positive number string" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "sellAmount must be a positive number string" });
     }
     const sellAmount: string = body.sellAmount;
 
     const minBuyAmount: string =
       typeof body.minBuyAmount === "string" && body.minBuyAmount !== "" ? body.minBuyAmount : "1";
     if (!/^\d+$/.test(minBuyAmount) || BigInt(minBuyAmount) <= 0n) {
-      return NextResponse.json(
-        { success: false, error: "minBuyAmount must be positive" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "minBuyAmount must be positive" });
     }
 
     if (typeof body.selectedOutcome !== "string" || body.selectedOutcome === "") {
-      return NextResponse.json(
-        { success: false, error: "selectedOutcome must be a non-empty string" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "selectedOutcome must be a non-empty string" });
     }
     const selectedOutcome: string = body.selectedOutcome;
 
@@ -332,31 +320,30 @@ export async function POST(request: NextRequest) {
       betPercentage <= 0 ||
       betPercentage > 100
     ) {
-      return NextResponse.json(
-        { success: false, error: "betPercentage must be an integer from 1 to 100" },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "betPercentage must be an integer from 1 to 100",
+      });
     }
 
     if (typeof body.marketId !== "string" || body.marketId === "") {
-      return NextResponse.json(
-        { success: false, error: "marketId must be a non-empty string" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "marketId must be a non-empty string" });
     }
     const marketId: string = body.marketId;
 
     if (body.startDate !== undefined && typeof body.startDate !== "string") {
-      return NextResponse.json(
-        { success: false, error: "Invalid startDate", message: "startDate must be a string" },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid startDate",
+        message: "startDate must be a string",
+      });
     }
     if (body.deadline !== undefined && typeof body.deadline !== "string") {
-      return NextResponse.json(
-        { success: false, error: "Invalid deadline", message: "deadline must be a string" },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid deadline",
+        message: "deadline must be a string",
+      });
     }
 
     const now = new Date();
@@ -367,19 +354,17 @@ export async function POST(request: NextRequest) {
       startDate = new Date(body.startDate);
       // Reject start dates more than 60s in the past
       if (startDate < new Date(now.getTime() - 60_000)) {
-        return NextResponse.json(
-          { success: false, error: "startDate must not be in the past" },
-          { status: 400 }
-        );
+        return apiError({ status: 400, error: "startDate must not be in the past" });
       }
     }
 
     const market = await DatabaseService.getMarketById(marketId);
     if (!market) {
-      return NextResponse.json(
-        { success: false, error: "Market not found", message: `No market with id: ${marketId}` },
-        { status: 404 }
-      );
+      return apiError({
+        status: 404,
+        error: "Market not found",
+        message: `No market with id: ${marketId}`,
+      });
     }
 
     const explicitDeadline = typeof body.deadline === "string" && body.deadline !== "";
@@ -397,44 +382,29 @@ export async function POST(request: NextRequest) {
     }
 
     if (deadline <= startDate) {
-      return NextResponse.json(
-        { success: false, error: "deadline must be after startDate" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "deadline must be after startDate" });
     }
 
     const clobTokenIds: string[] = market.clob_token_ids ?? [];
     if (clobTokenIds.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Market has no CLOB token IDs" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "Market has no CLOB token IDs" });
     }
 
     const outcomes: string[] = Array.isArray(market.outcomes) ? market.outcomes : [];
     if (outcomes.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Market has no outcomes recorded" },
-        { status: 500 }
-      );
+      return apiError({ status: 500, error: "Market data is incomplete" });
     }
 
     const outcomeIndex = outcomes.indexOf(selectedOutcome);
     if (outcomeIndex === -1) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid outcome",
-          message: `'${selectedOutcome}' is not valid. Valid outcomes: ${outcomes.join(", ")}`,
-        },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid outcome",
+        message: `'${selectedOutcome}' is not valid. Valid outcomes: ${outcomes.join(", ")}`,
+      });
     }
     if (outcomeIndex >= clobTokenIds.length) {
-      return NextResponse.json(
-        { success: false, error: "No CLOB token ID for the selected outcome" },
-        { status: 500 }
-      );
+      return apiError({ status: 500, error: "Market data is incomplete" });
     }
 
     let sentinel: DatabasePolymarketSentinel;
@@ -459,18 +429,20 @@ export async function POST(request: NextRequest) {
         `using sentinel ${sentinel.polymarket_order_hash} epoch=${sentinel.epoch} status=${sentinel.status}`
       );
     } catch (polymarketError) {
-      log.error("sentinel preparation failed:", polymarketError);
       const clob = await getClobAvailability();
       if (!clob.available) {
-        return NextResponse.json(
-          { success: false, error: "Polymarket unavailable", message: clob.reason },
-          { status: 503 }
-        );
+        return apiError({
+          status: 503,
+          error: "Polymarket unavailable",
+          message: "Polymarket is temporarily unavailable. Please try again later.",
+          cause: polymarketError,
+        });
       }
-      return NextResponse.json(
-        { success: false, error: "Polymarket sentinel preparation error" },
-        { status: 502 }
-      );
+      return apiError({
+        status: 502,
+        error: "Polymarket sentinel preparation failed",
+        cause: polymarketError,
+      });
     }
 
     const orderData: PolyswapOrderData = {
@@ -519,15 +491,7 @@ export async function POST(request: NextRequest) {
         sentinelId: sentinel.id,
       });
     } catch (dbError) {
-      log.error("failed to insert order into database:", dbError);
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Failed to save order",
-          message: dbError instanceof Error ? dbError.message : "Unknown DB error",
-        },
-        { status: 500 }
-      );
+      return apiError({ status: 500, error: "Failed to save order", cause: dbError });
     }
 
     const posthog = getPostHogClient();
@@ -569,14 +533,6 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    log.error("error creating order:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to create order",
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
+    return apiError({ status: 500, error: "Failed to create order", cause: error });
   }
 }

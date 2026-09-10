@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
 import type { Hex } from "viem";
 import { apiService } from "@/services/api";
-import type { DatabasePolyswapOrder } from "@/backend/interfaces/PolyswapOrder";
+import type { PublicPolyswapOrder } from "@/backend/interfaces/PolyswapOrder";
 import type { SwapStatus } from "@/types/design";
 import { useTokens, type Token } from "@/hooks/useTokens";
 
@@ -21,7 +21,6 @@ export interface OrderViewModel {
   sellLogoURI?: string;
   buyLogoURI?: string;
   sellAmount: number;
-  minBuyAmount: number;
   startTime: Date;
   endTime: Date;
   /** Synthetic spark — replaced by real history when available. */
@@ -34,8 +33,6 @@ export interface OrderViewModel {
   orderHash: Hex | null;
   /** CoW Protocol order UID (bytes56). Null until the watch-tower has registered the order with CoW. */
   orderUid: string | null;
-  /** Most recent CoW conditional-order error name (e.g. PollTryAtBlock). */
-  lastErrorName: string | null;
   /** Human-readable reason emitted alongside the conditional-order revert. */
   lastErrorReason: string | null;
   /**
@@ -43,8 +40,6 @@ export interface OrderViewModel {
    * said to retry at. Null for terminal / next-block variants.
    */
   lastErrorRetryAt: number | null;
-  /** Discrete CoW orderbook status (open / fulfilled / cancelled / …). */
-  cowOrderStatus: string | null;
   /** Set by the listener once the on-chain Trade event for this order is observed. */
   filledAt: Date | null;
   /**
@@ -62,7 +57,7 @@ export interface OrderViewModel {
 
 const STALE = 30_000;
 
-function mapStatus(status: DatabasePolyswapOrder["status"]): SwapStatus {
+function mapStatus(status: PublicPolyswapOrder["status"]): SwapStatus {
   switch (status) {
     case "filled":
       return "done";
@@ -109,10 +104,7 @@ function buildTokenMap(tokens: Token[] | undefined): Map<string, Token> {
   return map;
 }
 
-export function toOrderView(
-  o: DatabasePolyswapOrder,
-  tokenMap: Map<string, Token>
-): OrderViewModel {
+export function toOrderView(o: PublicPolyswapOrder, tokenMap: Map<string, Token>): OrderViewModel {
   const sellMeta = tokenMap.get(o.sell_token.toLowerCase());
   const buyMeta = tokenMap.get(o.buy_token.toLowerCase());
   const sellSym = sellMeta?.symbol ?? "?";
@@ -131,7 +123,6 @@ export function toOrderView(
     sellLogoURI: sellMeta?.logoURI,
     buyLogoURI: buyMeta?.logoURI,
     sellAmount: Number(BigInt(o.sell_amount)) / 10 ** sellDecimals,
-    minBuyAmount: Number(BigInt(o.min_buy_amount)) / 10 ** buyDecimals,
     startTime: new Date(o.start_time),
     endTime: new Date(o.end_time),
     spark: syntheticSpark(String(o.id)),
@@ -142,13 +133,11 @@ export function toOrderView(
     phase: o.status,
     orderHash: o.order_hash ? (o.order_hash as Hex) : null,
     orderUid: o.order_uid ?? null,
-    lastErrorName: o.last_error_name ?? null,
     lastErrorReason: o.last_error_reason ?? null,
     lastErrorRetryAt:
       o.last_error_retry_at !== null && o.last_error_retry_at !== undefined
         ? Number(o.last_error_retry_at)
         : null,
-    cowOrderStatus: o.cow_order_status ?? null,
     filledAt: o.filled_at ? new Date(o.filled_at) : null,
     gateOpenedAt: o.gate_opened_at ? new Date(o.gate_opened_at) : null,
     actualSellAmount:
@@ -164,6 +153,7 @@ interface UseOrdersResult {
   orders: OrderViewModel[];
   isLoading: boolean;
   isError: boolean;
+  errorMessage: string | null;
   walletConnected: boolean;
 }
 
@@ -193,6 +183,12 @@ export function useOrders(): UseOrdersResult {
     orders,
     isLoading: query.isLoading || tokensQ.isLoading,
     isError: query.isError || tokensQ.isError,
+    errorMessage:
+      query.error instanceof Error
+        ? query.error.message
+        : tokensQ.error instanceof Error
+          ? tokensQ.error.message
+          : null,
     walletConnected: isConnected,
   };
 }
@@ -201,9 +197,10 @@ export function useOrder(orderId: string): {
   order: OrderViewModel | null;
   isLoading: boolean;
   isError: boolean;
+  errorMessage: string | null;
   walletConnected: boolean;
 } {
-  const { orders, isLoading, isError, walletConnected } = useOrders();
+  const { orders, isLoading, isError, errorMessage, walletConnected } = useOrders();
   const order = orders.find((o) => o.id === orderId) ?? null;
-  return { order, isLoading, isError, walletConnected };
+  return { order, isLoading, isError, errorMessage, walletConnected };
 }

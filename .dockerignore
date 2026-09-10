@@ -1,36 +1,33 @@
-# Build artefacts and local state — never ship to Docker
-node_modules
-.next
-out
-.turbo
+# Deny by default. Only files explicitly required to build the listener image
+# enter the Docker build context, so .env files and frontend sources cannot be
+# captured in an image layer accidentally.
+**
 
-# VCS / IDE
-.git
-.gitignore
-.vscode
-.idea
-.cursor
-.husky/_
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.json
+!sentry.server.config.ts
 
-# Local env / secrets
-.en
-*.log
-npm-debug.log*
-pnpm-debug.log*
+!prisma/
+!prisma/schema.prisma
 
-# Claude / agent state
-.claude
-docs/superpowers/plans
+!src/
+!src/abi/
+!src/abi/**
+!src/backend/
+!src/backend/**
+!src/lib/
+!src/lib/env.ts
+!src/lib/rpc/
+!src/lib/rpc/**
 
-# Markdown / docs (not needed at runtime)
-*.md
-!Backend.md
-!README.md
-
-# Tests / fixtures
-coverage
-data.json
-
-# OS detritus
-.DS_Store
-Thumbs.db
+# Keep secret files excluded even if one is accidentally created below an
+# otherwise allowed source directory.
+.env
+.env.*
+**/.env
+**/.env.*
+**/*.key
+**/*.pem
+**/*.p12

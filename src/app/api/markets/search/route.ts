@@ -1,5 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/backend/services/databaseService";
+import { createApiErrorResponder } from "@/lib/apiError";
+
+const apiError = createApiErrorResponder("api-market-search");
 
 /**
  * @swagger
@@ -62,22 +65,22 @@ export async function GET(req: NextRequest) {
 
   const volumeMin = parseNonNegativeNumber(sp.get("volumeMin"), 0);
   if (volumeMin === null) {
-    return NextResponse.json({ success: false, error: "invalid volumeMin" }, { status: 400 });
+    return apiError({ status: 400, error: "Invalid volumeMin" });
   }
 
   const liquidityMin = parseNonNegativeNumber(sp.get("liquidityMin"), 0);
   if (liquidityMin === null) {
-    return NextResponse.json({ success: false, error: "invalid liquidityMin" }, { status: 400 });
+    return apiError({ status: 400, error: "Invalid liquidityMin" });
   }
 
   const limit = parsePositiveInt(sp.get("limit"), 50, 100);
   if (limit === null) {
-    return NextResponse.json({ success: false, error: "invalid limit" }, { status: 400 });
+    return apiError({ status: 400, error: "Invalid limit" });
   }
 
   const rawOffset = parseNonNegativeNumber(sp.get("offset"), 0);
   if (rawOffset === null) {
-    return NextResponse.json({ success: false, error: "invalid offset" }, { status: 400 });
+    return apiError({ status: 400, error: "Invalid offset" });
   }
   const offset = Math.floor(rawOffset);
 
@@ -99,10 +102,6 @@ export async function GET(req: NextRequest) {
       data: { markets, count: markets.length, total },
     });
   } catch (err) {
-    console.error("Market search error:", err);
-    return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : "search failed" },
-      { status: 500 }
-    );
+    return apiError({ status: 500, error: "Market search failed", cause: err });
   }
 }

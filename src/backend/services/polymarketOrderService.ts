@@ -46,6 +46,13 @@ export interface PolymarketMarketOrderConfig {
   price?: number; // Optional price limit for market orders
 }
 
+export interface PreparedGTDOrder {
+  signedOrder: SignedOrder;
+  makerAmount: string;
+  polymarketOrderHash: Hex;
+  expiration: number;
+}
+
 // V2 collateral is pUSD (a 1:1 wrapper around USDC.e), not USDC.e directly.
 const PUSD_DEFAULT: Address = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB";
 const CTF_EXCHANGE_V2_DEFAULT: Address = "0xE111180000d2663C0091e4f400237545B87B996B";
@@ -120,6 +127,36 @@ export function computeV2OrderHash(order: SignedOrder, exchange: Address): Hex {
       builder: order.builder as Hex,
     },
   });
+}
+
+function parseStoredSignedOrder(value: unknown): SignedOrder {
+  if (value === null || typeof value !== "object") {
+    throw new Error("stored Polymarket order is not an object");
+  }
+  const order = value as Record<string, unknown>;
+  const stringFields = [
+    "salt",
+    "maker",
+    "signer",
+    "tokenId",
+    "makerAmount",
+    "takerAmount",
+    "timestamp",
+    "metadata",
+    "builder",
+    "expiration",
+    "signature",
+  ] as const;
+  if (stringFields.some((field) => typeof order[field] !== "string")) {
+    throw new Error("stored Polymarket order is missing a signed V2 field");
+  }
+  if (order.side !== Side.BUY && order.side !== Side.SELL) {
+    throw new Error("stored Polymarket order has an invalid side");
+  }
+  if (typeof order.signatureType !== "number") {
+    throw new Error("stored Polymarket order has an invalid signature type");
+  }
+  return value as SignedOrder;
 }
 
 interface ReadyClients {
@@ -283,6 +320,16 @@ export class PolymarketOrderService {
     return clobClient.getOrder(id);
   }
 
+  async getOnChainOrderStatus(orderHash: Hex, negRisk: boolean) {
+    const { publicClient } = this.getReady();
+    return publicClient.readContract({
+      address: negRisk ? this.NEG_RISK_CTF_EXCHANGE : this.CTF_EXCHANGE,
+      abi: ORDER_STATUS_ABI,
+      functionName: "getOrderStatus",
+      args: [orderHash],
+    });
+  }
+
   /**
    * Get all open orders for the authenticated user.
    */
@@ -358,6 +405,28 @@ export class PolymarketOrderService {
    * the caller-supplied expiration up to that floor when needed, never down.
    */
   async postGTDOrder(config: PolymarketOrderConfig & { expiration: number }) {
+    const prepared = await this.prepareGTDOrder(config);
+    const response = await this.postPreparedGTDOrder({
+      signedOrder: prepared.signedOrder,
+      expectedHash: prepared.polymarketOrderHash,
+      negRisk: Boolean(config.negRisk),
+      postOnly: false,
+    });
+    return {
+      response,
+      makerAmount: prepared.makerAmount,
+      polymarketOrderHash: prepared.polymarketOrderHash,
+    };
+  }
+
+  /**
+   * Build and sign a GTD order without submitting it to the CLOB. The hash and
+   * maker amount can therefore be committed to the Safe conditional order
+   * before any operator collateral is exposed.
+   */
+  async prepareGTDOrder(
+    config: PolymarketOrderConfig & { expiration: number }
+  ): Promise<PreparedGTDOrder> {
     const { clobClient, publicClient } = this.getReady();
 
     if (!(config.price > 0)) {
@@ -368,23 +437,6 @@ export class PolymarketOrderService {
     // to the smallest 2-dp size clearing $1 (+1c cushion so exact-dollar prices survive the rounding).
     const minSizeForOneDollar = Math.ceil((1.01 / config.price) * 100) / 100;
     const sizeToUse = config.size < minSizeForOneDollar ? minSizeForOneDollar : config.size;
-
-    const decimals = await this.getTokenDecimals(this.PUSD);
-    const priceBigInt = BigInt(Math.floor(config.price * 1_000_000));
-    const sizeBigInt = BigInt(Math.floor(sizeToUse * 1_000_000));
-    const decimalsMultiplier = BigInt(10) ** BigInt(decimals);
-    const requiredAmount =
-      (priceBigInt * sizeBigInt * decimalsMultiplier) / (1_000_000n * 1_000_000n);
-
-    // Refresh CLOB's internal balance/allowance cache against on-chain state.
-    await clobClient.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
-
-    const ok = await this.checkAllowance(this.PUSD, requiredAmount, this.CTF_EXCHANGE);
-    if (!ok) {
-      throw new Error(
-        `Insufficient on-chain allowance for pUSD. Please approve ${formatUnits(requiredAmount, decimals)} pUSD for ${this.CTF_EXCHANGE}`
-      );
-    }
 
     const nowSeconds = Math.floor(Date.now() / 1000);
     const minExpiration = nowSeconds + GTD_SAFETY_BUFFER_SECONDS;
@@ -436,23 +488,76 @@ export class PolymarketOrderService {
         throw new Error("signed order is missing makerAmount");
       }
 
-      const response = await clobClient.postOrder(signedOrder, OrderType.GTD);
-      log.info(`GTD response: ${JSON.stringify(response)}`);
-      assertCLOBOrderAccepted(response, "GTD");
-
-      // Self-verify the off-chain hash replication against the CLOB's authoritative orderID.
-      if (response.orderID && response.orderID.toLowerCase() !== orderHash.toLowerCase()) {
-        log.error(
-          `computed order hash ${orderHash} != response.orderID ${response.orderID} — hashing replication drift`
-        );
-      }
-
-      return { response, makerAmount, polymarketOrderHash: response.orderID ?? orderHash };
+      return { signedOrder, makerAmount, polymarketOrderHash: orderHash, expiration };
     } catch (error) {
       const { message, details } = describeOrderError(error);
-      log.error("failed to create GTD order:", error);
-      throw new Error(`Failed to create GTD order: ${message}. Details: ${details}`);
+      log.error("failed to prepare GTD order:", error);
+      throw new Error(`Failed to prepare GTD order: ${message}. Details: ${details}`);
     }
+  }
+
+  /**
+   * Submit a previously prepared order after its matching Safe authorization
+   * has been confirmed. Sentinel activation is post-only so a threshold that
+   * already crosses the book is rejected instead of spending operator funds.
+   */
+  async postPreparedGTDOrder(input: {
+    signedOrder: unknown;
+    expectedHash: string;
+    negRisk: boolean;
+    postOnly?: boolean;
+  }): Promise<unknown> {
+    const { clobClient, publicClient } = this.getReady();
+    const signedOrder = parseStoredSignedOrder(input.signedOrder);
+    if (!isV2Order(signedOrder) || signedOrder.side !== Side.BUY) {
+      throw new Error("sentinel must be a V2 BUY order");
+    }
+
+    const exchange = input.negRisk ? this.NEG_RISK_CTF_EXCHANGE : this.CTF_EXCHANGE;
+    const computedHash = computeV2OrderHash(signedOrder, exchange);
+    if (computedHash.toLowerCase() !== input.expectedHash.toLowerCase()) {
+      throw new Error(
+        `stored sentinel hash mismatch: expected ${input.expectedHash}, computed ${computedHash}`
+      );
+    }
+
+    const status = await publicClient.readContract({
+      address: exchange,
+      abi: ORDER_STATUS_ABI,
+      functionName: "getOrderStatus",
+      args: [computedHash],
+    });
+    if (status.remaining !== 0n || status.isFilledOrCancelled) {
+      throw new Error(`sentinel ${computedHash} already has on-chain order status`);
+    }
+
+    const requiredAmount = BigInt(signedOrder.makerAmount);
+    await clobClient.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+    const ok = await this.checkAllowance(this.PUSD, requiredAmount, exchange);
+    if (!ok) {
+      const decimals = await this.getTokenDecimals(this.PUSD);
+      throw new Error(
+        `Insufficient on-chain allowance for pUSD. Please approve ${formatUnits(requiredAmount, decimals)} pUSD for ${exchange}`
+      );
+    }
+
+    const response = await clobClient.postOrder(signedOrder, OrderType.GTD, input.postOnly ?? true);
+    log.info(`GTD sentinel response: ${JSON.stringify(response)}`);
+    assertCLOBOrderAccepted(response, "GTD");
+
+    const result = response as { orderID?: unknown; status?: unknown };
+    if (
+      typeof result.orderID !== "string" ||
+      result.orderID.toLowerCase() !== computedHash.toLowerCase()
+    ) {
+      throw new Error(`CLOB returned an unexpected sentinel order ID for ${computedHash}`);
+    }
+    if ((input.postOnly ?? true) && result.status !== "live") {
+      throw new Error(
+        `post-only sentinel did not rest on the book (status=${String(result.status)})`
+      );
+    }
+    return response;
   }
 
   getClient(): ClobClient | null {

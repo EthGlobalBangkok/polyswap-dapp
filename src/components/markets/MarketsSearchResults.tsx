@@ -10,6 +10,7 @@ import { MotionList, MotionItem } from "@/components/primitives";
 import { TransitionLink } from "@/components/layout";
 import { Icon } from "@/components/icons";
 import { useMarketsPage } from "@/hooks/useMarketsData";
+import { getErrorMessage } from "@/lib/errorMessage";
 
 const PAGE_SIZE = 20;
 
@@ -44,7 +45,7 @@ export function MarketsSearchResults() {
 
   const trimmed = query.trim();
 
-  const { data, isLoading, isError } = useMarketsPage({
+  const { data, isLoading, isError, error } = useMarketsPage({
     page,
     pageSize: PAGE_SIZE,
     q: query,
@@ -111,7 +112,7 @@ export function MarketsSearchResults() {
           {isLoading && <MarketsSkeleton />}
           {isError && (
             <p className="px-4 py-12 text-center text-sm text-ink-3 sm:px-6">
-              Couldn&apos;t load markets. Try again in a moment.
+              Couldn&apos;t load markets. {getErrorMessage(error, "Try again in a moment.")}
             </p>
           )}
           {!isLoading && !isError && items.length === 0 && (

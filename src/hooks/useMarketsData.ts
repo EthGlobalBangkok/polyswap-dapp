@@ -8,7 +8,7 @@ import {
   type ClobPriceRequest,
   type ClobPricesResponse,
 } from "@/services/polymarket";
-import { apiService } from "@/services/api";
+import { apiService, readApiErrorMessage } from "@/services/api";
 import {
   CRYPTO_RELEVANT_CATEGORIES,
   MARKET_CATEGORIES,
@@ -228,8 +228,11 @@ async function searchAndHydrate(params: {
   }
 
   const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`markets/search failed: ${res.status}`);
-  const json = (await res.json()) as SearchResponse;
+  const payload: unknown = await res.json();
+  if (!res.ok) {
+    throw new Error(readApiErrorMessage(payload) ?? `markets/search failed: ${res.status}`);
+  }
+  const json = payload as SearchResponse;
 
   if (!json.success) throw new Error("markets/search returned success=false");
 
@@ -346,8 +349,11 @@ export function useSearchSuggestions(prefix: string, enabled = true) {
       url.searchParams.set("q", trimmed);
       url.searchParams.set("limit", "8");
       const res = await fetch(url.toString());
-      if (!res.ok) throw new Error(`markets/suggest failed: ${res.status}`);
-      const json = (await res.json()) as SuggestResponse;
+      const payload: unknown = await res.json();
+      if (!res.ok) {
+        throw new Error(readApiErrorMessage(payload) ?? `markets/suggest failed: ${res.status}`);
+      }
+      const json = payload as SuggestResponse;
       if (!json.success) throw new Error("markets/suggest returned success=false");
       return json.data;
     },
@@ -365,8 +371,11 @@ export function useCategoryCounts(categories: ReadonlyArray<string>) {
       const url = new URL("/api/markets/counts", window.location.origin);
       url.searchParams.set("categories", key);
       const res = await fetch(url.toString());
-      if (!res.ok) throw new Error(`markets/counts failed: ${res.status}`);
-      const json = (await res.json()) as CountsResponse;
+      const payload: unknown = await res.json();
+      if (!res.ok) {
+        throw new Error(readApiErrorMessage(payload) ?? `markets/counts failed: ${res.status}`);
+      }
+      const json = payload as CountsResponse;
       if (!json.success) throw new Error("markets/counts returned success=false");
       return json.data;
     },

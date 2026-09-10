@@ -11,13 +11,18 @@ import {
 import { DatabaseService } from "../../../../backend/services/databaseService";
 import { TransactionEncodingService } from "../../../../backend/services/transactionEncodingService";
 import { buildFallbackHandlerSetupTx } from "../../../../backend/services/safeFallbackHandlerService";
-import { getPolymarketOrderService } from "../../../../backend/services/polymarketOrderService";
 import { getClobAvailability } from "../../../../backend/services/polymarketStatusService";
+import { getOrCreateSentinel } from "../../../../backend/services/polymarketSentinelService";
 import { type PolyswapOrderData } from "../../../../backend/interfaces/PolyswapOrder";
 import { getPostHogClient } from "../../../../lib/posthog-server";
 import { createLogger } from "../../../../backend/logger";
+import { isOrderCreationDisabled } from "@/lib/runtimeFlags";
+import type { DatabasePolymarketSentinel } from "@/backend/interfaces/PolyswapOrder";
+import { toPublicPolyswapOrder } from "@/backend/utils/publicPolyswapOrder";
+import { createApiErrorResponder } from "@/lib/apiError";
 
 const log = createLogger("api-orders");
+const apiError = createApiErrorResponder("api-orders");
 
 const VAULT_RELAYER: Address = getAddress(
   process.env.VAULT_RELAYER ?? "0xC92E8bdf79f0507f65a392b0ab4667716BFE0110"
@@ -112,17 +117,19 @@ export async function GET(request: NextRequest) {
 
     const limitNum = parseBoundedInt(searchParams.get("limit"), 100, 1, 500);
     if (limitNum === null) {
-      return NextResponse.json(
-        { success: false, error: "Invalid limit (must be an integer 1..500)" },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid limit",
+        message: "limit must be an integer from 1 to 500",
+      });
     }
     const offsetNum = parseBoundedInt(searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
     if (offsetNum === null) {
-      return NextResponse.json(
-        { success: false, error: "Invalid offset (must be a non-negative integer)" },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid offset",
+        message: "offset must be a non-negative integer",
+      });
     }
 
     const fromBlock = searchParams.get("fromBlock");
@@ -130,17 +137,18 @@ export async function GET(request: NextRequest) {
     const ownerRaw = searchParams.get("owner");
 
     if (ownerRaw !== null && !isAddress(ownerRaw)) {
-      return NextResponse.json({ success: false, error: "Invalid owner address" }, { status: 400 });
+      return apiError({ status: 400, error: "Invalid owner address" });
     }
 
     let orders;
 
     if (fromBlock !== null || toBlock !== null) {
       if (fromBlock === null || toBlock === null) {
-        return NextResponse.json(
-          { success: false, error: "fromBlock and toBlock must be provided together" },
-          { status: 400 }
-        );
+        return apiError({
+          status: 400,
+          error: "Invalid block range",
+          message: "fromBlock and toBlock must be provided together",
+        });
       }
       const fromBlockNum = Number(fromBlock);
       const toBlockNum = Number(toBlock);
@@ -152,17 +160,22 @@ export async function GET(request: NextRequest) {
         toBlockNum < 0 ||
         fromBlockNum > toBlockNum
       ) {
-        return NextResponse.json({ success: false, error: "Invalid block range" }, { status: 400 });
+        return apiError({ status: 400, error: "Invalid block range" });
       }
 
-      orders = await DatabaseService.getPolyswapOrdersByBlockRange(fromBlockNum, toBlockNum);
+      orders = await DatabaseService.getPolyswapOrdersByBlockRange(
+        fromBlockNum,
+        toBlockNum,
+        limitNum,
+        offsetNum
+      );
     } else {
       orders = await DatabaseService.getPolyswapOrdersByOwner(ownerRaw ?? "", limitNum, offsetNum);
     }
 
     return NextResponse.json({
       success: true,
-      data: orders,
+      data: orders.map(toPublicPolyswapOrder),
       count: orders.length,
       pagination: {
         limit: limitNum,
@@ -177,15 +190,7 @@ export async function GET(request: NextRequest) {
       message: "Orders retrieved successfully",
     });
   } catch (error) {
-    log.error("error fetching orders:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch orders",
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
+    return apiError({ status: 500, error: "Failed to fetch orders", cause: error });
   }
 }
 
@@ -197,9 +202,10 @@ export async function GET(request: NextRequest) {
  *       - Orders
  *     summary: Create a new order (consolidated)
  *     description: >
- *       Creates a draft DB row, places the Polymarket GTD order, builds
+ *       Creates a draft DB row, prepares a shared Polymarket sentinel, builds
  *       ComposableCoW calldata, and returns both a single-tx and an
- *       approve+create batch — all in one round-trip.
+ *       approve+create batch. The sentinel is posted only after confirmed
+ *       Safe authorization.
  *     requestBody:
  *       required: true
  *       content:
@@ -229,8 +235,22 @@ export async function GET(request: NextRequest) {
  *         description: Server error
  */
 export async function POST(request: NextRequest) {
+  if (isOrderCreationDisabled()) {
+    return apiError({
+      status: 503,
+      error: "Order creation paused",
+      message: "Order creation is temporarily blocked by the administrator.",
+      code: "ORDER_CREATION_DISABLED",
+    });
+  }
+
   try {
-    const body = (await request.json()) as CreateOrderRequestBody;
+    let body: CreateOrderRequestBody;
+    try {
+      body = (await request.json()) as CreateOrderRequestBody;
+    } catch (error) {
+      return apiError({ status: 400, error: "Invalid JSON body", cause: error });
+    }
 
     const requiredFields = [
       "sellToken",
@@ -246,13 +266,11 @@ export async function POST(request: NextRequest) {
       (f) => body[f] === undefined || body[f] === null || body[f] === ""
     );
     if (missing.length > 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Missing required field${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
-        },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Missing required fields",
+        message: `Missing required field${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
+      });
     }
 
     // Narrow typed fields
@@ -261,19 +279,13 @@ export async function POST(request: NextRequest) {
     const ownerRaw = body.owner;
 
     if (typeof sellTokenRaw !== "string" || !isAddress(sellTokenRaw)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid sellToken address" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "Invalid sellToken address" });
     }
     if (typeof buyTokenRaw !== "string" || !isAddress(buyTokenRaw)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid buyToken address" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "Invalid buyToken address" });
     }
     if (typeof ownerRaw !== "string" || !isAddress(ownerRaw)) {
-      return NextResponse.json({ success: false, error: "Invalid owner address" }, { status: 400 });
+      return apiError({ status: 400, error: "Invalid owner address" });
     }
 
     // isAddress is a type guard — these are now Address
@@ -281,58 +293,57 @@ export async function POST(request: NextRequest) {
     const buyToken: Address = buyTokenRaw;
     const owner: Address = ownerRaw;
 
-    if (typeof body.sellAmount !== "string" || parseFloat(body.sellAmount) <= 0) {
-      return NextResponse.json(
-        { success: false, error: "sellAmount must be a positive number string" },
-        { status: 400 }
-      );
+    if (
+      typeof body.sellAmount !== "string" ||
+      !/^\d+$/.test(body.sellAmount) ||
+      BigInt(body.sellAmount) <= 0n
+    ) {
+      return apiError({ status: 400, error: "sellAmount must be a positive number string" });
     }
     const sellAmount: string = body.sellAmount;
 
     const minBuyAmount: string =
       typeof body.minBuyAmount === "string" && body.minBuyAmount !== "" ? body.minBuyAmount : "1";
-    if (parseFloat(minBuyAmount) <= 0) {
-      return NextResponse.json(
-        { success: false, error: "minBuyAmount must be positive" },
-        { status: 400 }
-      );
+    if (!/^\d+$/.test(minBuyAmount) || BigInt(minBuyAmount) <= 0n) {
+      return apiError({ status: 400, error: "minBuyAmount must be positive" });
     }
 
     if (typeof body.selectedOutcome !== "string" || body.selectedOutcome === "") {
-      return NextResponse.json(
-        { success: false, error: "selectedOutcome must be a non-empty string" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "selectedOutcome must be a non-empty string" });
     }
     const selectedOutcome: string = body.selectedOutcome;
 
     const betPercentage = Number(body.betPercentage);
-    if (!isFinite(betPercentage) || betPercentage <= 0 || betPercentage > 100) {
-      return NextResponse.json(
-        { success: false, error: "betPercentage must be a finite number in (0, 100]" },
-        { status: 400 }
-      );
+    if (
+      !Number.isFinite(betPercentage) ||
+      !Number.isInteger(betPercentage) ||
+      betPercentage <= 0 ||
+      betPercentage > 100
+    ) {
+      return apiError({
+        status: 400,
+        error: "betPercentage must be an integer from 1 to 100",
+      });
     }
 
     if (typeof body.marketId !== "string" || body.marketId === "") {
-      return NextResponse.json(
-        { success: false, error: "marketId must be a non-empty string" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "marketId must be a non-empty string" });
     }
     const marketId: string = body.marketId;
 
     if (body.startDate !== undefined && typeof body.startDate !== "string") {
-      return NextResponse.json(
-        { success: false, error: "Invalid startDate", message: "startDate must be a string" },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid startDate",
+        message: "startDate must be a string",
+      });
     }
     if (body.deadline !== undefined && typeof body.deadline !== "string") {
-      return NextResponse.json(
-        { success: false, error: "Invalid deadline", message: "deadline must be a string" },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid deadline",
+        message: "deadline must be a string",
+      });
     }
 
     const now = new Date();
@@ -343,19 +354,17 @@ export async function POST(request: NextRequest) {
       startDate = new Date(body.startDate);
       // Reject start dates more than 60s in the past
       if (startDate < new Date(now.getTime() - 60_000)) {
-        return NextResponse.json(
-          { success: false, error: "startDate must not be in the past" },
-          { status: 400 }
-        );
+        return apiError({ status: 400, error: "startDate must not be in the past" });
       }
     }
 
     const market = await DatabaseService.getMarketById(marketId);
     if (!market) {
-      return NextResponse.json(
-        { success: false, error: "Market not found", message: `No market with id: ${marketId}` },
-        { status: 404 }
-      );
+      return apiError({
+        status: 404,
+        error: "Market not found",
+        message: `No market with id: ${marketId}`,
+      });
     }
 
     const explicitDeadline = typeof body.deadline === "string" && body.deadline !== "";
@@ -373,84 +382,67 @@ export async function POST(request: NextRequest) {
     }
 
     if (deadline <= startDate) {
-      return NextResponse.json(
-        { success: false, error: "deadline must be after startDate" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "deadline must be after startDate" });
     }
 
     const clobTokenIds: string[] = market.clob_token_ids ?? [];
     if (clobTokenIds.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Market has no CLOB token IDs" },
-        { status: 400 }
-      );
+      return apiError({ status: 400, error: "Market has no CLOB token IDs" });
     }
 
     const outcomes: string[] = Array.isArray(market.outcomes) ? market.outcomes : [];
     if (outcomes.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Market has no outcomes recorded" },
-        { status: 500 }
-      );
+      return apiError({ status: 500, error: "Market data is incomplete" });
     }
 
     const outcomeIndex = outcomes.indexOf(selectedOutcome);
     if (outcomeIndex === -1) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid outcome",
-          message: `'${selectedOutcome}' is not valid. Valid outcomes: ${outcomes.join(", ")}`,
-        },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid outcome",
+        message: `'${selectedOutcome}' is not valid. Valid outcomes: ${outcomes.join(", ")}`,
+      });
     }
     if (outcomeIndex >= clobTokenIds.length) {
-      return NextResponse.json(
-        { success: false, error: "No CLOB token ID for the selected outcome" },
-        { status: 500 }
-      );
+      return apiError({ status: 500, error: "Market data is incomplete" });
     }
 
-    let polymarketOrderHash: string;
-    let polymarketMakerAmount: string;
+    let sentinel: DatabasePolymarketSentinel;
     try {
-      const polymarket = getPolymarketOrderService();
-      await polymarket.initialize();
-      const tokenID = clobTokenIds[outcomeIndex]!;
-      const price = betPercentage / 100;
-      const expiration = Math.floor(deadline.getTime() / 1000);
+      const tokenID = clobTokenIds[outcomeIndex];
+      if (tokenID === undefined) {
+        throw new Error("Selected outcome has no Polymarket token ID");
+      }
       log.info(
-        `placing GTD order: market=${marketId} outcome=${selectedOutcome} ` +
-          `tokenID=${tokenID} price=${price} expiration=${expiration} negRisk=${market.neg_risk}`
+        `preparing sentinel: market=${marketId} outcome=${selectedOutcome} ` +
+          `tokenID=${tokenID} price=${betPercentage / 100} negRisk=${market.neg_risk}`
       );
-      const result = await polymarket.postGTDOrder({
-        tokenID,
-        price,
-        side: "BUY",
-        size: 5,
-        expiration,
+      sentinel = await getOrCreateSentinel({
+        marketId,
+        tokenId: tokenID,
+        outcomeSelected: selectedOutcome,
+        priceCents: betPercentage,
         negRisk: market.neg_risk,
+        expiration: deadline,
       });
-      polymarketOrderHash = result.polymarketOrderHash;
-      polymarketMakerAmount = result.makerAmount;
       log.info(
-        `GTD order accepted: orderID=${polymarketOrderHash} makerAmount=${polymarketMakerAmount}`
+        `using sentinel ${sentinel.polymarket_order_hash} epoch=${sentinel.epoch} status=${sentinel.status}`
       );
     } catch (polymarketError) {
-      log.error("GTD order placement failed:", polymarketError);
       const clob = await getClobAvailability();
       if (!clob.available) {
-        return NextResponse.json(
-          { success: false, error: "Polymarket unavailable", message: clob.reason },
-          { status: 503 }
-        );
+        return apiError({
+          status: 503,
+          error: "Polymarket unavailable",
+          message: "Polymarket is temporarily unavailable. Please try again later.",
+          cause: polymarketError,
+        });
       }
-      return NextResponse.json(
-        { success: false, error: "Polymarket order placement error" },
-        { status: 502 }
-      );
+      return apiError({
+        status: 502,
+        error: "Polymarket sentinel preparation failed",
+        cause: polymarketError,
+      });
     }
 
     const orderData: PolyswapOrderData = {
@@ -461,9 +453,9 @@ export async function POST(request: NextRequest) {
       minBuyAmount,
       t0: Math.floor(startDate.getTime() / 1000).toString(),
       t: Math.floor(deadline.getTime() / 1000).toString(),
-      polymarketOrderHash,
+      polymarketOrderHash: sentinel.polymarket_order_hash,
       appData: APP_DATA_DEFAULT,
-      polymarketMakerAmount,
+      polymarketMakerAmount: sentinel.polymarket_maker_amount,
     };
 
     const params = TransactionEncodingService.createConditionalOrderParams(orderData, {
@@ -480,6 +472,8 @@ export async function POST(request: NextRequest) {
     let orderId: number;
     try {
       orderId = await DatabaseService.insertPolyswapOrderFromForm({
+        orderHash,
+        handler: params.handler,
         sellToken,
         buyToken,
         sellAmount,
@@ -490,21 +484,14 @@ export async function POST(request: NextRequest) {
         owner,
         outcomeSelected: selectedOutcome,
         betPercentageValue: betPercentage,
-        polymarketOrderHash,
+        polymarketOrderHash: sentinel.polymarket_order_hash,
         salt: params.salt,
         explicitDeadline,
-        polymarketMakerAmount,
+        polymarketMakerAmount: sentinel.polymarket_maker_amount,
+        sentinelId: sentinel.id,
       });
     } catch (dbError) {
-      log.error("failed to insert order into database:", dbError);
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Failed to save order",
-          message: dbError instanceof Error ? dbError.message : "Unknown DB error",
-        },
-        { status: 500 }
-      );
+      return apiError({ status: 500, error: "Failed to save order", cause: dbError });
     }
 
     const posthog = getPostHogClient();
@@ -532,7 +519,7 @@ export async function POST(request: NextRequest) {
       success: true,
       data: {
         orderId,
-        polymarketOrderHash,
+        polymarketOrderHash: sentinel.polymarket_order_hash,
         orderHash,
         tx: { to: COMPOSABLE_COW, data: createCalldata, value: "0" },
         batchTx: [
@@ -546,14 +533,6 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    log.error("error creating order:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to create order",
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
+    return apiError({ status: 500, error: "Failed to create order", cause: error });
   }
 }

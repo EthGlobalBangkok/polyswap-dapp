@@ -30,7 +30,7 @@ interface Props {
 }
 
 export function SwapDetailPage({ orderId }: Props) {
-  const { order, isLoading, isError, walletConnected } = useOrder(orderId);
+  const { order, isLoading, isError, errorMessage, walletConnected } = useOrder(orderId);
   const { address } = useAccount();
   // Real Polymarket history for the side the user picked (YES or NO).
   // Falls back to synthetic spark on the chart when unavailable (no marketId
@@ -132,7 +132,9 @@ export function SwapDetailPage({ orderId }: Props) {
   if (isError || !order) {
     return (
       <div className="py-16 text-center text-sm text-ink-3">
-        We couldn&apos;t find that swap.{" "}
+        {isError
+          ? `We couldn't load that swap. ${errorMessage ?? ""}`
+          : "We couldn't find that swap."}{" "}
         <Link href="/dashboard" className="underline">
           Back to my swaps
         </Link>

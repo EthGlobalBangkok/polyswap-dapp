@@ -1,5 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "@/backend/services/databaseService";
+import { createApiErrorResponder } from "@/lib/apiError";
+
+const apiError = createApiErrorResponder("api-market-suggest");
 
 const MAX_LIMIT = 20;
 const DEFAULT_LIMIT = 8;
@@ -39,10 +42,6 @@ export async function GET(req: NextRequest) {
     const suggestions = await DatabaseService.getTagSuggestions(prefix, limit);
     return NextResponse.json({ success: true, data: suggestions });
   } catch (err) {
-    console.error("Suggest error:", err);
-    return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : "suggest failed" },
-      { status: 500 }
-    );
+    return apiError({ status: 500, error: "Market suggestions failed", cause: err });
   }
 }

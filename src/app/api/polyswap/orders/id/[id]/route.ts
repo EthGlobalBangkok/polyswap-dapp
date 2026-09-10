@@ -1,8 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DatabaseService } from "../../../../../../backend/services/databaseService";
 import { verifySignature } from "@/backend/utils/signatureVerification";
-import { getPolymarketOrderService } from "@/backend/services/polymarketOrderService";
 import { getPublicClient } from "@/backend/listener/blockchainProvider";
+import { toPublicPolyswapOrder } from "@/backend/utils/publicPolyswapOrder";
+import { createApiErrorResponder } from "@/lib/apiError";
+
+const apiError = createApiErrorResponder("api-order-id");
 
 interface DeleteDraftBody {
   signature: string;
@@ -52,43 +55,29 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { id } = await params;
     const orderId = parseInt(id, 10);
     if (isNaN(orderId) || orderId <= 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid order ID",
-          message: "Order ID must be a positive integer",
-        },
-        { status: 400 }
-      );
+      return apiError({
+        status: 400,
+        error: "Invalid order ID",
+        message: "Order ID must be a positive integer",
+      });
     }
 
     const order = await DatabaseService.getPolyswapOrderById(orderId);
     if (!order) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Order not found",
-          message: `No order found with ID: ${orderId}`,
-        },
-        { status: 404 }
-      );
+      return apiError({
+        status: 404,
+        error: "Order not found",
+        message: `No order found with ID: ${orderId}`,
+      });
     }
 
     return NextResponse.json({
       success: true,
-      data: order,
+      data: toPublicPolyswapOrder(order),
       message: "Order retrieved successfully",
     });
   } catch (error) {
-    console.error("Error fetching order by ID:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch order",
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
+    return apiError({ status: 500, error: "Failed to fetch order", cause: error });
   }
 }
 
@@ -96,61 +85,55 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const orderId = Number(id);
-  if (!Number.isInteger(orderId) || orderId <= 0) {
-    return NextResponse.json({ success: false, error: "Invalid order id" }, { status: 400 });
-  }
+  try {
+    const { id } = await params;
+    const orderId = Number(id);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return apiError({ status: 400, error: "Invalid order id" });
+    }
 
-  const body: unknown = await request.json();
-  if (!isDeleteBody(body)) {
-    return NextResponse.json(
-      { success: false, error: "Body must include { signature: string, timestamp: number }" },
-      { status: 400 }
-    );
-  }
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch (error) {
+      return apiError({ status: 400, error: "Invalid JSON body", cause: error });
+    }
+    if (!isDeleteBody(body)) {
+      return apiError({
+        status: 400,
+        error: "Invalid request body",
+        message: "Body must include { signature: string, timestamp: number }",
+      });
+    }
 
-  const order = await DatabaseService.getPolyswapOrderById(orderId);
-  if (!order) {
-    return NextResponse.json({ success: false, error: "Order not found" }, { status: 404 });
-  }
-  if (order.status !== "draft") {
-    return NextResponse.json(
-      {
-        success: false,
+    const order = await DatabaseService.getPolyswapOrderById(orderId);
+    if (!order) {
+      return apiError({ status: 404, error: "Order not found" });
+    }
+    if (order.status !== "draft") {
+      return apiError({
+        status: 400,
         error:
           "Only drafts can be deleted off-chain. Live orders must be removed via ComposableCoW.remove(orderHash).",
-      },
-      { status: 400 }
-    );
-  }
-
-  const verification = await verifySignature({
-    action: "cancel_draft",
-    orderIdentifier: String(orderId),
-    timestamp: body.timestamp,
-    chainId: 137,
-    signature: body.signature,
-    expectedAddress: order.owner,
-    publicClient: getPublicClient(),
-  });
-  if (!verification.valid) {
-    return NextResponse.json(
-      { success: false, error: verification.error ?? "Unauthorized" },
-      { status: 401 }
-    );
-  }
-
-  if (order.polymarket_order_hash) {
-    try {
-      const pm = getPolymarketOrderService();
-      await pm.initialize();
-      await pm.cancelOrder(order.polymarket_order_hash);
-    } catch (err) {
-      console.warn("Polymarket cancel failed during draft delete (idempotent):", err);
+      });
     }
-  }
 
-  await DatabaseService.deletePolyswapOrderById(orderId);
-  return NextResponse.json({ success: true });
+    const verification = await verifySignature({
+      action: "cancel_draft",
+      orderIdentifier: String(orderId),
+      timestamp: body.timestamp,
+      chainId: 137,
+      signature: body.signature,
+      expectedAddress: order.owner,
+      publicClient: getPublicClient(),
+    });
+    if (!verification.valid) {
+      return apiError({ status: 401, error: verification.error ?? "Unauthorized" });
+    }
+
+    await DatabaseService.deletePolyswapOrderById(orderId);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return apiError({ status: 500, error: "Failed to delete draft order", cause: error });
+  }
 }

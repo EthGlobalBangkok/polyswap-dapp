@@ -1,6 +1,6 @@
 import type { Address, Hex } from "viem";
 import { type DatabaseMarket } from "../backend/interfaces/Database";
-import { type DatabasePolyswapOrder } from "../backend/interfaces/PolyswapOrder";
+import { type PublicPolyswapOrder } from "../backend/interfaces/PolyswapOrder";
 
 // ---------------------------------------------------------------------------
 // PolySwap Order types (consolidated POST /polyswap/orders)
@@ -82,11 +82,13 @@ function isCreateOrderSuccess(
   );
 }
 
-function readErrorMessage(json: unknown): string | undefined {
+export function readApiErrorMessage(json: unknown): string | undefined {
   if (!isRecord(json)) return undefined;
   const message = typeof json.message === "string" ? json.message : undefined;
   const error = typeof json.error === "string" ? json.error : undefined;
-  return message ?? error;
+  const errorId = typeof json.errorId === "string" ? json.errorId : undefined;
+  const text = message ?? error;
+  return text && errorId ? `${text} Error ID: ${errorId}` : text;
 }
 
 function isSuccessEnvelope(value: unknown): value is { success: true } {
@@ -125,10 +127,10 @@ class ApiService {
     const url = `${this.baseUrl}/markets/${encodeURIComponent(slug)}${opts.track ? "?track=1" : ""}`;
     const response = await fetch(url);
     if (response.status === 404) return null;
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
     const json: unknown = await response.json();
+    if (!response.ok) {
+      throw new Error(readApiErrorMessage(json) ?? `HTTP ${response.status}`);
+    }
     if (!isRecord(json) || json.success !== true || !isRecord(json.data)) {
       throw new Error("Invalid market response");
     }
@@ -149,7 +151,7 @@ class ApiService {
     });
     const json: unknown = await response.json();
     if (!response.ok || !isCreateOrderSuccess(json)) {
-      const message = readErrorMessage(json) ?? `HTTP ${response.status}`;
+      const message = readApiErrorMessage(json) ?? `HTTP ${response.status}`;
       throw new Error(message);
     }
     return json.data;
@@ -161,31 +163,26 @@ class ApiService {
     offset: number = 0
   ): Promise<{
     success: boolean;
-    data?: DatabasePolyswapOrder[];
+    data?: PublicPolyswapOrder[];
     count?: number;
     pagination?: { limit: number; offset: number; hasMore: boolean };
     message?: string;
     error?: string;
   }> {
-    try {
-      const params = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
-      const response = await fetch(`${this.baseUrl}/polyswap/orders/${ownerAddress}?${params}`);
-      return response.json() as Promise<{
-        success: boolean;
-        data?: DatabasePolyswapOrder[];
-        count?: number;
-        pagination?: { limit: number; offset: number; hasMore: boolean };
-        message?: string;
-        error?: string;
-      }>;
-    } catch (error) {
-      console.error("Failed to fetch orders by owner:", error);
-      return {
-        success: false,
-        error: "Failed to fetch orders",
-        message: error instanceof Error ? error.message : "Unknown error",
-      };
+    const params = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
+    const response = await fetch(`${this.baseUrl}/polyswap/orders/${ownerAddress}?${params}`);
+    const json: unknown = await response.json();
+    if (!response.ok || !isRecord(json)) {
+      throw new Error(readApiErrorMessage(json) ?? `HTTP ${response.status}`);
     }
+    return json as {
+      success: boolean;
+      data?: PublicPolyswapOrder[];
+      count?: number;
+      pagination?: { limit: number; offset: number; hasMore: boolean };
+      message?: string;
+      error?: string;
+    };
   }
 
   /**
@@ -200,7 +197,7 @@ class ApiService {
     });
     const json: unknown = await res.json();
     if (!res.ok || !isSuccessEnvelope(json)) {
-      throw new Error(readErrorMessage(json) ?? `HTTP ${res.status}`);
+      throw new Error(readApiErrorMessage(json) ?? `HTTP ${res.status}`);
     }
   }
 
@@ -217,7 +214,7 @@ class ApiService {
     });
     const json: unknown = await res.json();
     if (!res.ok || !isSuccessEnvelope(json)) {
-      throw new Error(readErrorMessage(json) ?? `HTTP ${res.status}`);
+      throw new Error(readApiErrorMessage(json) ?? `HTTP ${res.status}`);
     }
   }
 }
